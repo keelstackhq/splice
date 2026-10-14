@@ -30,6 +30,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 03/3 · fffa3f0, 54cddfb · node 23/23, nextest 263/263, actionlint clean; local proof: staged linux-x64 + launcher installed via npm and via pnpm 10.28 → `splice --version` = `splice 0.1.0`, exit codes pass through
 2026-10-14 · 03/4 · 2020d0e, 5017a25 · actionlint+shellcheck clean, node 47/47 (7 stub-gh/git publish tests), nextest 263/263; fixtures are real splice output (GitHub selftest: see Blocked)
 2026-10-14 · 03/5 · b33b163, 6f439b5 · fmt+clippy clean (linux + windows-gnu), nextest 264/264 (incl. docs flag drift test), node 47/47
+2026-10-14 · Milestone 3 reviewed · ad123cd, 5abc9be, 562408b · release tag filter, same-repo bot PRs, token fallback; relative local sources resolved from the repo root (found in a manual end-to-end run); nextest 273/273, node 48/48, actionlint+shellcheck clean
 
 ## Notes for later tasks
 
@@ -39,6 +40,15 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 <!-- Task, what is missing, exact action a human must take. -->
 
+- GitHub org / repo name (decide first; blocks the items below): the spec, README, action README
+  and npm defaults say `keelstack/splice` (Action `keelstack/splice/action@v1`), but this repo is
+  `keelstackhq/splice`. Either move the repo to `keelstack/splice`, or change the docs and spec
+  §12–§13 (and the fallback in `scripts/npm-stage.mjs` / `npm/splice/package.json`) to
+  `keelstackhq`. npm provenance already follows `GITHUB_REPOSITORY`.
+- Repo visibility: `npm publish --provenance` needs a public repo. Make it public before pushing
+  the `v0.1.0` tag.
+- CI pin check: on the first CI run, confirm the `taiki-e/install-action` step installs both
+  `nextest` and `actionlint` (it is pinned to the `nextest` tag's sha with `tool: nextest,actionlint`).
 - Contract sign-off (does not block the build): hull must agree to spec §10 items 10–27 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
@@ -66,4 +76,51 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Status
 
-<!-- Written when the build loop stops. -->
+Written 2026-10-14 when the build loop stopped. All three plans are done except plan 03 Task 2
+Step 4 (the release dry run on GitHub), which needs the repo on GitHub; each milestone was
+reviewed as a whole and its findings fixed.
+
+**What works (verified locally):**
+- `splice new | add | update | check | diff | explain`, all with `--json` (exactly one JSON object
+  on stdout) and the contract exit codes (0 ok, 1 drift/conflict/update available, 2 usage,
+  3 template/env error).
+- Templates from a local git path or any git URL (`gh:`, https, ssh, file), `//subdir`, tags,
+  `--ref`, `--pre`; a cache by URL and commit; `check --offline` makes no git call.
+- The subset gate + MiniJinja renderer with a 14-case conformance corpus; path safety (no `..`,
+  absolute, drive, `.git`, Windows reserved names, symlinks, lock path).
+- Ownership classes: owned (drift refuses unless `--force`), shared (text diff3 and
+  json/yaml/toml key-path merges, CRLF kept), seed (never modified).
+- Migrations (`[[step]]`, `[[remove]]`), lock written last and atomically, post commands, restore
+  advice only for a verified-clean tree, refusal to merge over leftover markers.
+- Golden v1 → v2 update test covering every row of the plan's fixture table.
+- CI and release workflows, npm launcher + platform packages (installed and run through pnpm
+  10.28 locally), the update-bot composite Action (stub-tested), `skills/splice/SKILL.md`, README.
+- Tests: 273 Rust (nextest), 48 Node; clippy clean on Linux and `x86_64-pc-windows-gnu`;
+  actionlint + shellcheck clean; no openssl/rustls/native-tls in the dependency tree.
+
+**Not verified:** anything that runs on GitHub or npm (CI runs, release builds on macOS/Windows/
+arm64 runners, npm publish, the bot opening real PRs). The Windows code paths compile and lint
+but have not run on Windows.
+
+**Try it:**
+
+```bash
+cargo build --release
+T=$(mktemp -d)
+cp -r tests/fixtures/template/v1 "$T/tpl"
+(cd "$T/tpl" && git init -q && git add -A && git commit -qm v1 && git tag v1.0.0)
+cd "$T" && /path/to/splice/target/release/splice new ./tpl demo --piece app:web --data project=demo --yes
+cd demo && git add -A && git commit -qm init
+splice explain package.json --json   # class, piece, glob
+splice check --json                  # exit 0
+# make a v2: copy tests/fixtures/template/v2 over tpl, commit, tag v2.0.0, then:
+splice diff                          # patches, writes nothing
+splice update --json                 # exit 1: ci.yml conflict markers (the fixture's planned conflict)
+```
+
+The test suite: `cargo nextest run`; `node --test 'scripts/**/*.test.mjs'
+'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'`.
+
+**Blocked items for you:** see "Blocked" above, in this order: org/repo name → contract sign-off
+with hull (independent) → make the repo public → open a PR to run CI and require `ci-ok` →
+release dry run → npm org + `NPM_TOKEN` + tag `v0.1.0` → bot selftest and sandbox run → tag `v1`.
