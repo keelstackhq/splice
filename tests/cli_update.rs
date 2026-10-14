@@ -80,21 +80,98 @@ fn no_work_tree_refused_unless_allow_dirty() {
         .success();
 }
 
-#[test]
-fn dir_inside_a_parent_repo_is_not_a_work_tree() {
-    let tpl = template_repo(&["v1", "v2"]);
+/// A project in `sub` of a committed parent repo (a monorepo).
+fn monorepo(tpl: &TempDir) -> TempDir {
     let parent = tempfile::tempdir().unwrap();
     git(parent.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(parent.path().join("other.txt"), "o\n").unwrap();
     let sub = parent.path().join("sub");
     splice_cmd()
         .args(["new", s(tpl.path()), s(&sub), "--ref", "v1.0.0"])
         .args(["--data", "project=demo", "--yes"])
         .assert()
         .success();
+    git_commit_all(parent.path(), "all");
+    parent
+}
+
+#[test]
+fn project_in_a_monorepo_subdir_updates() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let parent = monorepo(&tpl);
+    let sub = parent.path().join("sub");
+    splice_cmd()
+        .args(["update", "-C", s(&sub), "--yes"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn dirt_inside_the_subdir_refuses_but_outside_is_allowed() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let parent = monorepo(&tpl);
+    let sub = parent.path().join("sub");
+    std::fs::write(parent.path().join("other.txt"), "changed\n").unwrap();
+    std::fs::write(parent.path().join("untracked.txt"), "u\n").unwrap();
+    std::fs::write(sub.join("x"), "x").unwrap();
     splice_cmd()
         .args(["update", "-C", s(&sub), "--yes"])
         .assert()
         .code(2);
+    std::fs::remove_file(sub.join("x")).unwrap();
+    splice_cmd()
+        .args(["update", "-C", s(&sub), "--yes"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn data_is_validated_even_when_up_to_date() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, "v2.0.0", &[]);
+    for k in ["scope=x", "nope=1"] {
+        splice_cmd()
+            .args(["update", "-C", s(repo.path()), "--yes", "--data", k])
+            .assert()
+            .code(2);
+    }
+}
+
+#[test]
+fn lock_at_a_newer_prerelease_is_up_to_date() {
+    let tpl = template_repo(&["v1", "v2"]);
+    tag(&tpl, "v3.0.0-rc.1");
+    let repo = new_repo(&tpl, "v3.0.0-rc.1", &[]);
+    let before = lock_bytes(&repo);
+    let out = splice_cmd()
+        .args(["update", "-C", s(repo.path()), "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(json(out)["messages"].to_string().contains("up to date"));
+    assert_eq!(lock_bytes(&repo), before);
+    splice_cmd()
+        .args(["update", "-C", s(repo.path()), "--yes", "--to", "1.0.0"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn lock_from_a_ref_says_so_and_suggests_to() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, "main", &[]);
+    let out = splice_cmd()
+        .args(["update", "-C", s(repo.path()), "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let m = json(out)["messages"].to_string();
+    assert!(m.contains("ref") && m.contains("--to"), "{m}");
+    assert!(!m.contains("moved"), "{m}");
 }
 
 #[test]

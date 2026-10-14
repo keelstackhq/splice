@@ -131,22 +131,17 @@ impl Git {
         Ok(())
     }
 
-    /// `Some(true)` when the work tree rooted at `repo` has no changes; `None` when `repo` is not
-    /// the top level of a git work tree (a directory inside a parent's work tree does not count).
+    /// `Some(true)` when `repo` has no changes; `None` when `repo` is not inside a git work tree.
+    /// Only changes at or below `repo` count, so a project in a monorepo subdirectory is not
+    /// blocked by unrelated changes elsewhere in the repository.
     pub fn is_clean(repo: &Path) -> Result<Option<bool>> {
-        let mut c = base(None);
-        c.arg("-C").arg(repo).args(["rev-parse", "--show-toplevel"]);
-        let top = match c.output() {
-            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-            Ok(_) => return Ok(None),
-            Err(e) => return Err(SpliceError::Env(format!("could not run git: {e}"))),
-        };
-        match (Path::new(&top).canonicalize(), repo.canonicalize()) {
-            (Ok(a), Ok(b)) if a == b => {}
-            _ => return Ok(None),
+        if !Self::is_inside_work_tree(repo)? {
+            return Ok(None);
         }
         let mut c = base(None);
-        c.arg("-C").arg(repo).args(["status", "--porcelain"]);
+        c.arg("-C")
+            .arg(repo)
+            .args(["status", "--porcelain", "--", "."]);
         Ok(Some(run(c)?.trim().is_empty()))
     }
 

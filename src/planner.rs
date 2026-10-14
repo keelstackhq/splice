@@ -12,7 +12,6 @@ use crate::render::{PieceInstance, RenderedTree, Renderer};
 use indexmap::IndexMap;
 use minijinja::Value;
 use std::collections::BTreeMap;
-use std::io;
 use std::path::Path;
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -37,10 +36,10 @@ impl Disk {
     /// Read every path under `repo` (`None` when absent). Never follows a symlink: a symlink at
     /// a path or on its way (or a directory where a file belongs) is an error, so no content
     /// from outside the repo can enter a plan.
-    pub fn snapshot<'a>(repo: &Path, paths: impl Iterator<Item = &'a str>) -> io::Result<Disk> {
+    pub fn snapshot<'a>(repo: &Path, paths: impl Iterator<Item = &'a str>) -> Result<Disk> {
         let mut files = BTreeMap::new();
         for p in paths {
-            crate::ops::check_target(repo, p).map_err(|e| io::Error::other(e.to_string()))?;
+            crate::ops::check_target(repo, p)?;
             files.insert(p.to_string(), read_opt(repo, p)?);
         }
         Ok(Disk { files })
@@ -1023,6 +1022,7 @@ mod tests {
         for p in ["link", "dirlink/f", "dangling"] {
             let e = Disk::snapshot(repo.path(), [p].into_iter()).unwrap_err();
             assert!(e.to_string().contains("symlink"), "{p}: {e}");
+            assert_eq!(e.exit_code(), 3);
         }
     }
 

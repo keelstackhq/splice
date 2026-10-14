@@ -139,6 +139,19 @@ fn case_insensitive_directory_prefix_collision_is_error() {
 }
 
 #[test]
+fn file_and_directory_names_equal_ignoring_case_is_error() {
+    let d = temp_template();
+    let files = d.path().join("pieces/base/files");
+    std::fs::create_dir_all(files.join("ZZ")).unwrap();
+    std::fs::write(files.join("ZZ/x"), "x\n").unwrap();
+    std::fs::write(files.join("zz"), "z\n").unwrap();
+    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(m.contains("ZZ") && m.contains("zz"), "{m}");
+}
+
+#[test]
 fn binary_shared_is_error() {
     let d = temp_template();
     let p = d.path().join("pieces/base/piece.toml");

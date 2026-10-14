@@ -52,7 +52,8 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 
-`--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. `--piece ID:NAME`
+`--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var; for `update` it
+sets a var that is new in the target (template var, or piece var for every instance lacking it). `--piece ID:NAME`
 names a `multiple` instance.
 
 Human output is terse: one line per change (`create  apps/web/package.json  shared`), then one
@@ -378,6 +379,23 @@ into the contract at its next `format` bump.
     lock warnings are messages, as in `add`.
 22. `[[remove]]` paths render with `template.version` = the lock (base) version, since they name
     files rendered at that version; `pieces` and `template` are in scope with or without `piece`.
+23. `update` details the spec leaves open: (a) the dirty-tree check comes first, so a repo at the
+    target version still needs a clean tree (or `--allow-dirty`) before "up to date". "A git work
+    tree" means `-C` is anywhere inside one (a project in a monorepo subdirectory is fine), and
+    only changes at or below `-C` count (`git status --porcelain -- .`), so unrelated changes
+    elsewhere in the repo do not block; (b) `--data K=V` may only name a var that is new in the
+    target (template var, or piece var of an instance lacking it); any other key is exit 2, also
+    when the repo is already up to date, since lock values are kept. A new piece var given with
+    `--data` applies to every instance that lacks it (as in `new`); prompting asks once per
+    instance; (c) `--to` accepts `1.2.3` or `v1.2.3`; (d) owned-drift refusal is a report with no
+    changes, one message per file, and a last message `nothing was written`; (e) lock and template
+    warnings are report messages, before any other message; (f) an unsafe path (symlink or
+    directory in the way) found while reading the disk is exit 3 with `unsafe path: …`, before any
+    write; (g) a moved tag (same version, other commit) proceeds with a message naming both
+    commits; (h) a bare `update` (no `--to`) whose latest stable tag is older than the lock (a lock
+    at a newer prerelease) is "up to date", exit 0; only an explicit `--to` below the lock is a
+    downgrade (exit 2); (i) a lock from `new --ref` has version `0.0.0+g<sha>`: `update` says the
+    lock came from a ref and suggests `--to`, instead of the moved-tag message.
 
 ## 11. Testing
 
@@ -443,14 +461,3 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
-23. `update` details the spec leaves open: (a) the dirty-tree check comes first, so a repo at the
-    target version still needs a clean tree (or `--allow-dirty`) before "up to date"; "a git work
-    tree" means `-C` is itself the top level (`git rev-parse --show-toplevel`), a directory inside a
-    parent's work tree is not one; (b) `--data K=V` may only name a var that is new in the target
-    (template var, or piece var of an instance lacking it); any other key is exit 2, since lock
-    values are kept; a new piece var is asked once per instance; (c) `--to` accepts `1.2.3` or
-    `v1.2.3`; (d) owned-drift refusal is a report with no changes, one message per file, and a last
-    message `nothing was written`; (e) lock and template warnings are report messages, before any
-    other message; (f) an unsafe path (symlink or directory in the way) found while reading the
-    disk is exit 3 with `unsafe path: …`, before any write; (g) a moved tag (same version, other
-    commit) proceeds with a message naming both commits.

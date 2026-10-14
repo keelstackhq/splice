@@ -18,7 +18,6 @@ use crate::vars::{VarSource, interactive, resolve_vars};
 use indexmap::IndexMap;
 use semver::Version;
 use std::collections::BTreeSet;
-use std::path::Path;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -132,16 +131,37 @@ fn resolve_target_vars(
     Ok((vars, instances))
 }
 
-/// `Disk::snapshot` wraps the unsafe-path error in an io error; give it back its exit code.
-fn snapshot(repo: &Path, paths: &BTreeSet<&str>) -> Result<Disk> {
-    Disk::snapshot(repo, paths.iter().copied()).map_err(|e| {
-        let msg = e.to_string();
-        if msg.starts_with("unsafe path:") {
-            SpliceError::Template(msg)
-        } else {
-            SpliceError::Io(e)
-        }
+/// Nothing is new when the lock already is the target, so any `--data` key is an error.
+fn up_to_date(
+    lock: Lock,
+    template: Template,
+    data: &IndexMap<String, String>,
+    mut messages: Vec<String>,
+    note: String,
+) -> Result<Prepared> {
+    if let Some(k) = data.keys().next() {
+        return Err(usage(format!(
+            "--data `{k}` does not name a var that is new in the target; \
+             existing values come from .splice/lock.toml"
+        )));
+    }
+    messages.push(note);
+    let from = lock.template.version.clone();
+    Ok(Prepared {
+        plan: Plan::default(),
+        instances: lock.instances(),
+        lock_new: lock,
+        to: from.clone(),
+        from,
+        template,
+        up_to_date: true,
+        messages,
     })
+}
+
+/// A lock made with `new --ref` (not a tag) has version `0.0.0+g<sha>`.
+fn from_ref(v: &Version) -> bool {
+    v.major == 0 && v.minor == 0 && v.patch == 0 && v.build.as_str().starts_with('g')
 }
 
 /// Spec §8.3 steps 1-6 (the dirty check is `run`'s): resolve the target, vars, base and theirs,
@@ -170,29 +190,36 @@ pub fn prepare(
     };
     let from = lock.template.version.clone();
     if target.version < from {
-        return Err(usage(format!(
-            "target version {} is older than the locked version {from}; splice does not downgrade",
+        if to.is_some() {
+            return Err(usage(format!(
+                "target version {} is older than the locked version {from}; splice does not \
+                 downgrade",
+                target.version
+            )));
+        }
+        // e.g. a lock at a prerelease newer than the latest stable tag
+        let note = format!(
+            "up to date at {from} (newer than the latest stable release {})",
             target.version
-        )));
+        );
+        return up_to_date(lock, base_template, data, messages, note);
     }
     if target.version == from {
         if target.commit == lock.template.commit {
-            messages.push(format!("up to date at {from}"));
-            return Ok(Prepared {
-                plan: Plan::default(),
-                lock_new: lock.clone(),
-                from: from.clone(),
-                to: from,
-                template: base_template,
-                instances: lock.instances(),
-                up_to_date: true,
-                messages,
-            });
+            let note = format!("up to date at {from}");
+            return up_to_date(lock, base_template, data, messages, note);
         }
         messages.push(format!(
             "tag v{from} moved from {} to {}; re-rendering at the new commit",
             &lock.template.commit[..7.min(lock.template.commit.len())],
             &target.commit[..7.min(target.commit.len())]
+        ));
+    } else if from_ref(&from) {
+        messages.push(format!(
+            "the lock came from a ref ({}), not a release; updating to {}; \
+             pass --to VERSION to choose another release",
+            &lock.template.commit[..7.min(lock.template.commit.len())],
+            target.version
         ));
     }
 
@@ -227,7 +254,7 @@ pub fn prepare(
     paths.extend(base.keys().map(String::as_str));
     paths.extend(theirs.keys().map(String::as_str));
     paths.extend(removes.iter().map(String::as_str));
-    let disk = snapshot(repo, &paths)?;
+    let disk = Disk::snapshot(repo, paths.iter().copied())?;
 
     let plan = plan(&PlanInput {
         base: &base,
