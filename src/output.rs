@@ -76,8 +76,10 @@ impl Report {
         for c in &r.changes {
             println!("{:<8} {}  {}", lower(&c.action), c.path, lower(&c.class));
         }
+        let n = r.changes.len();
+        println!("{n} change{}", if n == 1 { "" } else { "s" });
         for m in &r.messages {
-            println!("{m}");
+            eprintln!("{m}");
         }
     }
 }

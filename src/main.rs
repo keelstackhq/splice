@@ -7,13 +7,28 @@ fn main() {
     let cli = match Cli::try_parse() {
         Ok(c) => c,
         Err(e) => {
+            use clap::error::ErrorKind;
+            if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) {
+                e.exit();
+            }
             let args: Vec<String> = std::env::args().skip(1).collect();
-            if args.iter().any(|a| a == "--json") {
-                let command = args
-                    .iter()
-                    .find(|a| !a.starts_with('-') && SUBCOMMANDS.contains(&a.as_str()))
-                    .cloned()
-                    .unwrap_or_default();
+            let mut json = false;
+            let mut command = String::new();
+            let mut it = args.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--" => break,
+                    "-C" => {
+                        it.next();
+                    }
+                    "--json" | "--json=true" => json = true,
+                    x if command.is_empty() && SUBCOMMANDS.contains(&x) => {
+                        command = x.to_string();
+                    }
+                    _ => {}
+                }
+            }
+            if json {
                 let mut r = Report::new(&command);
                 r.ok = false;
                 r.msg(e.render().to_string().trim().to_string());
@@ -24,12 +39,7 @@ fn main() {
         }
     };
     let json = cli.global.json;
-    let command = format!("{:?}", cli.command);
-    let command = command
-        .split(['(', ' '])
-        .next()
-        .unwrap_or("")
-        .to_lowercase();
+    let command = cli.command.name();
     match splice::run(cli) {
         Ok(report) => report.print(json),
         Err(e) => {
@@ -40,18 +50,13 @@ fn main() {
                     r
                 }
                 other => {
-                    let mut r = Report::new(&command);
+                    let mut r = Report::new(command);
                     r.ok = false;
                     r.msg(other.to_string());
                     r
                 }
             };
-            if json {
-                report.print(true);
-            } else {
-                report.print(false);
-                eprintln!("error: {}", report.messages.join("; "));
-            }
+            report.print(json);
             std::process::exit(code);
         }
     }

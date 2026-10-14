@@ -39,6 +39,19 @@ pub enum Command {
     Explain(ExplainArgs),
 }
 
+impl Command {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Command::New(_) => "new",
+            Command::Add(_) => "add",
+            Command::Update(_) => "update",
+            Command::Check(_) => "check",
+            Command::Diff(_) => "diff",
+            Command::Explain(_) => "explain",
+        }
+    }
+}
+
 pub const SUBCOMMANDS: &[&str] = &["new", "add", "update", "check", "diff", "explain"];
 
 #[derive(Debug, Args)]
