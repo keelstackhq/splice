@@ -197,6 +197,26 @@ lock state, theirs = render with the new instance. The result goes through the s
 Milestone 1 ships a reduced planner (replace only unedited files, report the rest); milestone 2
 switches `add` to the full planner.
 
+Milestone 1 details (the reduced planner, `ops::add::plan_reduced`), each path in base or theirs:
+- Invalid input is exit 2 with tree and lock untouched: no lock, unknown piece, the base piece, a
+  `multiple = false` piece already present or given `--name`, a missing `requires`, a duplicate
+  (id, name), an unsafe name, a `--data` key that is not a var of the added piece (template vars
+  come from the lock and cannot be changed by `add`).
+- New path: create (a seed only if absent; an existing seed is `skip`). Existing file with other
+  bytes: `conflict`, not written.
+- In both with a changed render: replaced (`update`) when the disk sha equals the lock sha or the
+  bytes already equal theirs (then omitted); otherwise `conflict`, not written. `--force` replaces
+  an edited owned/shared file. A file the user deleted: shared is `skip`, owned is `conflict`
+  (recreated with `--force`). Seeds are never modified (`skip` when their render changed).
+- Only in base: deleted when unedited, else `conflict`. Unchanged files are omitted from the report.
+- Every path is checked for symlinks and directories first (exit 3, §10 item 19), and the lock
+  records the theirs render's hashes even when conflicts remain, so a kept edit shows as drift.
+- Conflicts: each gets a message `<path>: edited locally; …`; the other files and the lock are
+  still written, exit 1, `[[post]]` is skipped. Otherwise `[[post]]` of the added piece with
+  `when` ∋ `add` runs after the lock. `add` has no dirty-tree check (no `--allow-dirty` flag in
+  §3): the reduced planner never overwrites an edit without `--force`; the full planner (plan 02)
+  adds the §8.3 check. Unknown lock keys are reported as messages.
+
 ### 8.3 `update`
 
 1. Read the lock. Refuse a dirty tree (`git status --porcelain` not empty) with exit 2 unless

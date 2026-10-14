@@ -1,0 +1,286 @@
+mod common;
+use common::{splice_cmd, template_repo, tree_snapshot};
+use splice::lock::Lock;
+use std::path::Path;
+use tempfile::TempDir;
+
+fn s(p: &Path) -> &str {
+    p.to_str().unwrap()
+}
+
+/// A repo created by `splice new` from fixture v1 (base only unless `extra` adds pieces).
+fn new_repo(extra: &[&str]) -> (TempDir, TempDir) {
+    let tpl = template_repo(&["v1"]);
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", s(tpl.path()), s(repo.path())])
+        .args(extra)
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    (tpl, repo)
+}
+
+fn read(repo: &TempDir, rel: &str) -> String {
+    std::fs::read_to_string(repo.path().join(rel)).unwrap()
+}
+
+fn lock_bytes(repo: &TempDir) -> Vec<u8> {
+    std::fs::read(repo.path().join(".splice/lock.toml")).unwrap()
+}
+
+fn json(out: Vec<u8>) -> serde_json::Value {
+    serde_json::from_slice(&out).unwrap()
+}
+
+#[test]
+fn add_second_app_updates_pieces_dependent_files() {
+    let (_tpl, repo) = new_repo(&[]);
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "admin", "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert_eq!(v["command"], "add");
+    assert_eq!(v["ok"], true);
+    assert!(repo.path().join("apps/admin/package.json").exists());
+    assert!(repo.path().join("only-with-app.txt").exists());
+    assert_eq!(read(&repo, "apps.txt"), "base\napp\n");
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(
+        lock.pieces
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>(),
+        ["base", "admin"]
+    );
+    assert!(lock.files.contains_key("apps/admin/package.json"));
+    assert!(lock.files.contains_key("only-with-app.txt"));
+    // seeds are created but never locked
+    assert!(repo.path().join("apps/admin/src/main.ts").exists());
+    assert!(!lock.files.contains_key("apps/admin/src/main.ts"));
+    let changes = v["changes"].as_array().unwrap();
+    let act = |p: &str| {
+        changes
+            .iter()
+            .find(|c| c["path"] == p)
+            .map(|c| c["action"].as_str().unwrap().to_string())
+    };
+    assert_eq!(act("apps.txt").as_deref(), Some("update"));
+    assert_eq!(act("only-with-app.txt").as_deref(), Some("create"));
+    assert_eq!(act("apps/admin/package.json").as_deref(), Some("create"));
+    // unchanged files are not reported
+    assert_eq!(act("package.json"), None);
+}
+
+#[test]
+fn add_second_instance_of_multiple_piece_and_dependent_piece() {
+    let (_tpl, repo) = new_repo(&["--piece", "app:web"]);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "admin", "--yes"])
+        .assert()
+        .success();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "lib", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(read(&repo, "apps.txt"), "base\napp\nlib\n");
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(lock.pieces.len(), 4);
+}
+
+fn assert_usage_untouched(repo: &TempDir, args: &[&str]) {
+    let before_tree = tree_snapshot(repo.path());
+    let before_lock = lock_bytes(repo);
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(args)
+        .args(["--yes", "--json"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(json(out)["ok"], false);
+    assert_eq!(tree_snapshot(repo.path()), before_tree);
+    assert_eq!(lock_bytes(repo), before_lock);
+}
+
+#[test]
+fn duplicate_name_and_single_piece_twice_are_usage() {
+    let (_tpl, repo) = new_repo(&[]);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "web", "--yes"])
+        .assert()
+        .success();
+    assert_usage_untouched(&repo, &["add", "app", "--name", "web"]);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "lib", "--yes"])
+        .assert()
+        .success();
+    assert_usage_untouched(&repo, &["add", "lib"]);
+}
+
+#[test]
+fn other_usage_errors_leave_everything_untouched() {
+    let (_tpl, repo) = new_repo(&[]);
+    assert_usage_untouched(&repo, &["add", "nope"]);
+    assert_usage_untouched(&repo, &["add", "base"]);
+    assert_usage_untouched(&repo, &["add", "lib"]); // requires app
+    assert_usage_untouched(&repo, &["add", "app", "--name", "../x"]);
+    assert_usage_untouched(&repo, &["add", "app", "--name", "Bad Name"]); // pattern
+    assert_usage_untouched(&repo, &["add", "app", "--data", "bogus=1"]);
+    assert_usage_untouched(&repo, &["add", "app", "--data", "project=other"]); // template var
+}
+
+#[test]
+fn non_multiple_piece_cannot_be_named() {
+    let (_tpl, repo) = new_repo(&["--piece", "app"]);
+    assert_usage_untouched(&repo, &["add", "lib", "--name", "x"]);
+}
+
+#[test]
+fn edited_file_reported_not_overwritten() {
+    let (_tpl, repo) = new_repo(&[]);
+    std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--json"])
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert_eq!(v["ok"], false);
+    assert_eq!(read(&repo, "apps.txt"), "mine\n");
+    let c = v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["path"] == "apps.txt")
+        .unwrap();
+    assert_eq!(c["action"], "conflict");
+    assert_eq!(c["class"], "owned");
+    assert!(
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m.as_str().unwrap().contains("apps.txt")
+                && m.as_str().unwrap().contains("edited locally"))
+    );
+    // the rest and the lock were written
+    assert!(repo.path().join("apps/web/package.json").exists());
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(lock.pieces.len(), 2);
+}
+
+#[test]
+fn force_replaces_edited_file() {
+    let (_tpl, repo) = new_repo(&[]);
+    std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--force", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(read(&repo, "apps.txt"), "base\napp\n");
+}
+
+#[test]
+fn edited_seed_is_never_touched() {
+    let (_tpl, repo) = new_repo(&["--piece", "app:web"]);
+    std::fs::write(repo.path().join("README.md"), "mine\n").unwrap();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "admin", "--yes"])
+        .assert()
+        .success();
+    assert_eq!(read(&repo, "README.md"), "mine\n");
+}
+
+#[test]
+fn add_without_lock_is_usage() {
+    let d = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .current_dir(d.path())
+        .args(["add", "app", "--yes"])
+        .assert()
+        .code(2);
+    assert!(!d.path().join(".splice").exists());
+}
+
+#[test]
+fn dash_c_selects_the_repo() {
+    let (_tpl, repo) = new_repo(&[]);
+    splice_cmd()
+        .args(["-C", s(repo.path()), "add", "app", "--yes"])
+        .assert()
+        .success();
+    assert!(repo.path().join("apps/web/package.json").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_in_the_way_is_template_error_and_nothing_is_written() {
+    let (_tpl, repo) = new_repo(&[]);
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), repo.path().join("apps")).unwrap();
+    let before_lock = lock_bytes(&repo);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--json"])
+        .assert()
+        .code(3);
+    assert_eq!(lock_bytes(&repo), before_lock);
+    assert!(!repo.path().join("only-with-app.txt").exists());
+    assert_eq!(read(&repo, "apps.txt"), "base\n");
+    assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn unknown_lock_keys_surface_as_messages() {
+    let (_tpl, repo) = new_repo(&[]);
+    let p = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&p).unwrap();
+    std::fs::write(&p, format!("future_key = 1\n{text}")).unwrap();
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert!(
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m.as_str().unwrap().contains("future_key")),
+        "{v}"
+    );
+}
+
+#[test]
+fn post_runs_for_the_added_piece_only_when_not_disabled() {
+    // base declares a post command for new/update only, so `add` runs none
+    let (_tpl, repo) = new_repo(&[]);
+    std::fs::remove_file(repo.path().join(".post-ran")).ok();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--no-post"])
+        .assert()
+        .success();
+    assert!(!repo.path().join(".post-ran").exists());
+}

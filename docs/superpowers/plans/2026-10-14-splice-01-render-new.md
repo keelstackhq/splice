@@ -457,7 +457,7 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
 
 Reduced rules: new path → create (seed: only if absent); path in both with changed render → replace when disk sha = lock sha (owned/shared) else `conflict` without writing (message: "edited locally; run `splice update` after milestone 2 or merge by hand"); seed → skip; path only in base → delete when unedited. Any conflict → exit 1 after writing the rest and the lock.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn add_second_app_updates_pieces_dependent_files() {
@@ -476,10 +476,10 @@ Reduced rules: new path → create (seed: only if absent); path in both with cha
 #[test] fn add_without_lock_is_usage() { /* empty dir → exit 2 */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement** spec §8.2 with `plan_reduced`; base and theirs both render at the lock commit.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: splice add with reduced planner`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement** spec §8.2 with `plan_reduced`; base and theirs both render at the lock commit.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: splice add with reduced planner`
 
 ---
 
