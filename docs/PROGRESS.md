@@ -32,6 +32,9 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   lock), as `SpliceError::Partial` does after it; extend the case-insensitive collision check to
   directory prefixes (`Apps/x` vs `apps/y`).
 
+- plan 02 Task 4 (`render_removes`): re-check each rendered `[[remove]]` path with the
+  `paths.rs` rules, and reject a `piece` id that names no piece in the template (exit 3).
+
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
