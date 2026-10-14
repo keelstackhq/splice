@@ -67,3 +67,38 @@ fn missing_subdir_or_commit_is_template_error() {
     assert_eq!(e.exit_code(), 3);
     assert!(e.to_string().contains(sha), "{e}");
 }
+
+#[test]
+fn ref_tag_and_non_semver_tags() {
+    let repo = template_repo(&["v1"]);
+    for t in ["latest", "1.0.0", "vfoo"] {
+        tag(&repo, t);
+    }
+    let src = TemplateSource::parse(repo.path().to_str().unwrap()).unwrap();
+    let f = Fetcher::new(tempdir().unwrap().keep());
+    assert_eq!(
+        f.resolve(&src, Some("v1.0.0"), false).unwrap().version,
+        Version::new(1, 0, 0)
+    );
+    assert_eq!(
+        f.available_versions(&src, true).unwrap(),
+        vec![Version::new(1, 0, 0)]
+    );
+    let v = f.resolve(&src, Some("latest"), false).unwrap().version;
+    assert!(v.to_string().starts_with("0.0.0+g"), "{v}");
+}
+
+#[test]
+fn checkout_rejects_non_commit_ids() {
+    let repo = template_repo(&["v1"]);
+    let f = Fetcher::new(tempdir().unwrap().keep());
+    let src = TemplateSource::parse(repo.path().to_str().unwrap()).unwrap();
+    for bad in [
+        "../x",
+        "abcdef1",
+        "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+    ] {
+        let e = f.checkout(&src, bad, Version::new(1, 0, 0)).unwrap_err();
+        assert_eq!(e.exit_code(), 3, "{bad}");
+    }
+}

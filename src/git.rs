@@ -90,17 +90,27 @@ impl Git {
         }
         c.args(["rev-parse", "--verify", "--quiet"])
             .arg(format!("{rev}^{{commit}}"));
-        run(c).map(|s| s.trim().to_string())
+        let out = c
+            .output()
+            .map_err(|e| SpliceError::Env(format!("could not run git: {e}")))?;
+        if !out.status.success() {
+            return Err(SpliceError::Template(format!("revision `{rev}` not found")));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     }
 
     /// Export the tree of `commit` into `dest` (created atomically via rename).
     pub fn extract_tree(git_dir: &Path, commit: &str, dest: &Path) -> Result<()> {
         let parent = dest.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(parent)?;
-        if Self::rev_parse(git_dir, commit).is_err() {
-            return Err(SpliceError::Template(format!(
-                "template commit {commit} is missing from the repository (force-pushed?)"
-            )));
+        match Self::rev_parse(git_dir, commit) {
+            Ok(_) => {}
+            Err(SpliceError::Template(_)) => {
+                return Err(SpliceError::Template(format!(
+                    "template commit {commit} is missing from the repository (force-pushed?)"
+                )));
+            }
+            Err(e) => return Err(e),
         }
         let work = tempfile::tempdir_in(parent)?;
         let idx = tempfile::tempdir()?;

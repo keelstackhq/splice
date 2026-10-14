@@ -100,18 +100,17 @@ impl Fetcher {
                 ))
             })?,
             Some(r) => {
+                let mirror = self.sync(src)?;
+                let tag_ref = format!("refs/tags/{r}");
+                let (commit, is_tag) = match Git::rev_parse(&mirror, &tag_ref) {
+                    Ok(c) => (c, true),
+                    Err(SpliceError::Template(_)) => (Git::rev_parse(&mirror, r)?, false),
+                    Err(e) => return Err(e),
+                };
                 let tag_version = r
                     .strip_prefix('v')
                     .and_then(|v| Version::parse(v).ok())
-                    .filter(|_| Self::url_tags_contain(src, r));
-                let mirror = self.sync(src)?;
-                let commit = Git::rev_parse(&mirror, r).map_err(|e| match e {
-                    SpliceError::Usage(_) => e,
-                    _ => SpliceError::Template(format!(
-                        "ref `{r}` not found in template source `{}`",
-                        src.spec
-                    )),
-                })?;
+                    .filter(|_| is_tag);
                 let version = match tag_version {
                     Some(v) => v,
                     None => Version::parse(&format!("0.0.0+g{}", &commit[..7]))
@@ -121,12 +120,6 @@ impl Fetcher {
             }
         };
         self.checkout(src, &commit, version)
-    }
-
-    fn url_tags_contain(src: &TemplateSource, tag: &str) -> bool {
-        Git::ls_remote_tags(&Self::url(src))
-            .map(|t| t.iter().any(|(n, _)| n == tag))
-            .unwrap_or(false)
     }
 
     pub fn resolve_version(
@@ -154,7 +147,8 @@ impl Fetcher {
         commit: &str,
         version: Version,
     ) -> Result<ResolvedTemplate> {
-        if commit.len() < 7 || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+        let hex = |b: u8| b.is_ascii_digit() || (b'a'..=b'f').contains(&b);
+        if !matches!(commit.len(), 40 | 64) || !commit.bytes().all(hex) {
             return Err(SpliceError::Template(format!(
                 "invalid template commit `{commit}`"
             )));
