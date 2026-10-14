@@ -313,10 +313,15 @@ into the contract at its next `format` bump.
 13. `{% else %}` is valid only inside `if`; `elif` after `else` is rejected. A comment may not
     start or end with `-` or `+` (whitespace control).
 14. `ws` inside tags is optional space, tab, CR or LF, also around `|`.
-15. A symlink anywhere under a piece's `files/` (or `files/` itself) is a template error (exit 3),
-    and a `//subdir` that resolves through a symlink outside the extracted tree is rejected at
-    fetch; rendering never reads outside the template root. Non-`.jinja` files that are empty
-    are still written (only rendered files are dropped when blank).
+15. A symlink anywhere under a piece's `files/` (or `files/` itself), or as `splice.toml`,
+    `piece.toml`, `pieces/`, a `pieces/<id>` dir, `migrations/` or a migration file, is a template
+    error (exit 3). A `//subdir` that resolves through a symlink outside the extracted tree is
+    rejected at fetch. Rendering never reads outside the template root.
+16. A non-`.jinja` file that is empty is still written; only rendered files are dropped when blank.
+17. Each rendered path segment must be non-empty, not `.`/`..`, free of `/`, `\`, `:` and ASCII
+    control characters, not end in `.` or space, and not be a Windows reserved name (`CON`, `PRN`,
+    `AUX`, `NUL`, `COM1-9`, `LPT1-9`, case-insensitive, with or without extension). The lock path
+    is reserved case-insensitively.
 
 ## 11. Testing
 

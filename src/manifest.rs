@@ -139,7 +139,19 @@ fn bad(file: &str, msg: impl std::fmt::Display) -> SpliceError {
     SpliceError::Template(format!("{file}: {msg}"))
 }
 
+/// Symlinks in a template could lead reads outside its root: exit 3.
+fn reject_symlink(path: &Path, label: &str) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => Err(bad(
+            label,
+            "is a symlink; symlinks are not allowed in templates",
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn read_toml<T: serde::de::DeserializeOwned>(path: &Path, label: &str) -> Result<T> {
+    reject_symlink(path, label)?;
     let text =
         std::fs::read_to_string(path).map_err(|e| bad(label, format!("cannot read ({e})")))?;
     toml::from_str(&text).map_err(|e| bad(label, e.to_string().trim_end()))
@@ -343,9 +355,14 @@ impl Template {
 
         let mut dirs = Vec::new();
         let pieces_dir = root.join("pieces");
+        reject_symlink(&pieces_dir, "pieces")?;
         if pieces_dir.is_dir() {
             for e in std::fs::read_dir(&pieces_dir)? {
                 let e = e?;
+                reject_symlink(
+                    &e.path(),
+                    &format!("pieces/{}", e.file_name().to_string_lossy()),
+                )?;
                 if e.path().is_dir() {
                     dirs.push(e.file_name().to_string_lossy().into_owned());
                 }
@@ -353,9 +370,12 @@ impl Template {
         }
         dirs.sort();
         let mig_dir = root.join("migrations");
+        reject_symlink(&mig_dir, "migrations")?;
         if mig_dir.is_dir() {
             for e in std::fs::read_dir(&mig_dir)? {
-                let name = e?.file_name().to_string_lossy().into_owned();
+                let e = e?;
+                let name = e.file_name().to_string_lossy().into_owned();
+                reject_symlink(&e.path(), &format!("migrations/{name}"))?;
                 let ok = name
                     .strip_suffix(".toml")
                     .is_some_and(|stem| semver::Version::parse(stem).is_ok());

@@ -11,6 +11,15 @@ fn bad(origin: &str, msg: impl std::fmt::Display) -> SpliceError {
     SpliceError::Template(format!("unsafe path `{origin}`: {msg}"))
 }
 
+/// `CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`, with or without an extension.
+fn is_windows_reserved(seg: &str) -> bool {
+    let stem = seg.split('.').next().unwrap_or(seg).to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+}
+
 /// Render one `/`-free segment and check the result is still exactly one safe segment.
 fn render_segment(
     seg: &str,
@@ -23,10 +32,16 @@ fn render_segment(
     if out.is_empty() || out == "." || out == ".." {
         return Err(bad(full, format!("segment `{seg}` renders to `{out}`")));
     }
-    if out.contains('/') || out.contains('\\') || out.contains('\0') || out.contains('\n') {
+    if out.contains(['/', '\\', ':']) || out.chars().any(|c| c.is_ascii_control()) {
         return Err(bad(
             full,
-            format!("segment `{seg}` renders to {out:?}, which is not one path segment"),
+            format!("segment `{seg}` renders to {out:?}, which is not one safe path segment"),
+        ));
+    }
+    if out.ends_with(['.', ' ']) || is_windows_reserved(&out) {
+        return Err(bad(
+            full,
+            format!("segment `{seg}` renders to {out:?}, which is not portable to Windows"),
         ));
     }
     Ok(out)
@@ -60,7 +75,7 @@ pub fn render_rel_path(
         }
         None => key.clone(),
     };
-    if fin == LOCK_PATH {
+    if fin.eq_ignore_ascii_case(LOCK_PATH) {
         return Err(bad(
             &fin,
             "`.splice/lock.toml` is reserved for the lock file",
@@ -83,8 +98,38 @@ mod tests {
 
     #[test]
     fn unsafe_paths_rejected() {
-        for v in ["../../etc", "a/b", "", ".", "..", "a\\b", "/abs"] {
+        for v in [
+            "../../etc",
+            "a/b",
+            "",
+            ".",
+            "..",
+            "a\\b",
+            "/abs",
+            "C:",
+            "C:foo",
+            "a\0b",
+            "a\nb",
+            "a\rb",
+            "a\tb",
+            "a\x7fb",
+            "CON",
+            "con",
+            "nul.txt",
+            "Com1",
+            "LPT9.log",
+            "a.",
+            "a ",
+            "aux.tar.gz",
+        ] {
             assert_eq!(render_with_name_var(v).unwrap_err().exit_code(), 3, "{v}");
+        }
+    }
+
+    #[test]
+    fn near_misses_are_fine() {
+        for v in ["console", "com10", "lpt0", "a.b", "-x", "a b", "コン"] {
+            assert!(render_with_name_var(v).is_ok(), "{v}");
         }
     }
 
@@ -110,6 +155,9 @@ mod tests {
         assert!(bad("/abs", "x"));
         assert!(bad("a//b", "x"));
         assert!(bad("{{ name }}", "a/b"));
+        assert!(bad("{{ name }}", "C:"));
+        assert!(bad("{{ name }}", "C:foo"));
+        assert!(bad("{{ name }}", "prn"));
     }
 
     #[test]
@@ -119,6 +167,8 @@ mod tests {
         assert_eq!(e.exit_code(), 3);
         assert!(render_rel_path("lock.toml", Some(".splice"), &r, &ctx("x")).is_err());
         assert!(render_rel_path("lock.toml.jinja", Some(".splice"), &r, &ctx("x")).is_err());
+        assert!(render_rel_path(".Splice/Lock.toml", None, &r, &ctx("x")).is_err());
+        assert!(render_rel_path("LOCK.TOML", Some(".SPLICE"), &r, &ctx("x")).is_err());
         assert!(render_rel_path(".splice/other", None, &r, &ctx("x")).is_ok());
     }
 
