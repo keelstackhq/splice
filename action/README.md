@@ -40,7 +40,8 @@ Inputs: `version` (splice npm version, default `latest`), `to` (template version
 ## Permissions and token
 
 The job needs `contents: write` and `pull-requests: write`. Runners must have `git`, `gh` and
-Node 20+ (GitHub-hosted Linux and macOS runners do).
+Node 20+ (GitHub-hosted Linux and macOS runners do). It targets github.com; on GitHub Enterprise
+Server `gh` needs `GH_HOST` set in the job's `env`, which the action does not set for you.
 
 The action pushes with `token`, not with the credential `actions/checkout` left behind: it passes
 the token as a one-command `http.<server>/.extraheader` override, so it is never written to

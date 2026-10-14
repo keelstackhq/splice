@@ -28,6 +28,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 03/1 · c9b39df, 086963c · actionlint clean; fmt+clippy+nextest 263/263 locally, warm wall time 8.3s (first GitHub run: see Blocked)
 2026-10-14 · 03/2 · fd61fd2 · actionlint clean, node 6/6, nextest 263/263; release build + musl build + smoke test run locally (GitHub dry run: see Blocked)
 2026-10-14 · 03/3 · fffa3f0, 54cddfb · node 23/23, nextest 263/263, actionlint clean; local proof: staged linux-x64 + launcher installed via npm and via pnpm 10.28 → `splice --version` = `splice 0.1.0`, exit codes pass through
+2026-10-14 · 03/4 · 2020d0e, 5017a25 · actionlint+shellcheck clean, node 47/47 (7 stub-gh/git publish tests), nextest 263/263; fixtures are real splice output (GitHub selftest: see Blocked)
 
 ## Notes for later tasks
 
@@ -37,7 +38,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–26 (post
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–27 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
   vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
@@ -55,6 +56,12 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   workflow builds, creates the GitHub release and publishes with provenance; afterwards verify
   `pnpm dlx @keelstack/splice --version` on a clean machine. Note: the plan names the GitHub org
   `keelstack` while this repo is `keelstackhq/splice`; provenance now follows GITHUB_REPOSITORY.
+- plan 03 Task 4 (update bot on GitHub): after the npm publish, run `.github/workflows/action-selftest.yml`
+  (Run workflow) and confirm `result=current`. Then, in a sandbox consumer repo made with
+  `splice new` from an older template tag, add a workflow using `keelstackhq/splice/action@<sha or v1>`
+  with a GitHub App or fine-grained PAT (contents, pull-requests, workflows: write) as `token`,
+  and check that it opens one PR on `splice/update`, refreshes it on rerun, prefixes `[conflicts]`
+  on a conflicting edit, and closes it once the repo is current. Tag `v1` for the action after that.
 
 ## Status
 
