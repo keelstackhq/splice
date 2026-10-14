@@ -114,7 +114,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn find_markers(text: &str) -> Vec<usize>` (1-based lines of `<<<<<<< ours` blocks; `=======`/`||||||| base` count only inside an open block; `>>>>>>> template` closes it)
   - `fn wrap_whole(base, ours, theirs) -> String` (one diff3 block)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn clean_merge() {
@@ -138,10 +138,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; walk the output tracking hunk state to relabel. Missing final newline on any side: use diffy's default incomplete-hunk handling and add a test if it surprises you.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: text 3-way merge with contract diff3 markers`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; walk the output tracking hunk state to relabel. Missing final newline on any side: use diffy's default incomplete-hunk handling and add a test if it surprises you.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: text 3-way merge with contract diff3 markers`
 
 ---
 
