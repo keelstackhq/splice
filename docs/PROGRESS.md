@@ -7,6 +7,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 01/1 · 91509c3, 5146899 · fmt+clippy clean, nextest 9/9 passed
 2026-10-14 · 01/2 · 4bd8667, 04fa3a7 · fmt+clippy clean, nextest 13/13 passed
 2026-10-14 · 01/3 · d887f00, 4584e35 · fmt+clippy clean, nextest 19/19 passed
+2026-10-14 · 01/4 · 4ee049d, 7509265 · fmt+clippy clean, nextest 28/28 passed
 
 ## Notes for later tasks
 
@@ -22,6 +23,11 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
+
+- Contract sign-off (does not block the build): spec §10 item 10 (`[[post]].when` required;
+  `description` default ""; `prompt` default = var name) and spec §5 (template vars may not use
+  `pieces`/`piece`/`template`) need hull's agreement, then a line in `docs/template-format.md` §9
+  edited in both repos together.
 
 ## Status
 

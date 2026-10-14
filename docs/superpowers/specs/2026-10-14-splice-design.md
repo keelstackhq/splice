@@ -108,8 +108,8 @@ readable). Validation errors exit 3 and name the file and key.
 - Piece `id` equals its directory name. `requires` ids must exist. No cycles needed (requires is
   a presence check, not an order).
 - Var names match `^[a-z_][a-z0-9_]*$`; a piece var may not reuse a template var name, and no var
-  (template or piece) may use the reserved names `pieces`, `piece`, `template`. `pattern` compiles with the `regex` crate (keep
-  patterns to the JS/Rust common subset: no look-around, no backrefs). Defaults are literal (not
+  (template or piece) may use the reserved names `pieces`, `piece`, `template`. `pattern`
+  compiles with the `regex` crate (keep patterns to the JS/Rust common subset: no look-around, no backrefs). Defaults are literal (not
   rendered) and must match `pattern`.
 - `[merge]` values are `json|yaml|toml|text`; a `[merge]` key must also match a `shared` glob.
 - `[[post]].when` values are `new|add|update`.
@@ -285,7 +285,8 @@ are omitted.
 
 ## 10. Decisions on gaps in the contract
 
-These decisions are now part of the contract itself (`docs/template-format.md` §9). If this section and §9 ever differ, §9 wins.
+Items 1–9 are now part of the contract itself (`docs/template-format.md` §9); if they and §9 ever
+differ, §9 wins. Item 10 onward are pending hull agreement and not yet in the contract.
 
 These are splice's reading of points the contract leaves open. They go to hull for agreement and
 into the contract at its next `format` bump.
@@ -303,9 +304,8 @@ into the contract at its next `format` bump.
 8. Exit 1 also covers `update`/`add` conflicts and owned-drift refusal; failed steps/post exit 3.
 9. The lock has no owning piece per file, so `explain` re-renders; JSON has no extra fields, so
    `diff --json` carries no patch text.
-10. (pending hull agreement; not yet in contract §9) `[[post]].when` is required (no default; a
-    missing `when` is exit 3); piece `description` defaults to "" and var `prompt` defaults to
-    the var name.
+10. `[[post]].when` is required (no default; a missing `when` is exit 3); piece `description`
+    defaults to "" and var `prompt` defaults to the var name.
 
 ## 11. Testing
 
