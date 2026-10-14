@@ -1,8 +1,9 @@
 //! Detection of leftover diff3 conflict markers (contract section 5).
 
-/// 1-based line numbers of every `<<<<<<< ours` block. `=======` and
-/// `||||||| base` only count inside an open block; `>>>>>>> template` closes it.
-/// A lone `=======` (for example a Markdown heading underline) is not a marker.
+/// 1-based line numbers of leftover conflict markers (spec §8.7): every `<<<<<<< ours` line
+/// (a block start), plus every `||||||| base` or `>>>>>>> template` line outside a block (a
+/// half-resolved file). `=======` only counts inside a block, so a lone one (a Markdown heading
+/// underline) is not a marker. Inside a block, `>>>>>>> template` closes it and is not listed.
 pub fn find_markers(text: &str) -> Vec<usize> {
     let mut found = Vec::new();
     let mut open = false;
@@ -14,6 +15,8 @@ pub fn find_markers(text: &str) -> Vec<usize> {
             }
         } else if line.starts_with("<<<<<<< ours") {
             open = true;
+            found.push(i + 1);
+        } else if line.starts_with("||||||| base") || line.starts_with(">>>>>>> template") {
             found.push(i + 1);
         }
     }
@@ -34,8 +37,10 @@ mod tests {
     }
 
     #[test]
-    fn stray_delimiters_outside_a_block_are_ignored() {
-        assert!(find_markers("||||||| base\n=======\n>>>>>>> template\n").is_empty());
+    fn stray_base_and_template_lines_count_but_a_lone_separator_does_not() {
+        assert_eq!(find_markers("a\n||||||| base\nb\n"), vec![2]);
+        assert_eq!(find_markers("a\n>>>>>>> template\n"), vec![2]);
+        assert!(find_markers("a\n=======\nb\n").is_empty());
     }
 
     #[test]

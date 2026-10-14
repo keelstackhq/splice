@@ -402,12 +402,14 @@ into the contract at its next `format` bump.
     downgrade (exit 2); (i) a lock from `new --ref` has version `0.0.0+g<sha>`: `update` says the
     lock came from a ref and suggests `--to`, instead of the moved-tag message.
 
-24. `check` details the spec leaves open: (a) every lock-listed file is scanned for markers, owned
+24. `check` details the spec leaves open: (a) every lock-listed file is scanned for markers (`find_markers`: any `<<<<<<< ours`, and any
+    stray `||||||| base` or `>>>>>>> template` line, count; `=======` only inside a block), owned
     and shared alike (a seed is not in the lock, so a stray or real marker block there never
     counts); the change's class is the lock's class; (b) an owned file is drift when missing or
     its sha differs, one change `update/owned` per path (an owned file with drift is not also
     scanned for markers); a missing shared file is not a finding; (c) the update test compares the
-    newest stable tag with the lock version by semver precedence; any error while listing tags
+    newest stable tag with the lock version by semver precedence (a lock at `0.0.0+g<sha>`, from
+    `--ref`, therefore reports "update available" whenever a stable tag exists); any error while listing tags
     (offline remote, deleted repo, bad source) is a message `could not look for updates: …`, not
     an error; (d) lock warnings are report messages, first; (e) no dirty-tree check (read-only);
     a symlink or directory on a lock path is exit 3 `unsafe path` as in `update`; a non-UTF-8

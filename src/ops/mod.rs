@@ -46,16 +46,27 @@ fn unsafe_path(msg: String) -> SpliceError {
 }
 
 pub(crate) fn check_target(dest: &Path, rel: &str) -> Result<PathBuf> {
+    check_path(dest, rel, true)
+}
+
+/// Like `check_target` for read-only callers (`check`): the message does not talk about writing.
+pub(crate) fn check_readable(dest: &Path, rel: &str) -> Result<PathBuf> {
+    check_path(dest, rel, false)
+}
+
+fn check_path(dest: &Path, rel: &str, write: bool) -> Result<PathBuf> {
     let mut p = dest.to_path_buf();
     let segs: Vec<&str> = rel.split('/').collect();
     for (i, seg) in segs.iter().enumerate() {
         p.push(seg);
         match std::fs::symlink_metadata(&p) {
             Ok(m) if m.file_type().is_symlink() => {
-                return Err(unsafe_path(format!(
-                    "refusing to write through symlink {}",
-                    p.display()
-                )));
+                let what = if write {
+                    "refusing to write through symlink"
+                } else {
+                    "symlink in the way:"
+                };
+                return Err(unsafe_path(format!("{what} {}", p.display())));
             }
             Ok(m) if i + 1 == segs.len() && m.is_dir() => {
                 return Err(unsafe_path(format!("{rel} exists and is a directory")));

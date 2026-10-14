@@ -1,7 +1,7 @@
 //! `splice check` (spec §8.7): owned drift, leftover conflict markers, an available update.
 //! Reads only the lock and the disk (plus the tag list unless `--offline`); writes nothing.
 
-use super::check_target;
+use super::check_readable;
 use crate::cli::{CheckArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
@@ -26,7 +26,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
 
     // BTreeMap order: changes come out sorted by path
     for (path, f) in &lock.files {
-        check_target(repo, path)?;
+        check_readable(repo, path)?;
         let Some(bytes) = read_opt(repo, path)? else {
             // a deleted owned file is drift; a deleted shared file is the user's choice
             if f.class == Class::Owned {

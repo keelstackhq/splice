@@ -242,3 +242,17 @@ fn no_lock_is_usage_error() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn half_resolved_file_fails() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "v2.0.0");
+    let t = read(&repo, "notes.txt");
+    write(&repo, "notes.txt", &format!("{t}>>>>>>> template\n"));
+    let (code, v) = check(&repo, &["--offline"]);
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(
+        v["changes"],
+        serde_json::json!([{"path":"notes.txt","action":"conflict","class":"shared"}])
+    );
+}
