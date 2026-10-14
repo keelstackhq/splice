@@ -1,7 +1,8 @@
 //! Migrations `migrations/<semver>.toml` (contract §7).
 
 use crate::error::SpliceError;
-use crate::manifest::{bad, read_toml, reject_symlink};
+use crate::manifest::{Extra, bad, read_toml, reject_symlink, warn_extra};
+use crate::{paths, subset};
 use semver::Version;
 use std::path::Path;
 
@@ -30,12 +31,16 @@ pub struct Migration {
 struct RawStep {
     run: String,
     description: Option<String>,
+    #[serde(flatten)]
+    extra: Extra,
 }
 
 #[derive(serde::Deserialize)]
 struct RawRemove {
     path: String,
     piece: Option<String>,
+    #[serde(flatten)]
+    extra: Extra,
 }
 
 #[derive(serde::Deserialize)]
@@ -44,11 +49,35 @@ struct RawMigration {
     step: Vec<RawStep>,
     #[serde(default)]
     remove: Vec<RawRemove>,
+    #[serde(flatten)]
+    extra: Extra,
+}
+
+/// A `[[remove]].path` is a template path: `{{ expr }}` allowed, otherwise the rules of
+/// rendered paths (relative, safe segments, not the lock file).
+fn check_remove_path(path: &str, label: &str) -> Result<()> {
+    let fail = |msg: &str| bad(label, format!("remove.path {path:?}: {msg}"));
+    if path.contains('\\') {
+        return Err(fail("backslash in path"));
+    }
+    if path.as_bytes().get(1) == Some(&b':') {
+        return Err(fail("drive paths are not allowed"));
+    }
+    if path.eq_ignore_ascii_case(".splice/lock.toml") {
+        return Err(fail("`.splice/lock.toml` is reserved for the lock file"));
+    }
+    for seg in path.split('/') {
+        subset::validate_path_segment(seg, label)?;
+        if !seg.contains("{{") {
+            paths::validate_segment(seg).map_err(|e| fail(&e.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
 /// Load `migrations/<semver>.toml`, sorted by version. A missing directory is no migrations;
 /// symlinks, bad file names and bad contents are template errors (exit 3).
-pub fn load_migrations(root: &Path) -> Result<Vec<Migration>> {
+pub fn load_migrations(root: &Path, warnings: &mut Vec<String>) -> Result<Vec<Migration>> {
     let dir = root.join("migrations");
     reject_symlink(&dir, "migrations")?;
     let mut out = Vec::new();
@@ -63,8 +92,22 @@ pub fn load_migrations(root: &Path) -> Result<Vec<Migration>> {
         let version = name
             .strip_suffix(".toml")
             .and_then(|stem| Version::parse(stem).ok())
-            .ok_or_else(|| bad(&label, "migration file names must be <semver>.toml"))?;
+            .filter(|v| v.build.is_empty())
+            .ok_or_else(|| {
+                bad(
+                    &label,
+                    "migration file names must be <semver>.toml without build metadata",
+                )
+            })?;
         let raw: RawMigration = read_toml(&e.path(), &label)?;
+        warn_extra(warnings, &label, "", &raw.extra);
+        for st in &raw.step {
+            warn_extra(warnings, &label, "step.", &st.extra);
+        }
+        for r in &raw.remove {
+            warn_extra(warnings, &label, "remove.", &r.extra);
+            check_remove_path(&r.path, &label)?;
+        }
         out.push(Migration {
             version,
             steps: raw
@@ -89,7 +132,7 @@ pub fn load_migrations(root: &Path) -> Result<Vec<Migration>> {
     Ok(out)
 }
 
-/// Migrations with `from < version <= to`, in semver order .
+/// Migrations with `from < version <= to`, in semver order.
 pub fn select<'a>(all: &'a [Migration], from: &Version, to: &Version) -> Vec<&'a Migration> {
     let mut v: Vec<&Migration> = all
         .iter()
@@ -140,7 +183,7 @@ mod tests {
     #[test]
     fn bad_migration_name() {
         let d = write_dir(&[("latest.toml", "")]);
-        let e = load_migrations(d.path()).unwrap_err();
+        let e = load_migrations(d.path(), &mut vec![]).unwrap_err();
         assert_eq!(e.exit_code(), 3);
         assert!(e.to_string().contains("latest.toml"), "{e}");
     }
@@ -154,7 +197,7 @@ mod tests {
                 "[[step]]\nrun = \"x\"\n[[step]]\nrun = \"y\"\ndescription = \"d\"\n[[remove]]\npath = \"a\"\n[[remove]]\npath = \"b\"\npiece = \"p\"\n",
             ),
         ]);
-        let m = load_migrations(d.path()).unwrap();
+        let m = load_migrations(d.path(), &mut vec![]).unwrap();
         assert_eq!(names(m.iter().collect()), ["1.9.0", "1.10.0"]);
         assert_eq!(m[0].steps[1].description.as_deref(), Some("d"));
         assert_eq!(m[0].steps[0].description, None);
@@ -162,12 +205,80 @@ mod tests {
         assert_eq!(m[0].removes[0].piece, None);
     }
 
+    fn rm(path: &str) -> String {
+        format!("[[remove]]\npath = {path:?}\n")
+    }
+
+    #[test]
+    fn unsafe_remove_paths_are_exit_3() {
+        for bad in [
+            "../x",
+            "/etc/x",
+            "C:/x",
+            "a\\b",
+            "a//b",
+            "./a",
+            "",
+            ".splice/lock.toml",
+            "a/.git/hooks",
+        ] {
+            let d = write_dir(&[("1.0.0.toml", &rm(bad))]);
+            let e = load_migrations(d.path(), &mut vec![]).unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{bad}");
+            assert!(
+                e.to_string().contains("migrations/1.0.0.toml"),
+                "{bad}: {e}"
+            );
+        }
+        let d = write_dir(&[("1.0.0.toml", &rm("apps/{{ name }}/.eslintrc.json"))]);
+        assert!(load_migrations(d.path(), &mut vec![]).is_ok());
+        let d = write_dir(&[("1.0.0.toml", &rm("a/{% if x %}b{% endif %}"))]);
+        assert!(load_migrations(d.path(), &mut vec![]).is_err());
+    }
+
+    #[test]
+    fn unknown_keys_warn() {
+        let d = write_dir(&[(
+            "1.0.0.toml",
+            "colour = 1\n[[step]]\nrun = \"x\"\nwhen = 1\n[[remove]]\npath = \"a\"\nwhy = 1\n",
+        )]);
+        let mut w = vec![];
+        load_migrations(d.path(), &mut w).unwrap();
+        assert_eq!(w.len(), 3, "{w:?}");
+        assert!(
+            w.iter().all(|m| m.contains("migrations/1.0.0.toml")),
+            "{w:?}"
+        );
+        assert!(w.iter().any(|m| m.contains("colour")));
+        assert!(w.iter().any(|m| m.contains("when")));
+        assert!(w.iter().any(|m| m.contains("why")));
+    }
+
+    #[test]
+    fn build_metadata_name_is_rejected() {
+        let d = write_dir(&[("1.0.0+x.toml", "")]);
+        let e = load_migrations(d.path(), &mut vec![]).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        assert!(e.to_string().contains("1.0.0+x.toml"), "{e}");
+    }
+
+    #[test]
+    fn prerelease_orders_before_release() {
+        let all = migs(&["1.0.0", "1.0.0-rc.1", "0.9.0"]);
+        let v = |s| Version::parse(s).unwrap();
+        assert_eq!(
+            names(select(&all, &v("0.9.0"), &v("1.0.0"))),
+            ["1.0.0-rc.1", "1.0.0"]
+        );
+        assert!(select(&all, &v("1.0.0"), &v("1.0.0")).is_empty());
+    }
+
     #[test]
     fn missing_dir_is_empty_and_bad_content_is_exit_3() {
         let d = tempfile::tempdir().unwrap();
-        assert!(load_migrations(d.path()).unwrap().is_empty());
+        assert!(load_migrations(d.path(), &mut vec![]).unwrap().is_empty());
         let d = write_dir(&[("1.0.0.toml", "[[step]]\ndescription = \"no run\"\n")]);
-        let e = load_migrations(d.path()).unwrap_err();
+        let e = load_migrations(d.path(), &mut vec![]).unwrap_err();
         assert_eq!(e.exit_code(), 3);
         assert!(e.to_string().contains("1.0.0.toml"), "{e}");
     }

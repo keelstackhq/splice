@@ -69,7 +69,7 @@ pub struct Template {
     pub warnings: Vec<String>,
 }
 
-type Extra = IndexMap<String, toml::Value>;
+pub(crate) type Extra = IndexMap<String, toml::Value>;
 
 #[derive(serde::Deserialize)]
 struct RawVar {
@@ -158,7 +158,7 @@ pub(crate) fn read_toml<T: serde::de::DeserializeOwned>(path: &Path, label: &str
     toml::from_str(&text).map_err(|e| bad(label, e.to_string().trim_end()))
 }
 
-fn warn_extra(warnings: &mut Vec<String>, file: &str, ctx: &str, extra: &Extra) {
+pub(crate) fn warn_extra(warnings: &mut Vec<String>, file: &str, ctx: &str, extra: &Extra) {
     for k in extra.keys() {
         warnings.push(format!("{file}: unknown key `{ctx}{k}` ignored"));
     }
@@ -370,7 +370,7 @@ impl Template {
             }
         }
         dirs.sort();
-        let migrations = crate::migrate::load_migrations(root)?;
+        let migrations = crate::migrate::load_migrations(root, &mut warnings)?;
         let mut pieces = IndexMap::new();
         for d in dirs {
             let piece = load_piece(&pieces_dir.join(&d), &d, &vars, &mut warnings)?;
