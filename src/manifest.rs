@@ -72,7 +72,7 @@ type Extra = IndexMap<String, toml::Value>;
 
 #[derive(serde::Deserialize)]
 struct RawVar {
-    prompt: String,
+    prompt: Option<String>,
     default: Option<String>,
     pattern: Option<String>,
     #[serde(flatten)]
@@ -114,6 +114,7 @@ struct RawPost {
 #[derive(serde::Deserialize)]
 struct RawPiece {
     id: String,
+    #[serde(default)]
     description: String,
     #[serde(default)]
     multiple: bool,
@@ -182,10 +183,11 @@ fn convert_vars(
                 format!("var `{name}` default {d:?} does not match its pattern {re}"),
             ));
         }
+        let prompt = v.prompt.unwrap_or_else(|| name.clone());
         out.insert(
             name,
             VarSpec {
-                prompt: v.prompt,
+                prompt,
                 default: v.default,
                 pattern,
             },
@@ -252,6 +254,15 @@ fn load_piece(
                 ));
             }
         };
+        globset::GlobBuilder::new(&key)
+            .literal_separator(true)
+            .build()
+            .map_err(|e| {
+                bad(
+                    &file,
+                    format!("[merge] key {key:?} is not a valid glob: {e}"),
+                )
+            })?;
         if !shared.is_match(&key) {
             return Err(bad(
                 &file,
@@ -341,6 +352,21 @@ impl Template {
             }
         }
         dirs.sort();
+        let mig_dir = root.join("migrations");
+        if mig_dir.is_dir() {
+            for e in std::fs::read_dir(&mig_dir)? {
+                let name = e?.file_name().to_string_lossy().into_owned();
+                let ok = name
+                    .strip_suffix(".toml")
+                    .is_some_and(|stem| semver::Version::parse(stem).is_ok());
+                if !ok {
+                    return Err(bad(
+                        &format!("migrations/{name}"),
+                        "migration file names must be <semver>.toml",
+                    ));
+                }
+            }
+        }
         let mut pieces = IndexMap::new();
         for d in dirs {
             let piece = load_piece(&pieces_dir.join(&d), &d, &vars, &mut warnings)?;
@@ -418,6 +444,62 @@ id = "base"
 description = "base"
 multiple = false
 "#;
+
+    fn load_with_migrations(names: &[&str]) -> Result<Template> {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("splice.toml"), SPLICE).unwrap();
+        let p = dir.path().join("pieces/base");
+        std::fs::create_dir_all(p.join("files")).unwrap();
+        std::fs::write(p.join("piece.toml"), BASE).unwrap();
+        std::fs::create_dir_all(dir.path().join("migrations")).unwrap();
+        for n in names {
+            std::fs::write(dir.path().join("migrations").join(n), "").unwrap();
+        }
+        Template::load(dir.path())
+    }
+
+    #[test]
+    fn migration_names_are_semver_toml() {
+        assert!(load_with_migrations(&["1.2.0.toml", "0.1.0-rc.1.toml"]).is_ok());
+        for bad in ["latest.toml", "1.2.0.txt", "1.2.toml", "v1.2.0.toml"] {
+            let e = load_with_migrations(&[bad]).unwrap_err();
+            assert_eq!(e.exit_code(), 3);
+            assert!(e.to_string().contains(bad), "{e}");
+        }
+    }
+
+    #[test]
+    fn description_and_prompt_are_optional() {
+        let t = load_inline(
+            SPLICE,
+            &[("base", "id = \"base\"\n[vars]\nv = { default = \"x\" }")],
+        )
+        .unwrap();
+        assert_eq!(t.pieces["base"].description, "");
+        assert_eq!(t.pieces["base"].vars["v"].prompt, "v");
+    }
+
+    #[test]
+    fn post_when_is_required() {
+        let piece = format!("{BASE}\n[[post]]\nrun = \"x\"");
+        let msg = err(SPLICE, &[("base", &piece)]);
+        assert!(msg.contains("when"), "{msg}");
+    }
+
+    #[test]
+    fn nested_unknown_keys_warn() {
+        let piece = format!(
+            "{BASE}\n[vars]\nv = {{ prompt = \"p\", zed = 1 }}\n[files]\nbogus = []\n[[post]]\nrun = \"x\"\nwhen = [\"new\"]\nextra = 1\n"
+        );
+        let t = load_inline(SPLICE, &[("base", &piece)]).unwrap();
+        for k in ["vars.v.zed", "files.bogus", "post.extra"] {
+            assert!(
+                t.warnings.iter().any(|w| w.contains(k)),
+                "{k}: {:?}",
+                t.warnings
+            );
+        }
+    }
 
     /// Write `splice.toml` and `(dir, piece.toml)` pairs into a temp template and load it.
     fn load_inline(splice: &str, pieces: &[(&str, &str)]) -> Result<Template> {
