@@ -60,8 +60,28 @@ impl Fetcher {
         }
     }
 
+    /// A local source must be a git repository of its own: never let git discover a parent
+    /// repository (such as the generated repo) from a missing or plain directory.
+    fn ensure_local(src: &TemplateSource) -> Result<()> {
+        let SourceKind::Local { path } = &src.kind else {
+            return Ok(());
+        };
+        let is_repo = path.join(".git").exists()
+            || (path.join("HEAD").is_file() && path.join("objects").is_dir());
+        if is_repo {
+            return Ok(());
+        }
+        let abs = std::path::absolute(path).unwrap_or_else(|_| path.clone());
+        Err(SpliceError::Template(format!(
+            "template source {} not found (resolved to {})",
+            src.spec,
+            abs.display()
+        )))
+    }
+
     /// Make the mirror current (remote sources only) and return its path.
     fn sync(&self, src: &TemplateSource) -> Result<PathBuf> {
+        Self::ensure_local(src)?;
         let mirror = self.mirror(src);
         if let SourceKind::Git { url } = &src.kind {
             Git::ensure_mirror(url, &mirror)?;
@@ -71,6 +91,7 @@ impl Fetcher {
 
     /// Stable and (with `pre`) pre-release `v<semver>` tags with their commit shas, ascending.
     fn tagged(src: &TemplateSource, pre: bool) -> Result<Vec<(Version, String)>> {
+        Self::ensure_local(src)?;
         let mut out: Vec<(Version, String)> = Git::ls_remote_tags(&Self::url(src))?
             .into_iter()
             .filter_map(|(name, sha)| {

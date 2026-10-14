@@ -10,6 +10,7 @@ use crate::lock::Lock;
 use crate::markers::find_markers;
 use crate::output::{Action, Class, Report};
 use crate::source::TemplateSource;
+use std::path::Path;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -40,7 +41,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
 
     let mut update = false;
     if !a.offline {
-        match latest_newer(&lock) {
+        match latest_newer(&lock, repo) {
             Ok(Some(v)) => {
                 update = true;
                 report.msg(format!(
@@ -60,8 +61,8 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
 }
 
 /// The newest stable tag when it is newer than the lock's version.
-fn latest_newer(lock: &Lock) -> Result<Option<semver::Version>> {
-    let source = TemplateSource::parse(&lock.template.source)?;
+fn latest_newer(lock: &Lock, repo: &Path) -> Result<Option<semver::Version>> {
+    let source = TemplateSource::parse_from(&lock.template.source, repo)?;
     let versions = Fetcher::from_env().available_versions(&source, false)?;
     Ok(versions
         .into_iter()

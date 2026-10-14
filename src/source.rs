@@ -54,7 +54,49 @@ fn check_subdir(spec: &str, sub: &str) -> Result<String, SpliceError> {
 }
 
 impl TemplateSource {
+    /// Parse a spec; a relative local path stays relative to the process cwd.
     pub fn parse(spec: &str) -> Result<Self, SpliceError> {
+        Self::parse_from(spec, Path::new(""))
+    }
+
+    /// Parse a spec, resolving a relative local path against `base` (the repo root for a lock's
+    /// source, the `-C` dir for `new`). `spec` stays as given.
+    pub fn parse_from(spec: &str, base: &Path) -> Result<Self, SpliceError> {
+        let mut s = Self::parse_raw(spec)?;
+        if let SourceKind::Local { path } = &mut s.kind
+            && path.is_relative()
+        {
+            *path = base.join(&*path);
+        }
+        Ok(s)
+    }
+
+    /// The spec to store in a lock written at `dest`: a relative local path is rewritten to be
+    /// relative to `dest` (it resolves from the repo root); everything else is unchanged.
+    pub fn spec_for_dest(&self, dest: &Path) -> String {
+        let SourceKind::Local { path } = &self.kind else {
+            return self.spec.clone();
+        };
+        if !Path::new(split_subdir(&self.spec).0).is_relative() {
+            return self.spec.clone();
+        }
+        let (Some(src), Some(dst)) = (lenient_canonical(path), lenient_canonical(dest)) else {
+            return self.spec.clone();
+        };
+        let Some(rel) = relative_to(&src, &dst) else {
+            return self.spec.clone();
+        };
+        let mut out = rel;
+        if self.spec.starts_with("./") && !out.starts_with("..") && out != "." {
+            out = format!("./{out}");
+        }
+        if let Some(sub) = &self.subdir {
+            out = format!("{out}//{sub}");
+        }
+        out
+    }
+
+    fn parse_raw(spec: &str) -> Result<Self, SpliceError> {
         if spec.starts_with('-') {
             return Err(SpliceError::Usage(format!(
                 "invalid template source `{spec}`: must not start with `-`"
@@ -119,6 +161,51 @@ impl TemplateSource {
         let digest = Sha256::digest(id.as_bytes());
         digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
     }
+}
+
+/// Absolute, `.`/`..` collapsed, symlinks resolved for the longest existing ancestor.
+fn lenient_canonical(p: &Path) -> Option<PathBuf> {
+    let abs = std::path::absolute(p).ok()?;
+    let mut norm = PathBuf::new();
+    for c in abs.components() {
+        match c {
+            Component::ParentDir => {
+                norm.pop();
+            }
+            Component::CurDir => {}
+            c => norm.push(c),
+        }
+    }
+    let mut rest = Vec::new();
+    let mut head = norm.as_path();
+    loop {
+        if let Ok(c) = head.canonicalize() {
+            let mut out = c;
+            out.extend(rest.iter().rev());
+            return Some(out);
+        }
+        rest.push(head.file_name()?.to_owned());
+        head = head.parent()?;
+    }
+}
+
+/// `target` relative to `from` with `/` separators; None across different roots.
+fn relative_to(target: &Path, from: &Path) -> Option<String> {
+    let t: Vec<_> = target.components().collect();
+    let f: Vec<_> = from.components().collect();
+    let common = t.iter().zip(&f).take_while(|(a, b)| a == b).count();
+    if common == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = vec!["..".into(); f.len() - common];
+    for c in &t[common..] {
+        parts.push(c.as_os_str().to_str()?.to_string());
+    }
+    Some(if parts.is_empty() {
+        ".".into()
+    } else {
+        parts.join("/")
+    })
 }
 
 /// `git@host:path` style (user@host:path); a Windows drive like `C:\x` is not.

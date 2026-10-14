@@ -80,11 +80,13 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
 pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     let data = parse_data(&a.data)?;
     let flags = parse_piece_flags(&a.pieces)?;
-    let source = TemplateSource::parse(&a.source)?;
+    let source = TemplateSource::parse_from(&a.source, &g.dir)?;
     let dest = g.dir.join(&a.dest);
 
     // 1. resolve, load, validate, min_splice
-    let resolved = Fetcher::from_env().resolve(&source, a.git_ref.as_deref(), a.pre)?;
+    let mut resolved = Fetcher::from_env().resolve(&source, a.git_ref.as_deref(), a.pre)?;
+    // the lock must resolve a relative local source from the new repo's root
+    resolved.source.spec = source.spec_for_dest(&dest);
     let template = Template::load(&resolved.root)?;
     template.check_min_splice(
         &semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version is semver"),

@@ -97,7 +97,7 @@ pub(crate) struct Locked {
 /// check `min_splice`. Shared by every command that works on an existing instance.
 pub(crate) fn load_locked(repo: &Path) -> Result<Locked> {
     let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| no_lock(repo))?;
-    let source = TemplateSource::parse(&lock.template.source)?;
+    let source = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved = Fetcher::from_env().checkout(
         &source,
         &lock.template.commit,

@@ -79,7 +79,9 @@ holds the summary line (`0 changes`); the message goes to stderr.
 Source spec grammar: `gh:<owner>/<repo>[//<subdir>]` → `https://github.com/<owner>/<repo>.git`;
 any `https://`, `ssh://`, `git@…` or `file://` URL with optional `//<subdir>` after the repo part;
 or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lock stores the
-spec as given (`gh:keelstack/hull//template`).
+spec as given (`gh:keelstack/hull//template`), except that `new` rewrites a relative local path to
+be relative to the new repo's root (§10 item 28); a relative local path in a lock always resolves
+from the repo root (the `-C` dir), never from the process cwd.
 
 All git work shells out to the `git` CLI (present wherever repos live), so the user's credentials,
 proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c core.eol=lf` and
@@ -95,7 +97,9 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
   immutable extracted tree per commit at `trees/<sha256(url)[..16]>/<commit>/`, created with
   `git --git-dir <mirror> --work-tree <tmp> checkout <commit> -- .` using a temporary
   `GIT_INDEX_FILE`, then renamed into place. A present tree is reused with no network access.
-- **Local paths** must be git repos (tests create them) and are used directly as the "mirror".
+- **Local paths** must be git repos (tests create them) and are used directly as the "mirror". A
+  path that is not a repo (`.git` or a bare repo layout) is exit 3 `template source <spec> not
+  found (resolved to <abs path>)`; git is never run on it, so it cannot discover a parent repo.
 - A missing commit (force-pushed template) is a template error (exit 3) that names the commit.
 
 ## 5. Manifests and validation (contract §2, §3)
@@ -434,6 +438,13 @@ into the contract at its next `format` bump.
     (nothing written). The bot fails the job and prints splice's messages instead of opening a
     `[conflicts]` PR, which would have no diff. Only exit 1 with at least one `conflict` change
     gives a `[conflicts]` PR.
+28. Local template sources. A relative local path in the lock resolves against the repo root (the
+    `-C` dir), not the process cwd, so every command works from inside the generated repo. `new`
+    therefore stores a relative local source rewritten relative to `dest` (`./tpl` from `$T` with
+    dest `demo` is `../tpl`; `//subdir` is kept; a leading `./` is kept only when the result does
+    not start with `..`). "As given" in §4 means exactly that: absolute paths, URLs, `gh:` and scp
+    specs are stored unchanged. A missing or non-repo local source is exit 3 `template source <spec>
+    not found (resolved to <abs path>)`; the lock-relative path is checked before any git call.
 
 ## 11. Testing
 

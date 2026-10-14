@@ -186,7 +186,7 @@ pub fn prepare(
     let mut messages: Vec<String> = warnings;
     messages.extend(base_template.warnings.iter().cloned());
 
-    let source = TemplateSource::parse(&lock.template.source)?;
+    let source = TemplateSource::parse_from(&lock.template.source, repo)?;
     let fetcher = Fetcher::from_env();
     let target = match to {
         Some(v) => fetcher.resolve_version(&source, v)?,
