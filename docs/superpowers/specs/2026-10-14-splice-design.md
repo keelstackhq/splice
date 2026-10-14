@@ -360,9 +360,9 @@ into the contract at its next `format` bump.
     planner never overwrites an edit (`--force` only replaces edited owned files). Plan 02's full
     planner adds the §8.3 dirty-tree check to `add` (exit 2) and then the flag.
 21. `explain <path>` normalises `\` to `/` and drops `./` and empty segments. An absolute path, a
-    drive prefix or any `..` segment cannot name a rendered file, so it is `unmanaged` (ok, exit 0),
-    not a usage error. The human line replaces the generic change line on stdout (messages stay on
-    stderr); lock warnings are messages, as in `add`.
+    drive prefix or any `..` segment cannot name a rendered file, so it is `unmanaged` (ok, exit 0,
+    message `unmanaged (not a repo-relative path)`), not a usage error. The human line replaces the
+    generic change line on stdout, followed by the usual summary line (messages stay on stderr); lock warnings are messages, as in `add`.
 
 ## 11. Testing
 

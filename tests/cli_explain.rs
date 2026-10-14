@@ -78,7 +78,7 @@ fn default_glob_is_named() {
 fn unmanaged_path() {
     let (_tpl, repo) = new_repo(&[]);
     std::fs::write(repo.path().join("notes.md"), "x\n").unwrap();
-    for p in ["notes.md", "../x", "/etc/passwd", "a/../package.json"] {
+    for p in ["notes.md", "./notes.md"] {
         let v = json_of(
             splice_cmd()
                 .current_dir(repo.path())
@@ -139,4 +139,60 @@ fn lock_warnings_are_messages() {
                 .args(["explain", "package.json", "--json"]),
         );
     assert!(msgs(&v).iter().any(|m| m.contains("future_key")), "{v}");
+}
+
+#[test]
+fn human_output_is_line_plus_summary_and_messages_on_stderr() {
+    let (_tpl, repo) = new_repo(&["--piece", "app:web"]);
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["explain", "apps/web/src/main.ts"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "apps/web/src/main.ts  seed  app/web  glob=src/**  merge=text\n1 change\n"
+    );
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        err.contains("piece=app/web") && err.contains("glob=src/**"),
+        "{err}"
+    );
+}
+
+#[test]
+fn unmanaged_human_output_uses_normalised_path_and_summary() {
+    let (_tpl, repo) = new_repo(&[]);
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["explain", ".\\nope.md"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        "nope.md  unmanaged\n0 changes\n"
+    );
+}
+
+#[test]
+fn non_repo_relative_message() {
+    let (_tpl, repo) = new_repo(&[]);
+    for p in ["../x", "/etc/passwd", "a/../package.json", "C:\\x"] {
+        let v = json_of(
+            splice_cmd()
+                .current_dir(repo.path())
+                .args(["explain", p, "--json"]),
+        );
+        assert_eq!(v["changes"].as_array().unwrap().len(), 0, "{p}");
+        assert!(
+            msgs(&v)
+                .iter()
+                .any(|m| m == "unmanaged (not a repo-relative path)"),
+            "{p}: {v}"
+        );
+    }
 }

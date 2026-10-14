@@ -67,7 +67,8 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
     for w in lock_warnings.iter().chain(&template.warnings) {
         report.msg(w.clone());
     }
-    let found = normalise(&a.path).and_then(|p| tree.get(&p));
+    let norm = normalise(&a.path);
+    let found = norm.as_deref().and_then(|p| tree.get(p));
     match found {
         Some(f) => {
             let glob = f.glob.as_deref().unwrap_or("default");
@@ -86,10 +87,16 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
                 f.path
             ));
         }
-        None => {
-            report.msg("unmanaged");
-            report.lines.push(format!("{}  unmanaged", a.path));
-        }
+        None => match &norm {
+            Some(p) => {
+                report.msg("unmanaged");
+                report.lines.push(format!("{p}  unmanaged"));
+            }
+            None => {
+                report.msg("unmanaged (not a repo-relative path)");
+                report.lines.push(format!("{}  unmanaged", a.path));
+            }
+        },
     }
     Ok(report)
 }

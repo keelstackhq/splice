@@ -77,17 +77,14 @@ impl Report {
             return;
         }
         let r = self.sorted();
-        if !r.lines.is_empty() {
+        if r.lines.is_empty() {
+            for c in &r.changes {
+                println!("{:<8} {}  {}", lower(&c.action), c.path, lower(&c.class));
+            }
+        } else {
             for l in &r.lines {
                 println!("{l}");
             }
-            for m in &r.messages {
-                eprintln!("{m}");
-            }
-            return;
-        }
-        for c in &r.changes {
-            println!("{:<8} {}  {}", lower(&c.action), c.path, lower(&c.class));
         }
         let n = r.changes.len();
         println!("{n} change{}", if n == 1 { "" } else { "s" });
