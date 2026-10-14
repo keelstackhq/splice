@@ -29,14 +29,29 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     if theirs == base || ours == theirs {
         return clean(ours);
     }
+    // Like merge_text: ours decides the line ending; merge in LF, restore CRLF after.
+    let crlf = ours.contains("\r\n");
+    let lf = |s: &str| s.replace("\r\n", "\n");
+    let (b, o, t) = if crlf {
+        (lf(base), lf(ours), lf(theirs))
+    } else {
+        (base.to_string(), ours.to_string(), theirs.to_string())
+    };
     let structured = match strategy {
-        MergeStrategy::Json => json::merge_json(base, ours, theirs),
-        MergeStrategy::Yaml => yaml::merge_yaml(base, ours, theirs),
-        MergeStrategy::Toml => toml::merge_toml(base, ours, theirs),
+        MergeStrategy::Json => json::merge_json(&b, &o, &t),
+        MergeStrategy::Yaml => yaml::merge_yaml(&b, &o, &t),
+        MergeStrategy::Toml => toml::merge_toml(&b, &o, &t),
         MergeStrategy::Text => Err(ParseError("text strategy".into())),
     };
     match structured {
-        Ok(m) if m.conflicts.is_empty() => m,
+        Ok(m) if m.conflicts.is_empty() => Merged {
+            text: if crlf {
+                m.text.replace('\n', "\r\n")
+            } else {
+                m.text
+            },
+            conflicts: m.conflicts,
+        },
         Ok(m) => {
             // Structured conflict: leave diff3 markers `check` can find.
             let t = text::merge_text(base, ours, theirs);
@@ -358,5 +373,86 @@ mod tests {
         let t = "a = 2\nb = 1\n";
         let m = merge3(MergeStrategy::Toml, b, o, t);
         assert_eq!(m.text, merge_text_ref(b, o, t));
+    }
+
+    fn one_whole_block(m: &Merged) {
+        assert_eq!(find_markers(&m.text), [1]);
+        assert!(m.text.starts_with("<<<<<<< ours\n"));
+        assert!(m.text.contains("\n||||||| base\n"));
+        assert!(m.text.trim_end().ends_with(">>>>>>> template"));
+        assert_eq!(m.text.matches("<<<<<<< ours").count(), 1);
+    }
+
+    #[test]
+    fn yaml_alias_conflict_wraps_whole_file() {
+        let b = "d: &d 1\nx: 0\ny: 0\nz: 0\nk: *d\n";
+        let o = "d: &d 1\nx: 0\ny: 0\nz: 0\nk: 2\n";
+        let t = "d: &d 3\nx: 0\ny: 0\nz: 0\nk: *d\n";
+        let m = merge3(MergeStrategy::Yaml, b, o, t);
+        assert_eq!(m.conflicts, ["k"]);
+        one_whole_block(&m);
+    }
+
+    #[test]
+    fn json_duplicate_key_conflict_wraps_whole_file() {
+        let b = "{\n  \"a\": 1,\n  \"p\": 0,\n  \"q\": 0,\n  \"r\": 0,\n  \"s\": 0\n}\n";
+        let o =
+            "{\n  \"a\": 1,\n  \"p\": 0,\n  \"q\": 0,\n  \"r\": 0,\n  \"s\": 0,\n  \"a\": 2\n}\n";
+        let t = "{\n  \"a\": 3,\n  \"p\": 0,\n  \"q\": 0,\n  \"r\": 0,\n  \"s\": 0\n}\n";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(m.conflicts, ["a"]);
+        one_whole_block(&m);
+    }
+
+    #[test]
+    fn toml_new_table_is_appended_at_the_end() {
+        let b = "[b]\nx = 1\n";
+        let o = "[b]\nx = 1\nmine = 2\n\n[c]\ny = 1\n";
+        let t = "[new]\nz = 1\n\n[new.sub]\nw = 2\n\n[b]\nx = 1\n";
+        let m = merge3(MergeStrategy::Toml, b, o, t);
+        assert!(m.conflicts.is_empty());
+        assert_eq!(
+            m.text,
+            "[b]\nx = 1\nmine = 2\n\n[c]\ny = 1\n\n[new]\nz = 1\n\n[new.sub]\nw = 2\n"
+        );
+    }
+
+    #[test]
+    fn crlf_survives_clean_structured_merges() {
+        let cr = |s: &str| s.replace('\n', "\r\n");
+        let j = merge3(
+            MergeStrategy::Json,
+            &cr("{\n  \"a\": 1\n}\n"),
+            &cr("{\n  \"a\": 1,\n  \"u\": 1\n}\n"),
+            &cr("{\n  \"a\": 2\n}\n"),
+        );
+        assert_eq!(j.text, cr("{\n  \"a\": 2,\n  \"u\": 1\n}\n"));
+        let y = merge3(
+            MergeStrategy::Yaml,
+            &cr("a: 1\nb: 1\n"),
+            &cr("a: 1\nb: 5\n"),
+            &cr("a: 2\nb: 1\n"),
+        );
+        assert_eq!(y.text, cr("a: 2\nb: 5\n"));
+        let t = merge3(
+            MergeStrategy::Toml,
+            &cr("a = 1\nb = 1\n"),
+            &cr("a = 1\nb = 5\n"),
+            &cr("a = 2\nb = 1\n"),
+        );
+        assert_eq!(t.text, cr("a = 2\nb = 5\n"));
+    }
+
+    #[test]
+    fn json_big_ints_and_trailing_zeros_survive() {
+        let b = "{\n  \"big\": 12345678901234567890123,\n  \"e\": 1.50,\n  \"n\": 1\n}\n";
+        let o = "{\n  \"big\": 12345678901234567890123,\n  \"e\": 1.50,\n  \"n\": 2\n}\n";
+        let t =
+            "{\n  \"big\": 12345678901234567890123,\n  \"e\": 1.50,\n  \"n\": 1,\n  \"m\": 1\n}\n";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(
+            m.text,
+            "{\n  \"big\": 12345678901234567890123,\n  \"e\": 1.50,\n  \"n\": 2,\n  \"m\": 1\n}\n"
+        );
     }
 }

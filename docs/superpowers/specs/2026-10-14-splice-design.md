@@ -275,6 +275,9 @@ between them (it runs after both).
   **toml:** `toml_edit::DocumentMut`, edited in place so comments and layout survive.
 - Key-path rules exactly as contract §5: arrays are values, ours' key order kept, new keys
   appended to their parent, a key deleted on one side and changed on the other is a conflict.
+- Limits of a real merge: JSON numbers keep their digits (`arbitrary_precision`) but exponents
+  are normalised (`1e3` → `1e+3`). YAML expands aliases, drops anchors and a leading `---`,
+  and re-flows sequences. TOML loses ours' comments on a replaced `[[x]]` array of tables.
 - Fast paths before parsing: O = B → T verbatim; T = B → O verbatim. JSON/YAML are re-serialised
   only on a real merge (indent detected from ours: tabs or N spaces; trailing newline kept).
 - A parse error in any side falls back to text.

@@ -42,7 +42,9 @@ fn apply(ours: &mut dyn TableLike, merged: &IndexMap<String, Tree>, theirs: &dyn
     for (k, mt) in merged {
         let Some(item) = ours.get_mut(k) else {
             if let Some(t) = theirs.get(k) {
-                ours.insert(k, t.clone());
+                let mut new = t.clone();
+                detach(&mut new, true);
+                ours.insert(k, new);
             }
             continue;
         };
@@ -69,6 +71,30 @@ fn apply(ours: &mut dyn TableLike, merged: &IndexMap<String, Tree>, theirs: &dyn
 }
 
 use indexmap::IndexMap;
+
+/// Make a table from theirs land at the end of ours: drop its document position (so it is
+/// emitted after positioned tables) and separate it from the previous table by a blank line.
+fn detach(item: &mut Item, top: bool) {
+    if let Item::Table(t) = item {
+        if t.is_dotted() {
+            return;
+        }
+        t.set_position(None);
+        if top {
+            let prefix = t
+                .decor()
+                .prefix()
+                .and_then(|p| p.as_str())
+                .unwrap_or("")
+                .trim_start_matches(['\r', '\n'])
+                .to_string();
+            t.decor_mut().set_prefix(format!("\n{prefix}"));
+        }
+        for (_, child) in t.iter_mut() {
+            detach(child, false);
+        }
+    }
+}
 
 pub fn merge_toml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseError> {
     let (b, mut o, t) = (parse(base)?, parse(ours)?, parse(theirs)?);
