@@ -12,6 +12,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 01/6 · 6bfc236, b8fd6d5 · fmt+clippy clean, nextest 58/58 passed
 2026-10-14 · 01/7 · e9b6260, 2f3ce9d · fmt+clippy clean, nextest 71/71 passed
 2026-10-14 · 01/8 · c36008f, bc1e919 · fmt+clippy clean, nextest 93/93 passed
+2026-10-14 · 01/9 · 133cdbc, 4966458 · fmt+clippy clean, nextest 113/113 passed
 
 ## Notes for later tasks
 
@@ -22,11 +23,14 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - plan 02 (update/check): `Git::is_clean` treats a fresh dir inside a parent repo as a work
   tree; compare with `--show-toplevel`.
 
+- plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
+  `--allow-dirty` for `add`; update the §3 CLI table and README with it.
+
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–19 (post
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–20 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
   vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
