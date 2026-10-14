@@ -121,7 +121,7 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
   - `struct Git { git_dir: Option<PathBuf> }` with `fn ls_remote_tags(url: &str) -> Result<Vec<(String /*tag*/, String /*sha*/)>>` (peeled sha preferred), `fn ensure_mirror(url, mirror: &Path) -> Result<()>` (clone `--mirror` or `fetch --tags --prune`), `fn rev_parse(git_dir, rev) -> Result<String>`, `fn extract_tree(git_dir, commit, dest: &Path) -> Result<()>` (temp `GIT_INDEX_FILE`, `--work-tree <tmp> checkout <commit> -- .`, rename tmp → dest), `fn is_clean(repo: &Path) -> Result<Option<bool>>` (None = not a work tree), `fn init(dir: &Path) -> Result<()>`.
   - `tests/common`: `fn template_repo(versions: &[&str]) -> TempDir` (copies `tests/fixtures/template/<v>` in order, commits each, tags `v<v>.0.0`), `fn splice_cmd() -> assert_cmd::Command` (sets `SPLICE_CACHE_DIR`, `GIT_CONFIG_GLOBAL`=empty file, `GIT_AUTHOR_*`/`GIT_COMMITTER_*`), `fn tree_snapshot(dir: &Path) -> String` (sorted `path sha256` lines + text contents, ignoring `.git`).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn parses_sources() {
@@ -146,10 +146,10 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
 }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement both modules.** `git@host:path` and `ssh://`/`file://` are Git; anything else without a scheme is Local. Split `//subdir` on the first `//` after the scheme's own `//`. Map non-zero git exits to `SpliceError::Env` with git's stderr (secrets in URLs are git's concern; never add tokens to URLs). Create the v1 fixture minimal now (`splice.toml` + `pieces/base/piece.toml`); Task 4 fills it.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: template source parsing and git CLI wrapper`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement both modules.** `git@host:path` and `ssh://`/`file://` are Git; anything else without a scheme is Local. Split `//subdir` on the first `//` after the scheme's own `//`. Map non-zero git exits to `SpliceError::Env` with git's stderr (secrets in URLs are git's concern; never add tokens to URLs). Create the v1 fixture minimal now (`splice.toml` + `pieces/base/piece.toml`); Task 4 fills it.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: template source parsing and git CLI wrapper`
 
 ---
 

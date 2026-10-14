@@ -1,0 +1,4 @@
+format = 1
+name = "fixture"
+min_splice = "0.1.0"
+base = "base"
