@@ -54,6 +54,9 @@ Dirty tree: ask the user to commit or stash, then run it again.
 3. Run `splice check --json --offline`. Done at exit 0. Any marker line left gives exit 1.
 4. Post commands are skipped on conflict; the messages list them. Run them by hand.
 
+`update`/`add` can also exit 1 with no changes when conflict markers are still on disk. `--force` does not override this.
+Resolve them first, then run `splice check --json --offline`.
+
 Owned drift refusal (exit 1, nothing written): the files are listed in `messages`. Revert them, or
 move the change into the template, then run `update` again.
 

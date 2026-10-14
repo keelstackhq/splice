@@ -6,7 +6,7 @@ tools for bootstrapping projects.
 
 ## Install
 
-No install is needed with pnpm (Node 20+):
+With pnpm (Node 20+) you can run splice without installing it:
 
 ```bash
 pnpm dlx @keelstack/splice --version
@@ -72,6 +72,8 @@ migration step leaves the old lock in place.
 
 ## How files are treated
 
+The classes and globs are defined in [`docs/template-format.md`](docs/template-format.md).
+
 | Class | On `update` |
 |---|---|
 | `owned` | Replaced. Local edits block the update (exit 1, nothing written) until reverted or `--force`. |
@@ -100,15 +102,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: keelstack/splice/action@v1
         with:
-          token: ${{ secrets.SPLICE_BOT_TOKEN }}
+          token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}
 ```
 
 It opens or refreshes one pull request from branch `splice/update` with a summary of the
 changes, prefixes the title with `[conflicts]` when there are conflict markers, and closes the
 PR when the repo is already current. Owned drift and template errors fail the job.
 
-Pass a GitHub App token or a fine-grained token as `token`. The default `GITHUB_TOKEN` cannot
-push changes to `.github/workflows/*`, and PRs it opens do not trigger CI. Inputs, outputs and
+Pass a GitHub App token or a fine-grained token as `SPLICE_BOT_TOKEN`. Without that secret the
+example falls back to `GITHUB_TOKEN`, which cannot push changes to `.github/workflows/*`, and
+PRs it opens do not trigger CI. Inputs, outputs and
 details: [`action/README.md`](action/README.md).
 
 ### Renovate instead

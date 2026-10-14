@@ -37,6 +37,36 @@ fn flags_in(text: &str) -> BTreeSet<String> {
     set
 }
 
+const SUBS: [&str; 6] = ["new", "add", "update", "check", "diff", "explain"];
+
+/// Flags written after an explicit `splice <cmd>` must be in that command's help.
+fn check_prefixed(file: &str, text: &str) {
+    let root = flags_in(&help(&[]));
+    for line in text.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let mut cur: Option<BTreeSet<String>> = None;
+        for (i, w) in words.iter().enumerate() {
+            let w = w.trim_matches(|c: char| "`|()".contains(c));
+            if w == "splice" && i + 1 < words.len() {
+                let next = words[i + 1].trim_matches(|c: char| "`|()".contains(c));
+                cur = SUBS.contains(&next).then(|| {
+                    let mut k = flags_in(&help(&[next]));
+                    k.extend(root.iter().cloned());
+                    k
+                });
+            }
+            if let (Some(k), true) = (&cur, w.starts_with("--")) {
+                for f in flags_in(w) {
+                    assert!(
+                        k.contains(&f),
+                        "{file}: `{f}` is not a flag of that subcommand: {line}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn docs_mention_only_real_flags() {
     let root = env!("CARGO_MANIFEST_DIR");
@@ -49,6 +79,10 @@ fn docs_mention_only_real_flags() {
     for file in ["README.md", "skills/splice/SKILL.md"] {
         let text = std::fs::read_to_string(format!("{root}/{file}"))
             .unwrap_or_else(|e| panic!("{file}: {e}"));
+        check_prefixed(file, &text);
+        if text.contains("-C <") {
+            assert!(known.contains("-C") || all_help.contains("-C <DIR>"));
+        }
         let used = flags_in(&text);
         assert!(!used.is_empty(), "{file} mentions no flags");
         for f in used {
