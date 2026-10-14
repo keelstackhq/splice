@@ -27,6 +27,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · Milestone 2 reviewed · fc0be00 · safe restore advice under --allow-dirty, refuse merging over markers, helpers; nextest 263/263 passed
 2026-10-14 · 03/1 · c9b39df, 086963c · actionlint clean; fmt+clippy+nextest 263/263 locally, warm wall time 8.3s (first GitHub run: see Blocked)
 2026-10-14 · 03/2 · fd61fd2 · actionlint clean, node 6/6, nextest 263/263; release build + musl build + smoke test run locally (GitHub dry run: see Blocked)
+2026-10-14 · 03/3 · fffa3f0, 54cddfb · node 23/23, nextest 263/263, actionlint clean; local proof: staged linux-x64 + launcher installed via npm and via pnpm 10.28 → `splice --version` = `splice 0.1.0`, exit codes pass through
 
 ## Notes for later tasks
 
@@ -48,6 +49,12 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - plan 03 Task 2 (release dry run): run `.github/workflows/release.yml` via "Run workflow"
   (workflow_dispatch) on the branch; confirm all five builds and smoke tests pass (macOS x64 runs
   under Rosetta). No release or npm publish happens on a dispatch.
+- plan 03 Task 3 (npm publish): create the npm org `keelstack` (or adjust the six package names in
+  `npm/platforms.json` / `npm/splice/package.json` if the org differs), add repo secret `NPM_TOKEN`
+  (automation token with publish rights), then push tag `v0.1.0` (Cargo.toml is 0.1.0). The release
+  workflow builds, creates the GitHub release and publishes with provenance; afterwards verify
+  `pnpm dlx @keelstack/splice --version` on a clean machine. Note: the plan names the GitHub org
+  `keelstack` while this repo is `keelstackhq/splice`; provenance now follows GITHUB_REPOSITORY.
 
 ## Status
 
