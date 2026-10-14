@@ -8,7 +8,7 @@ inputs:
     description: Template version to update to (empty = latest).
     default: ""
   token:
-    description: Token for git push and the gh CLI. A GITHUB_TOKEN does not trigger CI on the PR; pass a GitHub App or fine-grained token for that.
+    description: Token used for the git push (not the checkout credential) and the gh CLI. The default GITHUB_TOKEN cannot push changes to .github/workflows/* and PRs it opens do not trigger CI; pass a GitHub App or fine-grained PAT (contents, pull-requests, workflows write).
     default: ${{ github.token }}
   branch:
     description: Branch that carries the update.
@@ -78,49 +78,10 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         GH_REPO: ${{ github.repository }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
         BRANCH: ${{ inputs.branch }}
         LABELS: ${{ inputs.labels }}
         RESULT: ${{ steps.summary.outputs.result }}
         TITLE: ${{ steps.summary.outputs.title }}
         BODY: ${{ steps.summary.outputs.body }}
-      run: |
-        set -euo pipefail
-        pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
-
-        finish_current() {
-          if [ -n "$pr" ]; then
-            gh pr close "$pr" --comment "Already up to date." --delete-branch
-          fi
-          echo "result=current" >> "$GITHUB_OUTPUT"
-          echo "pr-url=" >> "$GITHUB_OUTPUT"
-          exit 0
-        }
-
-        # Already current: no push, no PR; an open bot PR is closed.
-        if [ "$RESULT" = current ]; then finish_current; fi
-
-        git switch -C "$BRANCH"
-        git add -A -- .
-        # The report listed changes but the tree is unchanged (e.g. only skips): treat as current.
-        if git diff --cached --quiet; then finish_current; fi
-        git commit -m "$TITLE"
-        remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
-        git push --force-with-lease="$BRANCH:$remote_sha" origin "HEAD:refs/heads/$BRANCH"
-
-        if [ -n "$pr" ]; then
-          gh pr edit "$pr" --title "$TITLE" --body "$BODY"
-          url=$(gh pr view "$pr" --json url --jq .url)
-        else
-          label_args=()
-          IFS=',' read -ra wanted <<< "$LABELS"
-          for l in "${wanted[@]}"; do
-            l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
-            [ -n "$l" ] || continue
-            gh label create "$l" >/dev/null 2>&1 || true   # fails when it exists; fine
-            label_args+=(--label "$l")
-          done
-          base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
-          url=$(gh pr create --base "$base" --head "$BRANCH" --title "$TITLE" --body "$BODY" ${label_args[@]+"${label_args[@]}"})
-        fi
-        echo "result=$RESULT" >> "$GITHUB_OUTPUT"
-        echo "pr-url=$url" >> "$GITHUB_OUTPUT"
+      run: bash "$GITHUB_ACTION_PATH/publish.sh"

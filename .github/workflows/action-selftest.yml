@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 jobs:
   current:
     runs-on: ubuntu-latest
@@ -43,6 +43,7 @@ jobs:
         uses: ./action
         with:
           version: local
+          branch: selftest/${{ github.run_id }}   # throwaway: cannot match a real bot PR
           working-directory: ${{ steps.fixture.outputs.dir }}
       - name: Expect current, no PR
         env:

@@ -153,7 +153,7 @@ jobs:
       - name: unpack release archives
         run: |
           set -euo pipefail
-          while read -r target os cpu bin; do
+          while read -r target _os _cpu bin; do
             mkdir -p "artifacts/$target"
             if [ "$bin" = "splice.exe" ]; then
               unzip -q -o "dist/splice-$target.zip" "$bin" -d "artifacts/$target"

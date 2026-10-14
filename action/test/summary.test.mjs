@@ -69,9 +69,21 @@ test("pipes and backticks in paths cannot break the table", () => {
     messages: [],
   };
   const { body } = summarize(r, 0, "1.0.0");
-  assert.match(body, /\| create \| `a\\\|b\\`c\.txt` \| seed \|/);
+  assert.ok(body.includes("| create | ``a\\|b`c.txt`` | seed |"), body);
   const row = body.split("\n").find((l) => l.includes("a\\|b"));
   assert.equal(row.replace(/\\\|/g, "").split("|").length, 5); // leading, 3 cells, trailing
+});
+
+test("a path that starts with a backtick gets padded fences", () => {
+  const r = { ok: true, command: "update", changes: [{ path: "`x", action: "create", class: "seed" }], messages: [] };
+  assert.ok(summarize(r, 0, "1").body.includes("| `` `x `` |"), summarize(r, 0, "1").body);
+});
+
+test("@ in messages is neutralised so nobody is mentioned", () => {
+  const r = { ok: true, command: "update", changes: [{ path: "x", action: "update", class: "owned" }], messages: ["cc @octocat and @org/team"] };
+  const { body } = summarize(r, 0, "1.0.0");
+  assert.ok(!/@(?!\u200b)/.test(body), body);
+  assert.ok(body.includes("@\u200boctocat"));
 });
 
 test("messages are listed in the body", () => {

@@ -8,7 +8,16 @@ import { fileURLToPath } from "node:url";
 
 const ORDER = ["conflict", "create", "update", "merge", "delete", "skip"];
 
-const cell = (p) => "`" + String(p).replaceAll("|", "\\|").replaceAll("`", "\\`") + "`";
+// Inline code span safe inside a table cell: `|` escaped, fence longer than any backtick run.
+const cell = (p) => {
+  const t = String(p).replaceAll("|", "\\|");
+  const longest = Math.max(0, ...(t.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = "`".repeat(longest + 1);
+  const pad = t.startsWith("`") || t.endsWith("`") ? " " : "";
+  return `${fence}${pad}${t}${pad}${fence}`;
+};
+// No pings from messages (paths in code spans cannot ping).
+const defang = (m) => String(m).replaceAll("@", "@\u200b");
 
 export function summarize(report, exitCode, version) {
   const changes = report.changes ?? [];
@@ -36,7 +45,7 @@ export function summarize(report, exitCode, version) {
     .map((c, i) => [c, i])
     .sort((a, b) => rank(a[0].action) - rank(b[0].action) || a[1] - b[1]);
   for (const [c] of sorted) lines.push(`| ${c.action} | ${cell(c.path)} | ${c.class} |`);
-  if (messages.length) lines.push("", "## Messages", "", ...messages.map((m) => `- ${m}`));
+  if (messages.length) lines.push("", "## Messages", "", ...messages.map((m) => `- ${defang(m)}`));
   lines.push(
     "",
     conflicted

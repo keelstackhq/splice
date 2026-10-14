@@ -15,7 +15,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: keelstack/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN }}   # optional, see below
@@ -42,8 +42,15 @@ Inputs: `version` (splice npm version, default `latest`), `to` (template version
 The job needs `contents: write` and `pull-requests: write`. Runners must have `git`, `gh` and
 Node 20+ (GitHub-hosted Linux and macOS runners do).
 
-PRs opened with `GITHUB_TOKEN` do not trigger `pull_request` workflows. To get CI on the bot PR,
-pass a GitHub App token or a fine-grained PAT (contents and pull requests: write) as `token`.
+The action pushes with `token`, not with the credential `actions/checkout` left behind: it passes
+the token as a one-command `http.<server>/.extraheader` override, so it is never written to
+`.git/config`. Two limits of the default `GITHUB_TOKEN`:
+
+- it cannot push changes to `.github/workflows/*`, and templates often ship workflow files;
+- PRs it opens do not trigger `pull_request` workflows, so the bot PR gets no CI.
+
+So pass a GitHub App token or a fine-grained PAT with contents, pull-requests and workflows
+write as `token`.
 
 ## Self-test
 

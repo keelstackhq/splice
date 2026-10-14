@@ -107,7 +107,7 @@ jobs:
 - [x] **Step 1: Write failing test** — `checkVersion({tag:"v0.2.0", cargoToml:'version = "0.1.0"'})` throws `tag v0.2.0 does not match Cargo.toml 0.1.0`; matching inputs return `"0.2.0"`.
 - [x] **Step 2: Run `node --test 'scripts/**/*.test.mjs'` — FAIL**
 - [x] **Step 3: Implement the script and the workflow.** Trigger `push: tags: ['v*']` + `workflow_dispatch` (dry run, no publish). Jobs: `check` (version script) → `build` matrix: `ubuntu-24.04` (x86_64 musl, `apt-get install musl-tools`), `ubuntu-24.04-arm` (aarch64 musl, musl-tools), `macos-15` (both darwin targets, `rustup target add x86_64-apple-darwin`), `windows-2025` (msvc). Each native build runs `splice --version` and a `splice new` smoke test against `tests/fixtures/template/v1` (made into a git repo by a 5-line shell step). Linux: verify `file splice` says `statically linked`. → `release` job: download artifacts, write `SHA256SUMS`, `gh release create $TAG --generate-notes` with all files → `npm` job (Task 3).
-- [x] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists** (local node tests + actionlint done; GitHub selftest run is human)
+- [ ] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists**
 - [x] **Step 5: Commit** — `ci: release workflow for five targets with checksums`
 
 ---
@@ -197,7 +197,7 @@ test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("
 - [ ] **Step 1: Write failing test** — `docs_mention_only_real_flags`: extract `--[a-z-]+` tokens from both files, assert each appears in the help of some subcommand (plus an allowlist for `--json` examples of other tools, e.g. `pnpm`).
 - [ ] **Step 2: Run — FAIL (files missing)**
 - [ ] **Step 3: Write the docs.** `SKILL.md` frontmatter `name: splice`, `description:` "Use when a repo has .splice/lock.toml or the user asks to create, update or check a project from a keelstack template…". Body ≤ 80 lines: always `--json`; read `changes`/exit code table; before editing a file run `splice explain <path> --json` (owned → change the template or accept drift; shared → edit freely; seed → yours); resolving conflicts (edit marker blocks, keep intent of both, then `splice check --json --offline`); never edit `.splice/lock.toml`; dirty tree → commit or stash first, never `--allow-dirty` without being asked; restore command after a failed update. README.product sections: install (`pnpm dlx`, release binaries), quick start with hull, commands table, ownership classes (link to `docs/template-format.md`), update bot workflow example (weekly cron + `workflow_dispatch`), Renovate alternative (spec §13, with the self-hosted caveat), writing templates (link to contract), comparison with Copier (one paragraph), license.
-- [x] **Step 4: Run — PASS** (local node tests + actionlint done; GitHub selftest run is human)
+- [ ] **Step 4: Run — PASS**
 - [ ] **Step 5: Commit** — `docs: agent skill and product README`
 
 ---

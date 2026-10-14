@@ -430,6 +430,10 @@ into the contract at its next `format` bump.
     shared file that the plan would merge still contains conflict markers on disk (`find_markers`):
     message `resolve conflict markers in <path> first (splice check)`, then `nothing was written`.
     `--force` does not override it; `diff` reports it as a message.
+27. Update bot and owned drift: `update --json` exiting 1 with no `conflict` change is owned drift
+    (nothing written). The bot fails the job and prints splice's messages instead of opening a
+    `[conflicts]` PR, which would have no diff. Only exit 1 with at least one `conflict` change
+    gives a `[conflicts]` PR.
 
 ## 11. Testing
 
@@ -461,8 +465,16 @@ into the contract at its next `format` bump.
 
 Composite action `action/action.yml` (`uses: keelstack/splice/action@v1`). Inputs: `version`
 (splice npm version, default `latest`), `to` (template version, default latest), `token`
-(default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`).
-Steps: install via `npm i -g @keelstack/splice@<version>`, run `splice update --json --yes`,
+(default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
+`working-directory` (default `.`). Outputs: `result` (`updated|conflicts|current`) and `pr-url`.
+`version: local` skips the npm install and uses the `splice` on PATH (testing only; the self-test
+uses it). The push and the `gh` calls use `token`: the push passes it as a one-command
+`http.<server>/.extraheader` override (resetting the checkout credential, never writing
+`.git/config`). `GITHUB_TOKEN` cannot push `.github/workflows/*` changes and its PRs trigger no CI,
+so consumers pass a GitHub App or fine-grained PAT (contents, pull-requests, workflows write).
+Open/refresh/close logic lives in `action/publish.sh` (tested with stub `gh`/`git`). Owned drift
+(exit 1 with no conflicted file, nothing written) and exit 2/3 fail the job with splice's
+messages; no PR is opened (decision 27 in §10). Steps: install via `npm i -g @keelstack/splice@<version>`, run `splice update --json --yes`,
 and if anything changed commit to `branch`, `git push --force-with-lease`, then open or edit the
 single PR with the `gh` CLI (body = summary table from the JSON; title gets `[conflicts]` on
 exit 1). If the repo is already current and a bot PR is open, close it.
