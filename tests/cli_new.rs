@@ -12,7 +12,9 @@ fn redact(snapshot: &str) -> String {
     snapshot
         .lines()
         .map(|l| {
-            if l.starts_with("source = ") {
+            if l.starts_with("splice = ") {
+                "splice = \"<version>\"".to_string()
+            } else if l.starts_with("source = ") {
                 "source = \"<template>\"".to_string()
             } else if l.starts_with("commit = ") {
                 "commit = \"<sha>\"".to_string()
@@ -248,16 +250,116 @@ fn no_post_flag() {
     assert!(!dest.path().join(".post-ran").exists());
 }
 
+/// A template whose base post command is `run`, as a fresh tagged repo.
+fn template_with_post(run: &str) -> tempfile::TempDir {
+    let tpl = template_repo_min_splice("0.1.0");
+    let p = tpl.path().join("pieces/base/piece.toml");
+    let t = std::fs::read_to_string(&p).unwrap();
+    std::fs::write(&p, t.replace("echo post> .post-ran", run)).unwrap();
+    common::git_commit_all(tpl.path(), "post");
+    common::tag(&tpl, "v1.1.0");
+    tpl
+}
+
 #[test]
 fn post_output_goes_to_stderr_in_json_mode() {
-    let tpl = template_repo(&["v1"]);
+    let tpl = template_with_post("echo hello-from-post");
     let dest = tempdir().unwrap();
     let out = splice_cmd()
         .args(base_args(tpl.path(), dest.path()))
         .assert()
         .success();
     let o = out.get_output();
+    assert!(String::from_utf8_lossy(&o.stderr).contains("hello-from-post"));
+    assert!(!String::from_utf8_lossy(&o.stdout).contains("hello-from-post"));
     serde_json::from_slice::<serde_json::Value>(&o.stdout).unwrap();
+}
+
+#[test]
+fn post_failure_says_files_and_lock_were_written() {
+    let tpl = template_with_post("exit 7");
+    let dest = tempdir().unwrap();
+    let out = splice_cmd()
+        .args(base_args(tpl.path(), dest.path()))
+        .assert()
+        .code(3)
+        .get_output()
+        .stdout
+        .clone();
+    let m = json(out)["messages"][0].as_str().unwrap().to_string();
+    assert!(m.contains("exit 7") && m.contains("lock"), "{m}");
+    assert!(dest.path().join(".splice/lock.toml").exists());
+}
+
+#[test]
+fn force_omits_identical_files() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempdir().unwrap();
+    splice_cmd()
+        .args(base_args(tpl.path(), dest.path()))
+        .assert()
+        .success();
+    std::fs::remove_file(dest.path().join(".splice/lock.toml")).unwrap();
+    std::fs::write(dest.path().join(".editorconfig"), "old\n").unwrap();
+    let mut a = base_args(tpl.path(), dest.path());
+    a.push("--force");
+    let r = json(
+        splice_cmd()
+            .args(a)
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone(),
+    );
+    let ch = r["changes"].as_array().unwrap();
+    assert!(
+        ch.iter()
+            .any(|c| c["path"] == ".editorconfig" && c["action"] == "update")
+    );
+    assert!(!ch.iter().any(|c| c["path"] == "package.json"), "{r}");
+}
+
+#[test]
+fn write_through_symlink_or_over_dir_is_exit_3() {
+    let tpl = template_repo(&["v1"]);
+    let outside = tempdir().unwrap();
+    let dest = tempdir().unwrap();
+    std::fs::create_dir(dest.path().join(".editorconfig")).unwrap();
+    let mut a = base_args(tpl.path(), dest.path());
+    a.push("--force");
+    splice_cmd().args(a).assert().code(3);
+    assert!(!dest.path().join(".splice").exists());
+    #[cfg(unix)]
+    {
+        let dest = tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), dest.path().join("config")).unwrap();
+        let mut a = base_args(tpl.path(), dest.path());
+        a.push("--force");
+        splice_cmd().args(a).assert().code(3);
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn dest_regular_file_is_usage() {
+    let tpl = template_repo(&["v1"]);
+    let d = tempdir().unwrap();
+    let dest = d.path().join("f");
+    std::fs::write(&dest, "x").unwrap();
+    let out = splice_cmd()
+        .args(base_args(tpl.path(), &dest))
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    assert!(
+        json(out)["messages"][0]
+            .as_str()
+            .unwrap()
+            .contains("not a directory")
+    );
 }
 
 #[test]

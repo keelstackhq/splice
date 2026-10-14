@@ -60,6 +60,9 @@ fn parse_piece_flags(raw: &[String]) -> Result<Vec<(String, Option<String>)>> {
 /// Dest must be a directory (or absent) holding at most `.git`, unless `--force`; any lock at
 /// all is refused, and `.splice` must not be a regular file or symlink.
 fn check_dest(dest: &Path, force: bool) -> Result<()> {
+    if dest.exists() && !dest.is_dir() {
+        return Err(usage(format!("{} is not a directory", dest.display())));
+    }
     match std::fs::symlink_metadata(dest.join(".splice")) {
         Ok(m) if m.is_dir() => {}
         Ok(_) => {
@@ -103,6 +106,10 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
 }
 
 /// Refuse to write through a symlink or over a directory below `dest` (checked before any write).
+fn unsafe_path(msg: String) -> SpliceError {
+    SpliceError::Template(format!("unsafe path: {msg}"))
+}
+
 fn check_target(dest: &Path, rel: &str) -> Result<PathBuf> {
     let mut p = dest.to_path_buf();
     let segs: Vec<&str> = rel.split('/').collect();
@@ -110,16 +117,16 @@ fn check_target(dest: &Path, rel: &str) -> Result<PathBuf> {
         p.push(seg);
         match std::fs::symlink_metadata(&p) {
             Ok(m) if m.file_type().is_symlink() => {
-                return Err(usage(format!(
+                return Err(unsafe_path(format!(
                     "refusing to write through symlink {}",
                     p.display()
                 )));
             }
             Ok(m) if i + 1 == segs.len() && m.is_dir() => {
-                return Err(usage(format!("{rel} exists and is a directory")));
+                return Err(unsafe_path(format!("{rel} exists and is a directory")));
             }
             Ok(m) if i + 1 < segs.len() && !m.is_dir() => {
-                return Err(usage(format!(
+                return Err(unsafe_path(format!(
                     "{} exists and is not a directory",
                     p.display()
                 )));
@@ -247,6 +254,9 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
         let existed = std::fs::symlink_metadata(&target).is_ok();
         if f.class == Class::Seed && existed {
             report.push(f.path.clone(), Action::Skip, f.class);
+            continue;
+        }
+        if existed && std::fs::read(&target).is_ok_and(|b| b == f.bytes) {
             continue;
         }
         write_file(&dest, &f.path, &f.bytes)?;

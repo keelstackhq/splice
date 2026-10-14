@@ -27,16 +27,16 @@ pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, _json: bool) -> Resul
         let out = cmd
             .current_dir(repo)
             .stdin(Stdio::null())
-            .output()
+            .stdout(Stdio::from(std::io::stderr()))
+            .stderr(Stdio::from(std::io::stderr()))
+            .status()
             .map_err(|e| {
                 SpliceError::Env(format!("post command `{}` could not start: {e}", c.run))
             })?;
-        eprint!("{}", String::from_utf8_lossy(&out.stdout));
-        eprint!("{}", String::from_utf8_lossy(&out.stderr));
-        if !out.status.success() {
+        if !out.success() {
             return Err(SpliceError::Env(format!(
-                "post command `{}` failed ({})",
-                c.run, out.status
+                "post command `{}` failed ({out}); the files and the lock were already written",
+                c.run
             )));
         }
     }

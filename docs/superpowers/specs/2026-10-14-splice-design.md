@@ -171,15 +171,22 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
 
 1. Resolve source + ref, fetch tree, load + validate manifests, check `min_splice`.
 2. `dest` must be empty apart from `.git` unless `--force` (then existing owned/shared files are
-   overwritten and seeds kept). A lock already present is exit 2.
-3. Instances: `base` (name = `base`) then each `--piece` in order. Check `requires` against the
+   overwritten and seeds kept). A lock already present is exit 2, as is a `dest` that is a regular
+   file or a `.splice` that is not a directory. Under `--force` a file whose bytes are already
+   identical is omitted from the report (§9 omits unchanged files); a changed one is `update`,
+   a kept seed is `skip`.
+3. Instances: `base` (name = its id) then each `--piece` in order. Check `requires` against the
    final set, `multiple`, unique names.
 4. Resolve vars (flags → prompt → default), validate `pattern`.
 5. Render, write every file, write the lock (§8.6), `git init` if `dest` is not inside a git work
    tree, run `[[post]]` with `when` ∋ `new`.
 
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
-var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
+var if it declares one, else the piece id; a non-`multiple` piece's name is its id (so the base
+instance is named after the base piece). `--piece ID:NAME` is also stored as the instance's `name`
+var when the piece declares one. A `--data K=V` for a piece var applies to every instance of that
+piece. Usage errors (exit 2): an unknown `--data` key, `--piece` naming the base piece, a repeated
+non-`multiple` piece, a name given to a non-`multiple` piece, a duplicate (id, name).
 
 ### 8.2 `add`
 
@@ -323,6 +330,9 @@ into the contract at its next `format` bump.
     `AUX`, `NUL`, `COM1-9`, `LPT1-9`, case-insensitive, with or without extension). The lock path
     is reserved case-insensitively.
 18. Piece ids and instance names follow item 17's segment rule.
+19. `new --force` (and later `add`/`update`) refuses to write through a symlink below the
+    destination or over a directory: template/environment error "unsafe path" (exit 3), checked
+    for every file before anything is written.
 
 ## 11. Testing
 
