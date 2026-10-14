@@ -24,6 +24,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/7 · 7fe7d4f, ca1ed33 · fmt+clippy clean (linux + windows-gnu), nextest 234/234 passed (all 12 fixture rows verified)
 2026-10-14 · 02/8 · 263f738, 5c7fa60 · fmt+clippy clean (linux + windows-gnu), nextest 249/249 passed
 2026-10-14 · 02/9 · 336d613, d68311e · fmt+clippy clean (linux + windows-gnu), nextest 258/258 passed
+2026-10-14 · Milestone 2 reviewed · fc0be00 · safe restore advice under --allow-dirty, refuse merging over markers, helpers; nextest 263/263 passed
 
 ## Notes for later tasks
 
@@ -33,7 +34,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–24 (post
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–26 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
   vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
