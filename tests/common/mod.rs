@@ -96,6 +96,25 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
     dir
 }
 
+/// A one-version template repo (tag `v1.0.0`) from fixture `v1` with `min_splice` rewritten.
+pub fn template_repo_min_splice(min: &str) -> TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    copy_dir(&fixtures().join("v1"), dir.path());
+    let p = dir.path().join("splice.toml");
+    let text = std::fs::read_to_string(&p).unwrap();
+    assert!(text.contains("min_splice = \"0.1.0\""));
+    std::fs::write(
+        &p,
+        text.replace("min_splice = \"0.1.0\"", &format!("min_splice = \"{min}\"")),
+    )
+    .unwrap();
+    git(dir.path(), &["add", "-A"]);
+    git(dir.path(), &["commit", "-q", "-m", "v1"]);
+    git(dir.path(), &["tag", "v1.0.0"]);
+    dir
+}
+
 /// Tag the current HEAD of `repo`.
 pub fn tag(repo: &TempDir, name: &str) {
     git(repo.path(), &["tag", name]);
@@ -158,4 +177,9 @@ pub fn tree_snapshot(dir: &Path) -> String {
 pub fn git_commit_all(dir: &Path, msg: &str) {
     git(dir, &["add", "-A"]);
     git(dir, &["commit", "-q", "-m", msg]);
+}
+
+/// Make `dir` a git work tree (init only, no commit needed).
+pub fn git_commit_all_init(dir: &Path) {
+    git(dir, &["init", "-q", "-b", "main"]);
 }

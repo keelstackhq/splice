@@ -410,7 +410,7 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
   - `fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result<()>` — `sh -c` / `cmd /C`, stdout+stderr to our stderr when `json`, dedupe identical `run` strings, piece order; non-zero → Env error naming the command.
   - `fn ops::new::run(g: &GlobalArgs, a: &NewArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn new_renders_fixture_and_writes_lock() {
@@ -438,10 +438,10 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
 #[test] fn min_splice_refused() { /* template_repo(&["v1","v2","v3"]) + --ref v3.0.0 → exit 3, dest empty */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement** spec §8.1 in order: resolve → load → min_splice → dest check → instances → vars → render → write files (seeds only if absent) → lock → `git init` → post. Report actions: `create` per written file, `skip` per kept seed.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: splice new`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement** spec §8.1 in order: resolve → load → min_splice → dest check → instances → vars → render → write files (seeds only if absent) → lock → `git init` → post. Report actions: `create` per written file, `skip` per kept seed.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: splice new`
 
 ---
 

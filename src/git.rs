@@ -147,6 +147,18 @@ impl Git {
         Ok(Some(run(c)?.trim().is_empty()))
     }
 
+    /// True when `dir` is inside any git work tree (its own or a parent's).
+    pub fn is_inside_work_tree(dir: &Path) -> Result<bool> {
+        let mut c = base(None);
+        c.arg("-C")
+            .arg(dir)
+            .args(["rev-parse", "--is-inside-work-tree"]);
+        match c.output() {
+            Ok(o) => Ok(o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true"),
+            Err(e) => Err(SpliceError::Env(format!("could not run git: {e}"))),
+        }
+    }
+
     pub fn init(dir: &Path) -> Result<()> {
         std::fs::create_dir_all(dir)?;
         let mut c = base(None);
