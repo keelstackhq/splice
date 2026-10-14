@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod error;
+pub mod fetch;
 pub mod git;
 pub mod output;
 pub mod source;

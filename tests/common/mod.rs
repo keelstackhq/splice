@@ -96,6 +96,11 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
     dir
 }
 
+/// Tag the current HEAD of `repo`.
+pub fn tag(repo: &TempDir, name: &str) {
+    git(repo.path(), &["tag", name]);
+}
+
 pub fn splice_cmd() -> Command {
     let mut c = Command::cargo_bin("splice").unwrap();
     c.env("SPLICE_CACHE_DIR", cache_dir())

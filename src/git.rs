@@ -69,6 +69,7 @@ impl Git {
                 "--tags",
                 "--prune",
                 "--force",
+                "--",
                 url,
                 "+refs/heads/*:refs/heads/*",
             ]);

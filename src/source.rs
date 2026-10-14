@@ -16,6 +16,9 @@ pub struct TemplateSource {
     pub subdir: Option<String>,
 }
 
+/// URL schemes spec §4 allows.
+const ALLOWED_SCHEMES: [&str; 3] = ["https", "ssh", "file"];
+
 fn has_scheme(s: &str) -> bool {
     matches!(s.split_once("://"), Some((scheme, _)) if !scheme.is_empty()
         && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)))
@@ -75,7 +78,18 @@ impl TemplateSource {
             SourceKind::Git {
                 url: format!("https://github.com/{rest}.git"),
             }
-        } else if has_scheme(repo) || is_scp_like(repo) {
+        } else if has_scheme(repo) {
+            let scheme = repo.split_once("://").map_or("", |(s, _)| s);
+            if !ALLOWED_SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) {
+                return Err(SpliceError::Usage(format!(
+                    "invalid template source `{spec}`: unsupported scheme `{scheme}` \
+                     (use https, ssh, file, git@host:path, gh:owner/repo or a local path)"
+                )));
+            }
+            SourceKind::Git {
+                url: repo.to_string(),
+            }
+        } else if is_scp_like(repo) {
             SourceKind::Git {
                 url: repo.to_string(),
             }
@@ -182,6 +196,20 @@ mod tests {
                 Some("s")
             )
         );
+    }
+
+    #[test]
+    fn rejects_unlisted_schemes() {
+        for bad in [
+            "foo://x",
+            "ftp://h/r.git",
+            "http://h/r.git",
+            "git://h/r.git",
+        ] {
+            let e = TemplateSource::parse(bad).unwrap_err();
+            assert_eq!(e.exit_code(), 2, "{bad}");
+        }
+        assert!(TemplateSource::parse("https://h/r.git").is_ok());
     }
 
     #[test]

@@ -169,7 +169,7 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
   - `fn Fetcher::checkout(&self, src: &TemplateSource, commit: &str, version: semver::Version) -> Result<ResolvedTemplate>` — no network when the tree is cached.
   - `fn Fetcher::available_versions(&self, src, pre: bool) -> Result<Vec<semver::Version>>` (sorted ascending)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn latest_stable_and_cache_reuse() {
@@ -193,10 +193,10 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
 #[test] fn missing_subdir_or_commit_is_template_error() { /* `//nope` → exit-3 error naming the path; unknown sha → names the sha */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement.** Local sources use their own `.git` as the mirror; remote ones `ensure_mirror` first. Extraction goes to `trees/<key>/<commit>.tmp-<pid>` then renames (another process may win the rename — treat an existing dest as success).
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: resolve template versions and cache trees by commit`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement.** Local sources use their own `.git` as the mirror; remote ones `ensure_mirror` first. Extraction goes to `trees/<key>/<commit>.tmp-<pid>` then renames (another process may win the rename — treat an existing dest as success).
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: resolve template versions and cache trees by commit`
 
 ---
 
