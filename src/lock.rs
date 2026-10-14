@@ -69,6 +69,8 @@ struct RawLock {
     pieces: Vec<RawPiece>,
     #[serde(default)]
     files: BTreeMap<String, RawFile>,
+    #[serde(flatten)]
+    extra: IndexMap<String, toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +78,8 @@ struct RawTemplate {
     source: String,
     version: String,
     commit: String,
+    #[serde(flatten)]
+    extra: IndexMap<String, toml::Value>,
 }
 
 #[derive(Deserialize)]
@@ -84,12 +88,16 @@ struct RawPiece {
     name: String,
     #[serde(default)]
     vars: IndexMap<String, String>,
+    #[serde(flatten)]
+    extra: IndexMap<String, toml::Value>,
 }
 
 #[derive(Deserialize)]
 struct RawFile {
     class: Class,
     sha256: String,
+    #[serde(flatten)]
+    extra: IndexMap<String, toml::Value>,
 }
 
 fn is_hex(s: &str, lens: &[usize]) -> bool {
@@ -162,6 +170,23 @@ impl Lock {
     /// committed and therefore untrusted: nothing in it may reach git or the filesystem
     /// unchecked.
     pub fn read(repo: &Path) -> Result<Option<Lock>> {
+        Ok(Self::read_with_warnings(repo)?.map(|(l, _)| l))
+    }
+
+    /// Like [`Lock::read`], also returning one warning per unknown key (ignored).
+    pub fn read_with_warnings(repo: &Path) -> Result<Option<(Lock, Vec<String>)>> {
+        for rel in [".splice", LOCK_REL] {
+            match std::fs::symlink_metadata(repo.join(rel)) {
+                Ok(m) if m.file_type().is_symlink() => {
+                    return Err(bad(format!(
+                        "{rel} is a symlink; refusing to read through it"
+                    )));
+                }
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(e.into()),
+            }
+        }
         let Some(bytes) = read_opt(repo, LOCK_REL)? else {
             return Ok(None);
         };
@@ -172,6 +197,20 @@ impl Lock {
                 "unsupported lock format {} (this splice reads format 1); upgrade splice",
                 raw.format
             )));
+        }
+        let mut warnings = Vec::new();
+        let mut warn = |ctx: &str, extra: &IndexMap<String, toml::Value>| {
+            for k in extra.keys() {
+                warnings.push(format!("{LOCK_REL}: unknown key `{ctx}{k}` ignored"));
+            }
+        };
+        warn("", &raw.extra);
+        warn("template.", &raw.template.extra);
+        for p in &raw.pieces {
+            warn("pieces.", &p.extra);
+        }
+        for (path, f) in &raw.files {
+            warn(&format!("files.{path}."), &f.extra);
         }
         let source = TemplateSource::parse(&raw.template.source).map_err(in_lock)?;
         if !is_hex(&raw.template.commit, &[40, 64]) {
@@ -211,7 +250,7 @@ impl Lock {
                 },
             );
         }
-        Ok(Some(Lock {
+        let lock = Lock {
             format: 1,
             splice: parse_version("splice version", &raw.splice)?,
             template: LockTemplate {
@@ -222,7 +261,8 @@ impl Lock {
             vars: raw.vars,
             pieces,
             files,
-        }))
+        };
+        Ok(Some((lock, warnings)))
     }
 
     fn to_toml(&self) -> String {
@@ -276,7 +316,17 @@ impl Lock {
         let tmp = repo.join(LOCK_TMP_REL);
         let dest = repo.join(LOCK_REL);
         let dir = repo.join(".splice");
-        std::fs::create_dir_all(&dir)?;
+        // A committed `.splice` symlink must not redirect the delete/write below.
+        match std::fs::symlink_metadata(&dir) {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => {
+                return Err(bad(
+                    ".splice is not a real directory (symlink or file); refusing to write",
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::create_dir_all(&dir)?,
+            Err(e) => return Err(e.into()),
+        }
         // Never write through a pre-existing file or symlink at the temp path.
         match std::fs::remove_file(&tmp) {
             Ok(()) => {}
@@ -298,6 +348,8 @@ impl Lock {
             return Err(e.into());
         }
         #[cfg(unix)]
+        // Best effort: the rename already succeeded, and some filesystems cannot fsync a
+        // directory, so a failure here must not report the lock as unwritten.
         if let Ok(d) = std::fs::File::open(&dir) {
             let _ = d.sync_all();
         }
@@ -505,5 +557,68 @@ mod tests {
         lock.template.version = semver::Version::new(2, 0, 0);
         lock.write_atomic(dir.path()).unwrap();
         assert_eq!(Lock::read(dir.path()).unwrap().unwrap(), lock);
+    }
+
+    #[test]
+    fn var_order_is_preserved_on_read() {
+        let d = tempfile::tempdir().unwrap();
+        let mut lock = sample_lock();
+        lock.pieces[0].vars = vars(&[("name", "web"), ("kind", "x"), ("a", "y")]);
+        lock.write_atomic(d.path()).unwrap();
+        let back = Lock::read(d.path()).unwrap().unwrap();
+        assert!(back.vars.keys().eq(["scope", "env"]));
+        assert!(back.pieces[0].vars.keys().eq(["name", "kind", "a"]));
+    }
+
+    #[test]
+    fn unknown_keys_produce_warnings() {
+        let text = valid_text()
+            .replace("format = 1", "format = 1\nextra = 1")
+            .replace("[vars]", "[template.more]\nx = 1\n\n[vars]");
+        let d = tempfile::tempdir().unwrap();
+        write_raw(d.path(), &text);
+        let (_, w) = Lock::read_with_warnings(d.path()).unwrap().unwrap();
+        assert!(w.iter().any(|m| m.contains("extra")), "{w:?}");
+        assert!(w.iter().any(|m| m.contains("template.more")), "{w:?}");
+        assert!(Lock::read(d.path()).unwrap().is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_splice_dir_is_refused() {
+        let repo = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), repo.path().join(".splice")).unwrap();
+        std::fs::write(outside.path().join("lock.toml.tmp"), "precious").unwrap();
+        let e = sample_lock().write_atomic(repo.path()).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        assert!(e.to_string().contains(".splice"), "{e}");
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("lock.toml.tmp")).unwrap(),
+            "precious"
+        );
+        assert!(!outside.path().join("lock.toml").exists());
+
+        std::fs::write(outside.path().join("lock.toml"), valid_text()).unwrap();
+        let e = Lock::read(repo.path()).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        assert!(e.to_string().contains("symlink"), "{e}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_lock_file_is_refused() {
+        let repo = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("real.toml"), valid_text()).unwrap();
+        std::fs::create_dir(repo.path().join(".splice")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("real.toml"),
+            repo.path().join(".splice/lock.toml"),
+        )
+        .unwrap();
+        let e = Lock::read(repo.path()).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        assert!(e.to_string().contains("symlink"), "{e}");
     }
 }

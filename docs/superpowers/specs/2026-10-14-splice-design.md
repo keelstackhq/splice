@@ -322,6 +322,7 @@ into the contract at its next `format` bump.
     control characters, not end in `.` or space, and not be a Windows reserved name (`CON`, `PRN`,
     `AUX`, `NUL`, `COM1-9`, `LPT1-9`, case-insensitive, with or without extension). The lock path
     is reserved case-insensitively.
+18. Piece ids and instance names follow item 17's segment rule.
 
 ## 11. Testing
 

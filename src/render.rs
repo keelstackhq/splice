@@ -102,6 +102,12 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree, Sp
             pieces.push(&i.id);
         }
     }
+    for i in &input.instances {
+        for (what, v) in [("id", &i.id), ("name", &i.name)] {
+            crate::paths::validate_segment(v)
+                .map_err(|e| tpl_err(format!("piece {what} {v:?} is not a safe name: {e}")))?;
+        }
+    }
     let root = t.root.canonicalize()?;
     let mut tree = RenderedTree::new();
     for inst in &input.instances {

@@ -184,3 +184,29 @@ mod symlinks {
         assert!(e.to_string().contains("symlink"), "{e}");
     }
 }
+
+#[test]
+fn unsafe_instance_name_or_id_is_error() {
+    let t = Template::load(Path::new(V1)).unwrap();
+    for (id, name) in [
+        ("app", "../x"),
+        ("app", "a/b"),
+        ("app", ""),
+        ("../app", "web"),
+        ("app", "nul"),
+    ] {
+        let mut inp = input(&["base"], &[]);
+        inp.instances.push(PieceInstance {
+            id: id.into(),
+            name: name.into(),
+            vars: indexmap::IndexMap::new(),
+        });
+        let e = render_tree(&t, &inp).unwrap_err();
+        assert_eq!(e.exit_code(), 3, "{id}/{name}");
+        assert!(
+            e.to_string()
+                .contains(if name == "web" { id } else { name }),
+            "{e}"
+        );
+    }
+}
