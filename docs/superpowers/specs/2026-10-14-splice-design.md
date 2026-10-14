@@ -306,6 +306,13 @@ into the contract at its next `format` bump.
    `diff --json` carries no patch text.
 10. `[[post]].when` is required (no default; a missing `when` is exit 3); piece `description`
     defaults to "" and var `prompt` defaults to the var name.
+11. A bare `{{ pieces }}`, `{{ piece }}` or `{{ template }}` is rejected (list/map output differs
+    by renderer); use a dotted path or `for`.
+12. `ident` is ASCII `[a-z_][a-z0-9_]*`, not `true|false|none|not|and|or|in|is`, and not the
+    roots `loop|self|range|namespace` (also as a `for` variable).
+13. `{% else %}` is valid only inside `if`; `elif` after `else` is rejected. A comment may not
+    start or end with `-` or `+` (whitespace control).
+14. `ws` inside tags is optional space, tab, CR or LF, also around `|`.
 
 ## 11. Testing
 
@@ -371,10 +378,3 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
-11. A bare `{{ pieces }}`, `{{ piece }}` or `{{ template }}` is rejected (list/map output differs
-    by renderer); use a dotted path or `for`.
-12. `ident` is ASCII `[a-z_][a-z0-9_]*`, not `true|false|none|not|and|or|in|is`, and not the
-    roots `loop|self|range|namespace` (also as a `for` variable).
-13. `{% else %}` is valid only inside `if`; `elif` after `else` is rejected. A comment may not
-    start or end with `-` or `+` (whitespace control).
-14. `ws` inside tags is optional space, tab, CR or LF, also around `|`.
