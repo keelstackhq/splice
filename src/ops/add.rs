@@ -38,7 +38,7 @@ fn disk(repo: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
 }
 
 /// Reduced planner (spec §8.2): replace a file only when it is unedited (disk sha = lock sha) or
-/// `force`; report everything else. Pure apart from reading `repo`; writes nothing. Every path it
+/// `force` and the file is owned (shared files and base-only deletions never yield to `force`); report everything else. Pure apart from reading `repo`; writes nothing. Every path it
 /// might touch is checked for symlinks/directories first (exit 3).
 pub fn plan_reduced(
     base: &RenderedTree,
@@ -72,7 +72,9 @@ pub fn plan_reduced(
                 None => push(Action::Create, t.class, Some(t.bytes.clone())),
                 Some(_) if t.class == Class::Seed => push(Action::Skip, t.class, None),
                 Some(c) if c == t.bytes => {}
-                Some(_) if force => push(Action::Update, t.class, Some(t.bytes.clone())),
+                Some(_) if force && t.class == Class::Owned => {
+                    push(Action::Update, t.class, Some(t.bytes.clone()))
+                }
                 Some(_) => push(Action::Conflict, t.class, None),
             },
             (Some(b), Some(t)) => {
@@ -87,10 +89,12 @@ pub fn plan_reduced(
                 }
                 match cur {
                     None if t.class == Class::Shared => push(Action::Skip, t.class, None),
-                    None if force => push(Action::Create, t.class, Some(t.bytes.clone())),
+                    None if force && t.class == Class::Owned => {
+                        push(Action::Create, t.class, Some(t.bytes.clone()))
+                    }
                     None => push(Action::Conflict, t.class, None),
                     Some(c) if c == t.bytes => {}
-                    Some(c) if force || unedited(&c) => {
+                    Some(c) if unedited(&c) || (force && t.class == Class::Owned) => {
                         push(Action::Update, t.class, Some(t.bytes.clone()))
                     }
                     Some(_) => push(Action::Conflict, t.class, None),
@@ -102,8 +106,9 @@ pub fn plan_reduced(
                 }
                 match cur {
                     None => {}
-                    Some(c) if force || unedited(&c) => push(Action::Delete, b.class, None),
-                    Some(_) => push(Action::Conflict, b.class, None),
+                    Some(c) if unedited(&c) => push(Action::Delete, b.class, None),
+                    // kept, and unmanaged from now on: the new lock no longer lists it
+                    Some(_) => push(Action::Skip, b.class, None),
                 }
             }
             (None, None) => unreachable!("path comes from base or theirs"),
@@ -224,6 +229,10 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
                 conflicts = true;
                 report.msg(format!("{}: {EDITED}", p.path));
             }
+            (Action::Skip, None) if !theirs.contains_key(&p.path) => report.msg(format!(
+                "{}: edited locally and no longer rendered; kept, but no longer managed by splice",
+                p.path
+            )),
             _ => {}
         }
         report.push(p.path.clone(), p.action, p.class);
@@ -236,4 +245,92 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         run_post(repo, &template.pieces[id].post, When::Add, g.json)?;
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lock::{LockFile, LockTemplate};
+    use crate::manifest::MergeStrategy;
+    use crate::render::RenderedFile;
+
+    fn file(path: &str, bytes: &str, class: Class) -> RenderedFile {
+        RenderedFile {
+            path: path.into(),
+            bytes: bytes.as_bytes().to_vec(),
+            class,
+            strategy: MergeStrategy::Text,
+            piece_id: "base".into(),
+            piece_name: "base".into(),
+            glob: None,
+        }
+    }
+
+    fn tree(files: &[RenderedFile]) -> RenderedTree {
+        files.iter().map(|f| (f.path.clone(), f.clone())).collect()
+    }
+
+    fn lock_for(base: &RenderedTree) -> Lock {
+        Lock {
+            format: 1,
+            splice: semver::Version::new(0, 1, 0),
+            template: LockTemplate {
+                source: "x".into(),
+                version: semver::Version::new(1, 0, 0),
+                commit: "0".repeat(40),
+            },
+            vars: IndexMap::new(),
+            pieces: vec![],
+            files: base
+                .iter()
+                .map(|(p, f)| {
+                    (
+                        p.clone(),
+                        LockFile {
+                            class: f.class,
+                            sha256: sha256_hex(&f.bytes),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn actions(plan: &[Planned]) -> Vec<(String, Action)> {
+        plan.iter().map(|p| (p.path.clone(), p.action)).collect()
+    }
+
+    #[test]
+    fn base_only_unedited_is_deleted() {
+        let d = tempfile::tempdir().unwrap();
+        let base = tree(&[file("gone.txt", "a\n", Class::Owned)]);
+        std::fs::write(d.path().join("gone.txt"), "a\n").unwrap();
+        let plan = plan_reduced(&base, &tree(&[]), d.path(), &lock_for(&base), false).unwrap();
+        assert_eq!(actions(&plan), [("gone.txt".into(), Action::Delete)]);
+    }
+
+    #[test]
+    fn base_only_edited_is_kept_even_with_force() {
+        let d = tempfile::tempdir().unwrap();
+        let base = tree(&[file("gone.txt", "a\n", Class::Owned)]);
+        std::fs::write(d.path().join("gone.txt"), "mine\n").unwrap();
+        for force in [false, true] {
+            let plan = plan_reduced(&base, &tree(&[]), d.path(), &lock_for(&base), force).unwrap();
+            assert_eq!(actions(&plan), [("gone.txt".into(), Action::Skip)]);
+            assert!(plan[0].bytes.is_none());
+        }
+    }
+
+    #[test]
+    fn force_does_not_overwrite_user_created_shared_file() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("new.txt"), "mine\n").unwrap();
+        let theirs = tree(&[file("new.txt", "t\n", Class::Shared)]);
+        let lock = lock_for(&tree(&[]));
+        let plan = plan_reduced(&tree(&[]), &theirs, d.path(), &lock, true).unwrap();
+        assert_eq!(actions(&plan), [("new.txt".into(), Action::Conflict)]);
+        let owned = tree(&[file("new.txt", "t\n", Class::Owned)]);
+        let plan = plan_reduced(&tree(&[]), &owned, d.path(), &lock, true).unwrap();
+        assert_eq!(actions(&plan), [("new.txt".into(), Action::Update)]);
+    }
 }

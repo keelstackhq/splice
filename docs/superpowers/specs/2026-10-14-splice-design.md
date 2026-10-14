@@ -206,16 +206,19 @@ Milestone 1 details (the reduced planner, `ops::add::plan_reduced`), each path i
   bytes: `conflict`, not written.
 - In both with a changed render: replaced (`update`) when the disk sha equals the lock sha or the
   bytes already equal theirs (then omitted); otherwise `conflict`, not written. `--force` replaces
-  an edited owned/shared file. A file the user deleted: shared is `skip`, owned is `conflict`
+  an edited or user-created file only when it is owned; an edited or user-created shared file stays
+  a `conflict` even with `--force`. A file the user deleted: shared is `skip`, owned is `conflict`
   (recreated with `--force`). Seeds are never modified (`skip` when their render changed).
-- Only in base: deleted when unedited, else `conflict`. Unchanged files are omitted from the report.
-- Every path is checked for symlinks and directories first (exit 3, §10 item 19), and the lock
-  records the theirs render's hashes even when conflicts remain, so a kept edit shows as drift.
+- Only in base: deleted when unedited. An edited one is kept (`skip`, even with `--force`) with the
+  message `<path>: … no longer managed by splice`, and the new lock does not list it (§8.4).
+- Unchanged files are omitted from the report.
+- Every path is checked for symlinks and directories first (exit 3, §10 item 19). The lock records
+  the theirs render's hashes even when conflicts remain. For an owned conflict the kept edit then
+  shows as drift. For a shared conflict a later `update` may treat the missing change as a user
+  edit; the `merge by hand` message is the signal to act now.
 - Conflicts: each gets a message `<path>: edited locally; …`; the other files and the lock are
   still written, exit 1, `[[post]]` is skipped. Otherwise `[[post]]` of the added piece with
-  `when` ∋ `add` runs after the lock. `add` has no dirty-tree check (no `--allow-dirty` flag in
-  §3): the reduced planner never overwrites an edit without `--force`; the full planner (plan 02)
-  adds the §8.3 check. Unknown lock keys are reported as messages.
+  `when` ∋ `add` runs after the lock. `add` has no dirty-tree check in milestone 1 (§10 item 20). Unknown lock keys are reported as messages.
 
 ### 8.3 `update`
 
@@ -353,6 +356,9 @@ into the contract at its next `format` bump.
 19. `new --force` (and later `add`/`update`) refuses to write through a symlink below the
     destination or over a directory: template/environment error "unsafe path" (exit 3), checked
     for every file before anything is written.
+20. `add` has no dirty-tree check in milestone 1, and no `--allow-dirty` flag (§3): the reduced
+    planner never overwrites an edit (`--force` only replaces edited owned files). Plan 02's full
+    planner adds the §8.3 dirty-tree check to `add` (exit 2) and then the flag.
 
 ## 11. Testing
 

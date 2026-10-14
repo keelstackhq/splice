@@ -284,3 +284,108 @@ fn post_runs_for_the_added_piece_only_when_not_disabled() {
         .success();
     assert!(!repo.path().join(".post-ran").exists());
 }
+
+/// v1 with a pieces-dependent shared file (`notes.txt`) and an `add` post on the app piece,
+/// served from branch `main`.
+fn custom_repo() -> (TempDir, TempDir) {
+    let tpl = template_repo(&["v1"]);
+    let notes = tpl.path().join("pieces/base/files/notes.txt.jinja");
+    let mut t = std::fs::read_to_string(&notes).unwrap();
+    t.push_str("{% if \"app\" in pieces %}app note\n{% endif %}");
+    std::fs::write(&notes, t).unwrap();
+    let pt = tpl.path().join("pieces/app/piece.toml");
+    let mut p = std::fs::read_to_string(&pt).unwrap();
+    p.push_str("\n[[post]]\nrun = \"echo x> .post-add\"\nwhen = [\"add\"]\n");
+    std::fs::write(&pt, p).unwrap();
+    common::git_commit_all(tpl.path(), "custom");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", s(tpl.path()), s(repo.path()), "--ref", "main"])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    (tpl, repo)
+}
+
+fn change_action(v: &serde_json::Value, path: &str) -> Option<String> {
+    v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["path"] == path)
+        .map(|c| c["action"].as_str().unwrap().to_string())
+}
+
+#[test]
+fn force_never_overwrites_edited_shared_file() {
+    let (_tpl, repo) = custom_repo();
+    std::fs::write(repo.path().join("notes.txt"), "mine\n").unwrap();
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--force", "--yes", "--json"])
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(read(&repo, "notes.txt"), "mine\n");
+    assert_eq!(
+        change_action(&json(out), "notes.txt").as_deref(),
+        Some("conflict")
+    );
+}
+
+#[test]
+fn deleted_owned_is_conflict_deleted_shared_is_skip() {
+    let (_tpl, repo) = custom_repo();
+    std::fs::remove_file(repo.path().join("notes.txt")).unwrap();
+    std::fs::remove_file(repo.path().join("apps.txt")).unwrap();
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--json"])
+        .assert()
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert_eq!(change_action(&v, "notes.txt").as_deref(), Some("skip"));
+    assert_eq!(change_action(&v, "apps.txt").as_deref(), Some("conflict"));
+    assert!(!repo.path().join("notes.txt").exists());
+    assert!(!repo.path().join("apps.txt").exists());
+}
+
+#[test]
+fn post_is_skipped_on_conflict_and_runs_otherwise() {
+    let (_tpl, repo) = custom_repo();
+    std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes"])
+        .assert()
+        .code(1);
+    assert!(!repo.path().join(".post-add").exists());
+    let (_tpl2, repo2) = custom_repo();
+    splice_cmd()
+        .current_dir(repo2.path())
+        .args(["add", "app", "--yes"])
+        .assert()
+        .success();
+    assert!(repo2.path().join(".post-add").exists());
+}
+
+#[test]
+fn conflicted_owned_file_lock_records_theirs() {
+    let (_tpl, repo) = new_repo(&[]);
+    std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes"])
+        .assert()
+        .code(1);
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    let theirs = splice::fsio::sha256_hex(b"base\napp\n");
+    let disk = splice::fsio::sha256_hex(b"mine\n");
+    assert_eq!(lock.files["apps.txt"].sha256, theirs);
+    assert_ne!(lock.files["apps.txt"].sha256, disk);
+}
