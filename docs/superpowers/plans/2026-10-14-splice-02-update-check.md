@@ -158,7 +158,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn merge_json(b, o, t: &str) -> Result<Merged, ParseError>`, `fn merge_yaml(...)`, `fn merge_toml(...)`
   - `fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> Merged` — fast paths (O = B → T; T = B → O), parse error → text, structured conflicts → `merge_text`, and if that is clean → `wrap_whole`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn json_both_sides_kept_order_and_indent() {
@@ -187,10 +187,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn invalid_json_falls_back_to_text() { /* ours has a trailing comma → text merge result */ }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement.** JSON/YAML convert to `Tree` (non-map values are `Leaf`s compared by value), merge, convert back; JSON printed with `serde_json::ser::PrettyFormatter::with_indent(detected)` plus a final `\n` when ours had one. TOML: compute the set of key paths changed by theirs vs base with `keypath`, apply each to ours' `DocumentMut` (set / remove / append new tables at the end); conflicts as for others.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: structured json/yaml/toml 3-way merges`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement.** JSON/YAML convert to `Tree` (non-map values are `Leaf`s compared by value), merge, convert back; JSON printed with `serde_json::ser::PrettyFormatter::with_indent(detected)` plus a final `\n` when ours had one. TOML: compute the set of key paths changed by theirs vs base with `keypath`, apply each to ours' `DocumentMut` (set / remove / append new tables at the end); conflicts as for others.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: structured json/yaml/toml 3-way merges`
 
 ---
 

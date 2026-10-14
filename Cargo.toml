@@ -31,6 +31,7 @@ minijinja = "~2.24"
 toml_edit = "0.25"
 dialoguer = "0.12"
 diffy = "0.5"
+yaml_serde = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.2"
