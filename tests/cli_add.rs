@@ -40,15 +40,7 @@ fn add_second_app_updates_pieces_dependent_files() {
     let (_tpl, repo) = new_repo(&[]);
     let out = splice_cmd()
         .current_dir(repo.path())
-        .args([
-            "add",
-            "--allow-dirty",
-            "app",
-            "--name",
-            "admin",
-            "--yes",
-            "--json",
-        ])
+        .args(["add", "app", "--name", "admin", "--yes", "--json"])
         .assert()
         .success()
         .get_output()
@@ -95,7 +87,7 @@ fn add_second_instance_of_multiple_piece_and_dependent_piece() {
     let (_tpl, repo) = new_repo(&["--piece", "app:web"]);
     splice_cmd()
         .current_dir(repo.path())
-        .args(["add", "--allow-dirty", "app", "--name", "admin", "--yes"])
+        .args(["add", "app", "--name", "admin", "--yes"])
         .assert()
         .success();
     splice_cmd()
@@ -130,7 +122,7 @@ fn duplicate_name_and_single_piece_twice_are_usage() {
     let (_tpl, repo) = new_repo(&[]);
     splice_cmd()
         .current_dir(repo.path())
-        .args(["add", "--allow-dirty", "app", "--name", "web", "--yes"])
+        .args(["add", "app", "--name", "web", "--yes"])
         .assert()
         .success();
     assert_usage_untouched(&repo, &["add", "--allow-dirty", "app", "--name", "web"]);
@@ -220,11 +212,15 @@ fn edited_seed_is_never_touched() {
 #[test]
 fn add_without_lock_is_usage() {
     let d = tempfile::tempdir().unwrap();
-    splice_cmd()
+    let out = splice_cmd()
         .current_dir(d.path())
-        .args(["add", "--allow-dirty", "app", "--yes"])
+        .args(["add", "app", "--yes"])
         .assert()
-        .code(2);
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    assert!(String::from_utf8_lossy(&out).contains("lock.toml"));
     assert!(!d.path().join(".splice").exists());
 }
 
@@ -232,7 +228,7 @@ fn add_without_lock_is_usage() {
 fn dash_c_selects_the_repo() {
     let (_tpl, repo) = new_repo(&[]);
     splice_cmd()
-        .args(["-C", s(repo.path()), "add", "--allow-dirty", "app", "--yes"])
+        .args(["-C", s(repo.path()), "add", "app", "--yes"])
         .assert()
         .success();
     assert!(repo.path().join("apps/web/package.json").exists());

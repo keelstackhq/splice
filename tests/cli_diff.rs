@@ -58,6 +58,12 @@ fn diff_writes_nothing() {
     assert!(text.contains("+++ b/.editorconfig"), "{text}");
     assert!(text.contains("+indent_size = 4"), "{text}");
     assert!(text.contains("<<<<<<< ours"), "conflict preview: {text}");
+    // a removal is one line, a creation diffs against /dev/null
+    assert!(text.contains("delete   tool.config.mts"), "{text}");
+    assert!(
+        text.contains("--- /dev/null\n+++ b/tool.config.ts"),
+        "{text}"
+    );
     assert_eq!(porcelain(&repo), "");
     assert_eq!(tree_snapshot(repo.path()), before);
 }
@@ -119,6 +125,8 @@ fn diff_reports_owned_drift_without_failing() {
         v["messages"].to_string().contains("update would refuse"),
         "{v}"
     );
+    // update would refuse with no changes; diff still lists the planned ones
+    assert!(!v["changes"].as_array().unwrap().is_empty(), "{v}");
     assert_eq!(porcelain(&repo), "");
 }
 

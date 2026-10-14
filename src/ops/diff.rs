@@ -21,7 +21,18 @@ fn patch_lines(repo: &Path, c: &Planned, new: &[u8]) -> Result<Vec<String>> {
         std::str::from_utf8(old.as_deref().unwrap_or_default()),
         std::str::from_utf8(new),
     ) else {
-        return Ok(vec![format!("Binary files a/{0} and b/{0} differ", c.path)]);
+        let side = |s: &str, exists: bool| {
+            if exists {
+                format!("{s}/{}", c.path)
+            } else {
+                "/dev/null".to_string()
+            }
+        };
+        return Ok(vec![format!(
+            "Binary files {} and {} differ",
+            side("a", old.is_some()),
+            side("b", true)
+        )]);
     };
     let name = |side: &str, exists: bool| {
         if exists {
@@ -34,7 +45,11 @@ fn patch_lines(repo: &Path, c: &Planned, new: &[u8]) -> Result<Vec<String>> {
         .set_original_filename(name("a", old.is_some()))
         .set_modified_filename(name("b", true))
         .create_patch(o, n);
-    Ok(patch.to_string().lines().map(str::to_string).collect())
+    Ok(patch
+        .to_string()
+        .split_terminator('\n')
+        .map(str::to_string)
+        .collect())
 }
 
 pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
@@ -50,7 +65,7 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
     // never prompts and never forces: new vars take their default, and owned drift is reported
     // rather than planned as an update
     let p = prepare(g, to.as_ref(), &IndexMap::new(), false, false).map_err(|e| match e {
-        SpliceError::Usage(m) if m.starts_with("missing value for var") => usage(format!(
+        SpliceError::Usage(m) if m.starts_with(crate::vars::MISSING_VALUE) => usage(format!(
             "{m} (a var that is new in the target and has no default; `splice diff` does not ask: \
              run `splice update --data NAME=VALUE`)"
         )),
@@ -76,4 +91,49 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
         report.push(c.path.clone(), c.action, c.class);
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::output::Class;
+
+    fn planned(path: &str) -> Planned {
+        Planned {
+            path: path.into(),
+            action: Action::Update,
+            class: Class::Owned,
+            bytes: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn created_file_diffs_against_dev_null() {
+        let d = tempfile::tempdir().unwrap();
+        let l = patch_lines(d.path(), &planned("n.txt"), b"hi\n").unwrap();
+        assert_eq!(l[0], "--- /dev/null");
+        assert_eq!(l[1], "+++ b/n.txt");
+        assert!(l.contains(&"+hi".to_string()), "{l:?}");
+    }
+
+    #[test]
+    fn changed_file_uses_a_and_b_paths_and_keeps_crlf() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("f.txt"), "a\r\nb\r\n").unwrap();
+        let l = patch_lines(d.path(), &planned("f.txt"), b"a\r\nc\r\n").unwrap();
+        assert_eq!(l[0], "--- a/f.txt");
+        assert!(l.contains(&"-b\r".to_string()), "{l:?}");
+        assert!(l.contains(&"+c\r".to_string()), "{l:?}");
+    }
+
+    #[test]
+    fn binary_content_is_reported_not_diffed() {
+        let d = tempfile::tempdir().unwrap();
+        let l = patch_lines(d.path(), &planned("b.bin"), &[0xff, 0xfe]).unwrap();
+        assert_eq!(l, ["Binary files /dev/null and b/b.bin differ"]);
+        std::fs::write(d.path().join("b.bin"), [0xff]).unwrap();
+        let l = patch_lines(d.path(), &planned("b.bin"), &[0xfe]).unwrap();
+        assert_eq!(l, ["Binary files a/b.bin and b/b.bin differ"]);
+    }
 }

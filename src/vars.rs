@@ -6,6 +6,9 @@ use crate::manifest::{PieceManifest, VarSpec};
 use indexmap::IndexMap;
 use std::io::IsTerminal;
 
+/// Start of the usage error for a var with no value and no default (`diff` rewords it).
+pub const MISSING_VALUE: &str = "missing value for var";
+
 type Result<T> = std::result::Result<T, SpliceError>;
 
 pub struct VarSource<'a> {
@@ -46,7 +49,7 @@ pub fn resolve_vars(
             d.clone()
         } else {
             return Err(SpliceError::Usage(format!(
-                "missing value for var `{name}`; pass --data {name}=…"
+                "{MISSING_VALUE} `{name}`; pass --data {name}=…"
             )));
         };
         out.insert(name.clone(), value);

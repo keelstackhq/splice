@@ -307,9 +307,11 @@ checks out the template, so `--offline` makes no git call at all, and it never w
 ### 8.8 `diff`
 
 Runs steps 2–6 of `update` without writing, and prints a unified diff (`diffy::create_patch`)
-per changed file (`--- a/<path>` / `+++ b/<path>`, `/dev/null` for a side that does not exist;
+per changed file (`--- a/<path>` / `+++ b/<path>`, `/dev/null` for a side that does not exist, line endings kept,
+non-UTF-8 content as `Binary files … differ`;
 a conflicted file shows its diff3 markers) plus one line per removal. `--json` returns the planned
-`changes` and messages only, the same as `update --json` would (§10 item 9). It writes no file, no
+`changes` and messages only, the same as `update --json` would (§10 item 9), except under owned
+drift, where `update` refuses with no changes and `diff` still lists the planned ones. It writes no file, no
 lock and nothing else, needs no clean tree, and exits 0 even when `update` would conflict or
 refuse. It never prompts: a var that is new in the target takes its default, and one without a
 default is a usage error (exit 2) that names the var and points to `splice update --data`. Owned
