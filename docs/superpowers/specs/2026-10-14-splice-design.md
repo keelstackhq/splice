@@ -254,8 +254,9 @@ L. `sha(O) == L.sha256` means "unedited".
 | B, T, O absent (user deleted) | drift (recreated with `--force`) | skip; keep deleted, lock records T | skip |
 | B only (gone from target) or `[[remove]]` | delete if unedited, else keep + message | delete if O = B, else keep + message | never deleted |
 
-`[[remove]]` paths are rendered with each instance of `piece` (template vars only when `piece` is
-absent) and are repo-root relative. A `[[remove]]` path that the target still renders is ignored
+`[[remove]]` paths are rendered with each instance of `piece` (template vars, `pieces` and
+`template` only when `piece` is absent; `template.version` is the lock version, §10 item 22) and
+are repo-root relative. A `[[remove]]` path that the target still renders is ignored
 with a warning. Renames are a removal plus an addition; a migration step may move user content
 between them (it runs after both).
 
@@ -371,7 +372,10 @@ into the contract at its next `format` bump.
 21. `explain <path>` normalises `\` to `/` and drops `./` and empty segments. An absolute path, a
     drive prefix or any `..` segment cannot name a rendered file, so it is `unmanaged` (ok, exit 0,
     message `unmanaged (not a repo-relative path)`), not a usage error. The human line replaces the
-    generic change line on stdout, followed by the usual summary line (messages stay on stderr); lock warnings are messages, as in `add`.
+    generic change line on stdout, followed by the usual summary line (messages stay on stderr);
+    lock warnings are messages, as in `add`.
+22. `[[remove]]` paths render with `template.version` = the lock (base) version, since they name
+    files rendered at that version; `pieces` and `template` are in scope with or without `piece`.
 
 ## 11. Testing
 
