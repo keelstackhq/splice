@@ -23,13 +23,11 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/6 · 79c22bb, 3da40fa · fmt+clippy clean (linux + windows-gnu), nextest 228/228 passed
 2026-10-14 · 02/7 · 7fe7d4f, ca1ed33 · fmt+clippy clean (linux + windows-gnu), nextest 234/234 passed (all 12 fixture rows verified)
 2026-10-14 · 02/8 · 263f738, 5c7fa60 · fmt+clippy clean (linux + windows-gnu), nextest 249/249 passed
+2026-10-14 · 02/9 · 336d613, d68311e · fmt+clippy clean (linux + windows-gnu), nextest 258/258 passed
 
 ## Notes for later tasks
 
-- plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
-  `--allow-dirty` for `add`; update the §3 CLI table and README with it.
-
-- plan 02 Task 9 (`diff`): `update::prepare` may prompt; give it a non-interactive mode for diff.
+(none open)
 
 ## Blocked
 
