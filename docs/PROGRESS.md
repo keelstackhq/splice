@@ -20,33 +20,29 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/3 · 95402f3, df9dd67, 694cff3 · fmt+clippy clean, nextest 185/185 passed
 2026-10-14 · 02/4 · e3c3017, 4a6ef01 · fmt+clippy clean, nextest 201/201 passed
 2026-10-14 · 02/5 · 4e71c56, da26f5f · fmt+clippy clean (also clippy --target x86_64-pc-windows-gnu), nextest 208/208 passed
+2026-10-14 · 02/6 · 79c22bb, 3da40fa · fmt+clippy clean (linux + windows-gnu), nextest 228/228 passed
 
 ## Notes for later tasks
 
 - plan 02 Task 1: `Lock::read_with_warnings` warnings are not yet surfaced by any command; surface
   them as Report messages in `update`/`check`.
-- plan 02 (update/check): `Git::is_clean` treats a fresh dir inside a parent repo as a work
-  tree; compare with `--show-toplevel`.
 
 - plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
   `--allow-dirty` for `add`; update the §3 CLI table and README with it.
 
-- plan 02 (apply): keep the partial Report on a failure inside the file-write loop (before the
-  lock), as `SpliceError::Partial` does after it; extend the case-insensitive collision check to
-  directory prefixes (`Apps/x` vs `apps/y`).
 
-- plan 02 Task 6 (`update`): snapshot base ∪ theirs ∪ rendered removes (the planner skips a
-  remove path missing from `Disk`); map `Disk::snapshot`'s wrapped "unsafe path" io error back
-  to exit 3 with its message.
 
 - plan 02 Tasks 8–9 (`check`, `diff`): `update::prepare` may prompt and always fetches; give it
   a non-interactive mode for diff/check and an offline path for `check --offline`.
+
+- plan 02 Task 7: the restore message must name the directory to run it in (`cd <dir> && git
+  checkout -- . && git clean -fd`); test it from a project in a monorepo subdir.
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–22 (post
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–23 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
   vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
