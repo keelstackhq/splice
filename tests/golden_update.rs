@@ -99,6 +99,13 @@ fn redact(text: &str, repo: &Path, tpl: &Path) -> String {
     }
     // the lock's own hash covers the temp path and commit id
     res.lines()
+        .map(|l| {
+            if l.starts_with("splice = \"") {
+                "splice = \"<version>\""
+            } else {
+                l
+            }
+        })
         .map(|l| match l.strip_prefix(".splice/lock.toml ") {
             Some(_) => ".splice/lock.toml <hash>".to_string(),
             None => l.to_string(),
@@ -225,7 +232,7 @@ fn restore_from_a_monorepo_subdir_stays_inside_it() {
 
     // run from elsewhere with a relative-free -C so the message must carry the directory
     let out = splice_cmd()
-        .args(["update", "-C", s(&sub), "--yes", "--allow-dirty"])
+        .args(["update", "-C", s(&sub), "--yes"])
         .env("SPLICE_FIXTURE_FAIL", "1")
         .assert()
         .code(3)
@@ -257,7 +264,7 @@ fn restore_from_a_monorepo_subdir_stays_inside_it() {
     let o = status
         .current_dir(elsewhere.path())
         .env("GIT_CONFIG_GLOBAL", elsewhere.path().join("none"))
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", elsewhere.path().join("none"))
         .output()
         .unwrap();
     assert!(
@@ -272,6 +279,13 @@ fn restore_from_a_monorepo_subdir_stays_inside_it() {
         "keep\n"
     );
     assert_eq!(lock_version_at(&sub), "1.0.0");
+
+    // rerun without the failure env (no user edits here, so no conflict): ok, lock at 2.0.0
+    splice_cmd()
+        .args(["update", "-C", s(&sub), "--yes"])
+        .assert()
+        .success();
+    assert_eq!(lock_version_at(&sub), "2.0.0");
 }
 
 fn lock_version_at(dir: &Path) -> String {

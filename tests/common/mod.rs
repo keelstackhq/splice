@@ -29,7 +29,7 @@ fn cache_dir() -> PathBuf {
 
 fn set_git_env(c: &mut Proc) {
     c.env("GIT_CONFIG_GLOBAL", empty_git_config())
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", empty_git_config())
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@example.com")
         .env("GIT_COMMITTER_NAME", "t")
@@ -123,7 +123,7 @@ pub fn tag(repo: &TempDir, name: &str) {
 pub fn splice_cmd() -> Command {
     let mut c = Command::cargo_bin("splice").unwrap();
     c.env("SPLICE_CACHE_DIR", cache_dir())
-        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", empty_git_config())
         .env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@example.com")

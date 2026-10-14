@@ -17,15 +17,19 @@ pub fn restore_cmd(repo: &Path) -> String {
     let dir = abs.display().to_string();
     let plain = dir
         .chars()
-        .all(|c| c.is_alphanumeric() || "/\\._-:+@%,=~".contains(c));
-    let dir = if plain {
-        dir
-    } else if cfg!(windows) {
-        format!("\"{dir}\"")
+        .all(|c| c.is_alphanumeric() || "/\\._-:+@,=~".contains(c));
+    if cfg!(windows) {
+        // `/d` also switches drive; quote when anything beyond plain path characters appears.
+        let dir = if plain { dir } else { format!("\"{dir}\"") };
+        format!("cd /d {dir} && {RESTORE}")
     } else {
-        format!("'{}'", dir.replace('\'', "'\\''"))
-    };
-    format!("cd {dir} && {RESTORE}")
+        let dir = if plain && !dir.contains('%') {
+            dir
+        } else {
+            format!("'{}'", dir.replace('\'', "'\\''"))
+        };
+        format!("cd {dir} && {RESTORE}")
+    }
 }
 
 #[cfg(windows)]
