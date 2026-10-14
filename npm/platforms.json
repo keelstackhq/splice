@@ -1,0 +1,5 @@
+[{"target":"x86_64-unknown-linux-musl","npm":"@keelstack/splice-linux-x64","os":"linux","cpu":"x64","bin":"splice"},
+ {"target":"aarch64-unknown-linux-musl","npm":"@keelstack/splice-linux-arm64","os":"linux","cpu":"arm64","bin":"splice"},
+ {"target":"x86_64-apple-darwin","npm":"@keelstack/splice-darwin-x64","os":"darwin","cpu":"x64","bin":"splice"},
+ {"target":"aarch64-apple-darwin","npm":"@keelstack/splice-darwin-arm64","os":"darwin","cpu":"arm64","bin":"splice"},
+ {"target":"x86_64-pc-windows-msvc","npm":"@keelstack/splice-win32-x64","os":"win32","cpu":"x64","bin":"splice.exe"}]

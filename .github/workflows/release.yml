@@ -1,0 +1,134 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  # Dry run: builds and smoke-tests every target, but creates no release and publishes nothing.
+  workflow_dispatch:
+permissions: {}
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+      - name: tag matches Cargo.toml
+        if: github.ref_type == 'tag'
+        run: node scripts/check-version.mjs
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+      - name: dry run (no tag to check)
+        if: github.ref_type != 'tag'
+        run: echo "workflow_dispatch dry run on ${GITHUB_REF_NAME}; version check skipped"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-15, target: x86_64-apple-darwin }
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.target }}
+      - name: install musl-tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+      - name: binary is statically linked
+        if: runner.os == 'Linux'
+        run: |
+          out=$(file "target/${{ matrix.target }}/release/splice")
+          echo "$out"
+          echo "$out" | grep -E 'statically linked|static-pie linked'
+      # x86_64-apple-darwin runs on the arm64 runner under Rosetta.
+      - name: smoke test
+        env:
+          BIN_DIR: target/${{ matrix.target }}/release
+          EXE: ${{ runner.os == 'Windows' && 'splice.exe' || 'splice' }}
+        run: |
+          bin="$PWD/$BIN_DIR/$EXE"
+          "$bin" --version
+          tpl="$RUNNER_TEMP/smoke-template"
+          rm -rf "$tpl" "$RUNNER_TEMP/smoke-out"
+          cp -R tests/fixtures/template/v1 "$tpl"
+          git -C "$tpl" init -q
+          git -C "$tpl" add -A
+          git -C "$tpl" -c user.name=ci -c user.email=ci@example.com commit -q -m template
+          git -C "$tpl" tag v1.0.0
+          "$bin" new "$tpl" "$RUNNER_TEMP/smoke-out" --data project=demo --yes
+          test -f "$RUNNER_TEMP/smoke-out/.splice/lock.toml"
+      - name: package (tar.gz)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/splice" LICENSE README.md dist/
+          tar -C dist -czf "splice-${{ matrix.target }}.tar.gz" splice LICENSE README.md
+      - name: package (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/splice.exe", LICENSE, README.md dist/
+          Compress-Archive -Path dist/splice.exe, dist/LICENSE, dist/README.md -DestinationPath "splice-${{ matrix.target }}.zip"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: splice-${{ matrix.target }}
+          path: splice-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    # Dry runs (workflow_dispatch) stop after build.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: splice-*
+          merge-multiple: true
+          path: dist
+      - name: checksums
+        working-directory: dist
+        run: sha256sum splice-* > SHA256SUMS && cat SHA256SUMS
+      - name: create release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          flags=""
+          case "$TAG" in *-*) flags="--prerelease" ;; esac
+          # shellcheck disable=SC2086
+          gh release create "$TAG" --repo "$REPO" --verify-tag --generate-notes $flags splice-* SHA256SUMS
+
+  # TODO(task 3): add the `npm` job here with `needs: release` and the same
+  # `github.event_name == 'push'` gate, so dry runs never publish.
