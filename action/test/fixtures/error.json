@@ -1,0 +1,1 @@
+{"ok":false,"command":"update","changes":[],"messages":["template needs splice >= 99.0.0 (running 0.1.0); run `pnpm dlx @keelstack/splice@latest ...`"]}

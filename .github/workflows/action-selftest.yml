@@ -1,0 +1,53 @@
+name: action-selftest
+# Manual only. Installs splice from this checkout (`version: local`), so it does not need the
+# npm package to exist. It exercises install, update, summary and the "already current" path in a
+# throwaway repo under $RUNNER_TEMP. The open/refresh PR paths need a sandbox repository on
+# GitHub and are exercised by hand (see action/README.md).
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  current:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Build splice and put it on PATH
+        run: |
+          cargo build --locked
+          echo "$GITHUB_WORKSPACE/target/debug" >> "$GITHUB_PATH"
+      - name: Create a project already at the latest fixture version
+        id: fixture
+        run: |
+          set -euo pipefail
+          git config --global user.name selftest
+          git config --global user.email selftest@example.com
+          tpl="$RUNNER_TEMP/template"; proj="$RUNNER_TEMP/project"
+          mkdir "$tpl" "$proj"
+          cp -r tests/fixtures/template/v2/. "$tpl/"
+          git -C "$tpl" init -q -b main
+          git -C "$tpl" add -A
+          git -C "$tpl" commit -q -m v2
+          git -C "$tpl" tag v2.0.0
+          git -C "$proj" init -q -b main
+          splice new "$tpl" "$proj" --piece app:web --data project=demo --yes
+          git -C "$proj" add -A
+          git -C "$proj" commit -q -m new
+          echo "dir=$proj" >> "$GITHUB_OUTPUT"
+      - name: Run the action
+        id: bot
+        uses: ./action
+        with:
+          version: local
+          working-directory: ${{ steps.fixture.outputs.dir }}
+      - name: Expect current, no PR
+        env:
+          RESULT: ${{ steps.bot.outputs.result }}
+          PR_URL: ${{ steps.bot.outputs.pr-url }}
+        run: |
+          [ "$RESULT" = current ] || { echo "result was '$RESULT'" >&2; exit 1; }
+          [ -z "$PR_URL" ] || { echo "unexpected PR $PR_URL" >&2; exit 1; }

@@ -1,0 +1,126 @@
+name: splice update bot
+description: Run `splice update` and open or refresh one pull request with the result.
+inputs:
+  version:
+    description: "splice npm version to install (`latest`, `0.1.0`, ...). `local` skips the install and uses the `splice` already on PATH (self-test only)."
+    default: latest
+  to:
+    description: Template version to update to (empty = latest).
+    default: ""
+  token:
+    description: Token for git push and the gh CLI. A GITHUB_TOKEN does not trigger CI on the PR; pass a GitHub App or fine-grained token for that.
+    default: ${{ github.token }}
+  branch:
+    description: Branch that carries the update.
+    default: splice/update
+  labels:
+    description: Comma-separated labels for the PR.
+    default: splice
+  working-directory:
+    description: Directory of the splice project, relative to the workspace.
+    default: "."
+outputs:
+  result:
+    description: updated, conflicts or current.
+    value: ${{ steps.publish.outputs.result }}
+  pr-url:
+    description: URL of the opened or refreshed PR (empty when none).
+    value: ${{ steps.publish.outputs.pr-url }}
+runs:
+  using: composite
+  steps:
+    - name: Install splice
+      shell: bash
+      env:
+        SPLICE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ "$SPLICE_VERSION" = local ]; then
+          command -v splice >/dev/null || { echo "version=local needs splice on PATH" >&2; exit 1; }
+          exit 0
+        fi
+        prefix="$RUNNER_TEMP/splice-npm"
+        npm install -g --prefix "$prefix" "@keelstack/splice@${SPLICE_VERSION}"
+        echo "$prefix/bin" >> "$GITHUB_PATH"
+
+    - name: Run splice update
+      id: update
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TEMPLATE_VERSION: ${{ inputs.to }}
+      run: |
+        set -uo pipefail
+        git config user.name splice-bot
+        git config user.email splice-bot@users.noreply.github.com
+        args=(update --json --yes)
+        if [ -n "$TEMPLATE_VERSION" ]; then args+=(--to "$TEMPLATE_VERSION"); fi
+        # stdout is exactly one JSON object; splice's own logs stay on stderr.
+        splice "${args[@]}" > "$RUNNER_TEMP/splice-report.json"
+        echo "code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Summarize
+      id: summary
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SPLICE_CODE: ${{ steps.update.outputs.code }}
+      run: |
+        set -euo pipefail
+        # The lock is read after the update, so it names the version just applied.
+        version=$(awk '/^\[template\]/{t=1;next} /^\[/{t=0} t && $1=="version"{gsub(/"/,"",$3); print $3; exit}' .splice/lock.toml || true)
+        node "$GITHUB_ACTION_PATH/summary.mjs" "$RUNNER_TEMP/splice-report.json" "$SPLICE_CODE" "${version:-unknown}"
+
+    - name: Open, refresh or close the pull request
+      id: publish
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GH_REPO: ${{ github.repository }}
+        BRANCH: ${{ inputs.branch }}
+        LABELS: ${{ inputs.labels }}
+        RESULT: ${{ steps.summary.outputs.result }}
+        TITLE: ${{ steps.summary.outputs.title }}
+        BODY: ${{ steps.summary.outputs.body }}
+      run: |
+        set -euo pipefail
+        pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+
+        finish_current() {
+          if [ -n "$pr" ]; then
+            gh pr close "$pr" --comment "Already up to date." --delete-branch
+          fi
+          echo "result=current" >> "$GITHUB_OUTPUT"
+          echo "pr-url=" >> "$GITHUB_OUTPUT"
+          exit 0
+        }
+
+        # Already current: no push, no PR; an open bot PR is closed.
+        if [ "$RESULT" = current ]; then finish_current; fi
+
+        git switch -C "$BRANCH"
+        git add -A -- .
+        # The report listed changes but the tree is unchanged (e.g. only skips): treat as current.
+        if git diff --cached --quiet; then finish_current; fi
+        git commit -m "$TITLE"
+        remote_sha=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+        git push --force-with-lease="$BRANCH:$remote_sha" origin "HEAD:refs/heads/$BRANCH"
+
+        if [ -n "$pr" ]; then
+          gh pr edit "$pr" --title "$TITLE" --body "$BODY"
+          url=$(gh pr view "$pr" --json url --jq .url)
+        else
+          label_args=()
+          IFS=',' read -ra wanted <<< "$LABELS"
+          for l in "${wanted[@]}"; do
+            l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
+            [ -n "$l" ] || continue
+            gh label create "$l" >/dev/null 2>&1 || true   # fails when it exists; fine
+            label_args+=(--label "$l")
+          done
+          base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+          url=$(gh pr create --base "$base" --head "$BRANCH" --title "$TITLE" --body "$BODY" ${label_args[@]+"${label_args[@]}"})
+        fi
+        echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+        echo "pr-url=$url" >> "$GITHUB_OUTPUT"

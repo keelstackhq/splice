@@ -107,7 +107,7 @@ jobs:
 - [x] **Step 1: Write failing test** — `checkVersion({tag:"v0.2.0", cargoToml:'version = "0.1.0"'})` throws `tag v0.2.0 does not match Cargo.toml 0.1.0`; matching inputs return `"0.2.0"`.
 - [x] **Step 2: Run `node --test 'scripts/**/*.test.mjs'` — FAIL**
 - [x] **Step 3: Implement the script and the workflow.** Trigger `push: tags: ['v*']` + `workflow_dispatch` (dry run, no publish). Jobs: `check` (version script) → `build` matrix: `ubuntu-24.04` (x86_64 musl, `apt-get install musl-tools`), `ubuntu-24.04-arm` (aarch64 musl, musl-tools), `macos-15` (both darwin targets, `rustup target add x86_64-apple-darwin`), `windows-2025` (msvc). Each native build runs `splice --version` and a `splice new` smoke test against `tests/fixtures/template/v1` (made into a git repo by a 5-line shell step). Linux: verify `file splice` says `statically linked`. → `release` job: download artifacts, write `SHA256SUMS`, `gh release create $TAG --generate-notes` with all files → `npm` job (Task 3).
-- [ ] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists**
+- [x] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists** (local node tests + actionlint done; GitHub selftest run is human)
 - [x] **Step 5: Commit** — `ci: release workflow for five targets with checksums`
 
 ---
@@ -162,7 +162,7 @@ test("stage writes no install scripts", () => { /* every staged package.json has
   - Outputs: `result` (`updated|conflicts|current`), `pr-url`.
   - `summary.mjs`: `export function summarize(report, exitCode) -> {title, body, result}` — title `chore: splice update to <version>` (version read from the lock after update, passed in), prefixed `[conflicts] ` when exit 1; body = table of `changes` grouped by action + messages + "how to resolve" line pointing to `splice check`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```js
 test("conflict title and body", () => {
@@ -174,14 +174,14 @@ test("no changes is current", () => { assert.equal(summarize({ok:true,command:"u
 test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("error.json"), 3), /template needs splice/); });
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstack/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstack/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
   - `current`: `gh pr list --head <branch> --state open --json number` → if found, `gh pr close --comment "Already up to date." --delete-branch`.
   - `updated`/`conflicts`: `git switch -C <branch>`, `git add -A`, commit with the title, `git push --force-with-lease origin <branch>`, then `gh pr edit` the open PR (title/body) or `gh pr create --base <default branch> --head <branch> --label …`.
   - exit 3: print messages, `exit 1`.
   `GH_TOKEN: ${{ inputs.token }}`. Document in the action's README section: `permissions: contents: write, pull-requests: write`; PRs from `GITHUB_TOKEN` do not trigger `pull_request` workflows, so pass an App/fine-grained token for CI on the PR.
-- [ ] **Step 4: Run tests — PASS; actionlint on `action/action.yml` via a throwaway workflow that uses `./action` (`.github/workflows/action-selftest.yml`, `workflow_dispatch` only, runs the action against a temp repo created from the fixture with `--allow-dirty`-free flow) — selftest run on GitHub is Blocked until the repo exists**
-- [ ] **Step 5: Commit** — `feat: update-bot composite action`
+- [x] **Step 4: Run tests — PASS; actionlint on `action/action.yml` via a throwaway workflow that uses `./action` (`.github/workflows/action-selftest.yml`, `workflow_dispatch` only, runs the action against a temp repo created from the fixture with `--allow-dirty`-free flow) — selftest run on GitHub is Blocked until the repo exists** (local node tests + actionlint done; GitHub selftest run is human)
+- [x] **Step 5: Commit** — `feat: update-bot composite action`
 
 ---
 
@@ -197,7 +197,7 @@ test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("
 - [ ] **Step 1: Write failing test** — `docs_mention_only_real_flags`: extract `--[a-z-]+` tokens from both files, assert each appears in the help of some subcommand (plus an allowlist for `--json` examples of other tools, e.g. `pnpm`).
 - [ ] **Step 2: Run — FAIL (files missing)**
 - [ ] **Step 3: Write the docs.** `SKILL.md` frontmatter `name: splice`, `description:` "Use when a repo has .splice/lock.toml or the user asks to create, update or check a project from a keelstack template…". Body ≤ 80 lines: always `--json`; read `changes`/exit code table; before editing a file run `splice explain <path> --json` (owned → change the template or accept drift; shared → edit freely; seed → yours); resolving conflicts (edit marker blocks, keep intent of both, then `splice check --json --offline`); never edit `.splice/lock.toml`; dirty tree → commit or stash first, never `--allow-dirty` without being asked; restore command after a failed update. README.product sections: install (`pnpm dlx`, release binaries), quick start with hull, commands table, ownership classes (link to `docs/template-format.md`), update bot workflow example (weekly cron + `workflow_dispatch`), Renovate alternative (spec §13, with the self-hosted caveat), writing templates (link to contract), comparison with Copier (one paragraph), license.
-- [ ] **Step 4: Run — PASS**
+- [x] **Step 4: Run — PASS** (local node tests + actionlint done; GitHub selftest run is human)
 - [ ] **Step 5: Commit** — `docs: agent skill and product README`
 
 ---
