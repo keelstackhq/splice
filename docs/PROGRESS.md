@@ -6,6 +6,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 2026-10-14 · 01/1 · 91509c3, 5146899 · fmt+clippy clean, nextest 9/9 passed
 2026-10-14 · 01/2 · 4bd8667, 04fa3a7 · fmt+clippy clean, nextest 13/13 passed
+2026-10-14 · 01/3 · d887f00, 4584e35 · fmt+clippy clean, nextest 19/19 passed
 
 ## Notes for later tasks
 
@@ -13,6 +14,8 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   `tests/git.rs`; plan 02 Task 1 replaces it wholesale.
 - Task 7: the lock loader must build its source through `TemplateSource::parse` (rejects `-…`
   and `::` specs).
+- Task 6: a template `//subdir` that is a symlink can point `root` outside the cache; reject it
+  with the path-safety work.
 - Task 8: `Git::is_clean` treats a fresh dir inside a parent repo as a work tree; compare with
   `--show-toplevel`.
 

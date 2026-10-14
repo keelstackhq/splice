@@ -88,7 +88,8 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
   default = highest stable version; `--pre` allows pre-releases.
 - **`--ref R`:** a tag, branch or sha. A non-`v<semver>` ref records version `0.0.0+g<sha7>`
   (used by hull before its first tag); `update` from such a lock needs an explicit `--to`.
-- **Cache:** `$SPLICE_CACHE_DIR` or `dirs::cache_dir()/splice`. One bare mirror per URL at
+- **Cache:** `$SPLICE_CACHE_DIR` or `dirs::cache_dir()/splice` (the OS temp dir + `splice` when the platform
+  has no cache dir). One bare mirror per URL at
   `git/<sha256(url)[..16]>.git` (`git clone --mirror`, later `git fetch --tags --prune`), and one
   immutable extracted tree per commit at `trees/<sha256(url)[..16]>/<commit>/`, created with
   `git --git-dir <mirror> --work-tree <tmp> checkout <commit> -- .` using a temporary
