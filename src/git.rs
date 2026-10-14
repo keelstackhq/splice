@@ -37,7 +37,7 @@ impl Git {
     /// Tags as `(name, sha)`, in ls-remote order; a peeled `^{}` sha wins over the tag object sha.
     pub fn ls_remote_tags(url: &str) -> Result<Vec<(String, String)>> {
         let mut c = base(None);
-        c.args(["ls-remote", "--tags", url]);
+        c.args(["ls-remote", "--tags", "--", url]);
         let out = run(c)?;
         let mut tags: Vec<(String, String)> = Vec::new();
         for line in out.lines() {
@@ -78,12 +78,15 @@ impl Git {
             std::fs::create_dir_all(p)?;
         }
         let mut c = base(None);
-        c.args(["clone", "--mirror", "-q", url]).arg(mirror);
+        c.args(["clone", "--mirror", "-q", "--", url]).arg(mirror);
         run(c).map(|_| ())
     }
 
     pub fn rev_parse(git_dir: &Path, rev: &str) -> Result<String> {
         let mut c = base(Some(git_dir));
+        if rev.starts_with('-') {
+            return Err(SpliceError::Usage(format!("invalid revision `{rev}`")));
+        }
         c.args(["rev-parse", "--verify", "--quiet"])
             .arg(format!("{rev}^{{commit}}"));
         run(c).map(|s| s.trim().to_string())

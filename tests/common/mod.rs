@@ -3,6 +3,7 @@ use assert_cmd::Command;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command as Proc;
+use std::sync::OnceLock;
 use tempfile::TempDir;
 
 fn fixtures() -> PathBuf {
@@ -10,11 +11,20 @@ fn fixtures() -> PathBuf {
 }
 
 fn empty_git_config() -> PathBuf {
-    let p = std::env::temp_dir().join("splice-test-gitconfig");
+    static DIR: OnceLock<TempDir> = OnceLock::new();
+    let d = DIR.get_or_init(|| tempfile::tempdir().unwrap());
+    let p = d.path().join("gitconfig");
     if !p.exists() {
-        let _ = std::fs::write(&p, "");
+        std::fs::write(&p, "").unwrap();
     }
     p
+}
+
+fn cache_dir() -> PathBuf {
+    static DIR: OnceLock<TempDir> = OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().unwrap())
+        .path()
+        .to_path_buf()
 }
 
 fn set_git_env(c: &mut Proc) {
@@ -32,7 +42,7 @@ fn git(dir: &Path, args: &[&str]) {
     set_git_env(&mut c);
     let out = c
         .current_dir(dir)
-        .args(["-c", "core.autocrlf=false"])
+        .args(["-c", "core.autocrlf=false", "-c", "core.eol=lf"])
         .args(args)
         .output()
         .unwrap();
@@ -88,8 +98,8 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
 
 pub fn splice_cmd() -> Command {
     let mut c = Command::cargo_bin("splice").unwrap();
-    let cache = std::env::temp_dir().join("splice-test-cache");
-    c.env("SPLICE_CACHE_DIR", cache)
+    c.env("SPLICE_CACHE_DIR", cache_dir())
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
         .env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_AUTHOR_NAME", "t")
         .env("GIT_AUTHOR_EMAIL", "t@example.com")

@@ -37,6 +37,7 @@ fn split_subdir(s: &str) -> (&str, Option<&str>) {
 fn check_subdir(spec: &str, sub: &str) -> Result<String, SpliceError> {
     let sub = sub.trim_matches('/');
     let bad = sub.is_empty()
+        || sub.starts_with('-')
         || Path::new(sub)
             .components()
             .any(|c| !matches!(c, Component::Normal(_)))
@@ -51,7 +52,17 @@ fn check_subdir(spec: &str, sub: &str) -> Result<String, SpliceError> {
 
 impl TemplateSource {
     pub fn parse(spec: &str) -> Result<Self, SpliceError> {
+        if spec.starts_with('-') {
+            return Err(SpliceError::Usage(format!(
+                "invalid template source `{spec}`: must not start with `-`"
+            )));
+        }
         let (repo, sub) = split_subdir(spec);
+        if repo.contains("::") {
+            return Err(SpliceError::Usage(format!(
+                "invalid template source `{spec}`: remote-helper (`::`) sources are not supported"
+            )));
+        }
         let subdir = sub.map(|s| check_subdir(spec, s)).transpose()?;
         let kind = if let Some(rest) = repo.strip_prefix("gh:") {
             let ok = matches!(rest.split_once('/'), Some((o, r))
@@ -141,5 +152,50 @@ mod tests {
         );
         assert!(TemplateSource::parse("gh:onlyowner").is_err());
         assert!(TemplateSource::parse("gh:a/b//../x").is_err());
+        let s = TemplateSource::parse("git@host:p//s").unwrap();
+        assert_eq!(
+            (s.kind, s.subdir.as_deref()),
+            (
+                SourceKind::Git {
+                    url: "git@host:p".into()
+                },
+                Some("s")
+            )
+        );
+        let s = TemplateSource::parse("ssh://h/r.git//s").unwrap();
+        assert_eq!(
+            (s.kind, s.subdir.as_deref()),
+            (
+                SourceKind::Git {
+                    url: "ssh://h/r.git".into()
+                },
+                Some("s")
+            )
+        );
+        let s = TemplateSource::parse("file:///abs//s").unwrap();
+        assert_eq!(
+            (s.kind, s.subdir.as_deref()),
+            (
+                SourceKind::Git {
+                    url: "file:///abs".into()
+                },
+                Some("s")
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_option_like_and_helper_specs() {
+        for bad in [
+            "--upload-pack=x",
+            "-oProxyCommand=x",
+            "-x//s",
+            "ext::sh -c id",
+            "a@b::c",
+            "./t//-s",
+            "gh:a/b//-s",
+        ] {
+            assert!(TemplateSource::parse(bad).is_err(), "{bad}");
+        }
     }
 }
