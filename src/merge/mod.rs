@@ -455,4 +455,23 @@ mod tests {
             "{\n  \"big\": 12345678901234567890123,\n  \"e\": 1.50,\n  \"n\": 2,\n  \"m\": 1\n}\n"
         );
     }
+
+    #[test]
+    fn toml_new_array_of_tables_is_appended_at_the_end() {
+        let b = "[a]\nx = 1\n";
+        let o = "[a]\nx = 2\n\n[mine]\nm = 1\n";
+        let t = "[[bin]]\nname = \"n\"\n\n[[bin]]\nname = \"o\"\n\n[a]\nx = 1\n";
+        let m = merge3(MergeStrategy::Toml, b, o, t);
+        assert!(m.conflicts.is_empty());
+        assert_eq!(
+            m.text,
+            "[a]\nx = 2\n\n[mine]\nm = 1\n\n[[bin]]\nname = \"n\"\n\n[[bin]]\nname = \"o\"\n"
+        );
+    }
+
+    #[test]
+    fn toml_new_table_into_empty_ours_has_no_leading_blank_line() {
+        let m = merge3(MergeStrategy::Toml, "a = 1\n", "", "a = 1\n\n[t]\nx = 1\n");
+        assert_eq!(m.text, "[t]\nx = 1\n");
+    }
 }

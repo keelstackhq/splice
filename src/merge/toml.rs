@@ -43,7 +43,7 @@ fn apply(ours: &mut dyn TableLike, merged: &IndexMap<String, Tree>, theirs: &dyn
         let Some(item) = ours.get_mut(k) else {
             if let Some(t) = theirs.get(k) {
                 let mut new = t.clone();
-                detach(&mut new, true);
+                detach(&mut new, Some(!ours.is_empty()));
                 ours.insert(k, new);
             }
             continue;
@@ -72,27 +72,44 @@ fn apply(ours: &mut dyn TableLike, merged: &IndexMap<String, Tree>, theirs: &dyn
 
 use indexmap::IndexMap;
 
-/// Make a table from theirs land at the end of ours: drop its document position (so it is
-/// emitted after positioned tables) and separate it from the previous table by a blank line.
-fn detach(item: &mut Item, top: bool) {
-    if let Item::Table(t) = item {
-        if t.is_dotted() {
-            return;
+/// Make a table (or array of tables) from theirs land at the end of ours: drop its document
+/// position (so it is emitted after positioned tables) and, at the top of the new item and
+/// when `blank` is `Some(true)`, separate it from the previous table by a blank line.
+fn detach(item: &mut Item, blank: Option<bool>) {
+    match item {
+        Item::Table(t) => {
+            if t.is_dotted() {
+                return;
+            }
+            t.set_position(None);
+            if let Some(blank) = blank {
+                let prefix = t
+                    .decor()
+                    .prefix()
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("")
+                    .trim_start_matches(['\r', '\n'])
+                    .to_string();
+                let lead = if blank { "\n" } else { "" };
+                t.decor_mut().set_prefix(format!("{lead}{prefix}"));
+            }
+            for (_, child) in t.iter_mut() {
+                detach(child, None);
+            }
         }
-        t.set_position(None);
-        if top {
-            let prefix = t
-                .decor()
-                .prefix()
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .trim_start_matches(['\r', '\n'])
-                .to_string();
-            t.decor_mut().set_prefix(format!("\n{prefix}"));
+        Item::ArrayOfTables(a) => {
+            for t in a.iter_mut() {
+                t.set_position(None);
+                if let Some(blank) = blank {
+                    let lead = if blank { "\n" } else { "" };
+                    t.decor_mut().set_prefix(lead);
+                }
+                for (_, child) in t.iter_mut() {
+                    detach(child, None);
+                }
+            }
         }
-        for (_, child) in t.iter_mut() {
-            detach(child, false);
-        }
+        _ => {}
     }
 }
 
