@@ -196,7 +196,7 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
                 .iter()
                 .flat_map(|i| template.pieces[&i.id].post.clone())
                 .collect();
-            run_post(&dest, &cmds, When::New, g.json)?;
+            run_post(&dest, &cmds, When::New)?;
         }
         Ok(())
     };

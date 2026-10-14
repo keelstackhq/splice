@@ -296,3 +296,89 @@ fn lock_version_at(dir: &Path) -> String {
         .version
         .to_string()
 }
+
+fn failed_step_stderr(repo: &TempDir, extra: &[&str]) -> String {
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .env("SPLICE_FIXTURE_FAIL", "1")
+        .args(["update", "--yes"])
+        .args(extra)
+        .assert()
+        .code(3)
+        .get_output()
+        .clone();
+    String::from_utf8_lossy(&out.stderr).to_string()
+}
+
+#[test]
+fn failed_step_with_allow_dirty_does_not_advise_git_clean() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "v1.0.0");
+    write(&repo, "scratch.txt", "uncommitted user work\n");
+    let stderr = failed_step_stderr(&repo, &["--allow-dirty"]);
+    assert!(!stderr.contains("git clean"), "{stderr}");
+    assert!(
+        stderr.contains("uncommitted changes before the update"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("git status"), "{stderr}");
+}
+
+#[test]
+fn failed_step_with_allow_dirty_on_a_clean_tree_keeps_the_restore_command() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "v1.0.0");
+    let stderr = failed_step_stderr(&repo, &["--allow-dirty"]);
+    assert!(
+        stderr.contains(&splice::post::restore_cmd(repo.path())),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn failed_step_outside_a_work_tree_says_there_is_no_git_undo() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "v1.0.0");
+    std::fs::remove_dir_all(repo.path().join(".git")).unwrap();
+    let stderr = failed_step_stderr(&repo, &["--allow-dirty"]);
+    assert!(!stderr.contains("git clean"), "{stderr}");
+    assert!(stderr.contains("no git undo"), "{stderr}");
+}
+
+#[test]
+fn update_refuses_to_merge_over_unresolved_markers() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "v1.0.0");
+    apply_user_edits(&repo);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["update", "--yes"])
+        .assert()
+        .code(1);
+    assert!(read(&repo, ".github/workflows/ci.yml").contains("<<<<<<<"));
+    // a newer template release touching the same file
+    let ci = tpl
+        .path()
+        .join("pieces/base/files/.github/workflows/ci.yml.jinja");
+    let text = std::fs::read_to_string(&ci).unwrap();
+    std::fs::write(&ci, format!("{text}# more\n")).unwrap();
+    git_commit_all(tpl.path(), "v2.1");
+    git(tpl.path(), &["tag", "v2.1.0"]);
+
+    let before = tree_snapshot(repo.path());
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["update", "--yes", "--allow-dirty", "--json"])
+        .assert()
+        .code(1)
+        .get_output()
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let msgs = v["messages"].to_string();
+    assert!(
+        msgs.contains("resolve conflict markers in .github/workflows/ci.yml first (splice check)"),
+        "{msgs}"
+    );
+    assert_eq!(tree_snapshot(repo.path()), before);
+    assert_eq!(lock_version(&repo), "2.0.0");
+}

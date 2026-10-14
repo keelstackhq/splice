@@ -1,6 +1,6 @@
 //! `splice diff` (spec §8.8): steps 2-6 of `update` without writing anything.
 
-use super::usage;
+use super::{parse_to, usage};
 use crate::cli::{DiffArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fsio::read_opt;
@@ -8,7 +8,6 @@ use crate::ops::update::prepare;
 use crate::output::{Action, Report};
 use crate::planner::Planned;
 use indexmap::IndexMap;
-use semver::Version;
 use std::path::Path;
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -54,13 +53,7 @@ fn patch_lines(repo: &Path, c: &Planned, new: &[u8]) -> Result<Vec<String>> {
 
 pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
     let repo = g.dir.as_path();
-    let to =
-        a.to.as_deref()
-            .map(|v| {
-                Version::parse(v.strip_prefix('v').unwrap_or(v))
-                    .map_err(|e| usage(format!("invalid --to version {v:?}: {e}")))
-            })
-            .transpose()?;
+    let to = parse_to(a.to.as_deref())?;
 
     // never prompts and never forces: new vars take their default, and owned drift is reported
     // rather than planned as an update
@@ -77,6 +70,11 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
     for d in &p.plan.drift {
         report.msg(format!(
             "{d}: owned file was edited or deleted locally; update would refuse (--force replaces it)"
+        ));
+    }
+    for m in &p.plan.marked {
+        report.msg(format!(
+            "resolve conflict markers in {m} first (splice check); update would refuse"
         ));
     }
     for c in &p.plan.changes {

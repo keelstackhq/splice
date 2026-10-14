@@ -8,7 +8,7 @@ use crate::manifest::{PostCmd, When};
 use crate::migrate::Step;
 use crate::output::{Action, Report};
 use crate::planner::Plan;
-use crate::post::{post_runs, restore_cmd, run_post, run_steps};
+use crate::post::{Undo, post_runs, run_post, run_steps};
 use semver::Version;
 use std::path::Path;
 
@@ -26,12 +26,14 @@ pub struct ApplyCtx<'a> {
     pub when: When,
     pub no_post: bool,
     pub json: bool,
+    /// What git can do to undo a partial update (named in error messages).
+    pub undo: Undo,
 }
 
 /// A failure after something was written: keep the report, name the restore command.
-fn partial(e: SpliceError, repo: &Path, report: &Report, restore: bool) -> SpliceError {
-    let message = if restore {
-        format!("{e}; `{}` restores the previous state", restore_cmd(repo))
+fn partial(e: SpliceError, repo: &Path, report: &Report, undo: Option<Undo>) -> SpliceError {
+    let message = if let Some(u) = undo {
+        format!("{e}; {}", u.advice(repo))
     } else {
         e.to_string()
     };
@@ -76,7 +78,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
             };
             if let Err(e) = res {
                 let e = SpliceError::Io(std::io::Error::new(e.kind(), format!("{}: {e}", c.path)));
-                return Err(partial(e, repo, &report, wrote));
+                return Err(partial(e, repo, &report, wrote.then_some(ctx.undo)));
             }
             if c.bytes.is_some() || c.action == Action::Delete {
                 wrote = true;
@@ -88,13 +90,13 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
         }
     }
 
-    run_steps(repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json)
-        .map_err(|e| partial(e, repo, &report, false))?;
+    run_steps(repo, &ctx.steps, &ctx.from, &ctx.to, ctx.undo)
+        .map_err(|e| partial(e, repo, &report, None))?;
 
     // The lock is the last write; a failure leaves the old lock in place.
     ctx.lock
         .write_atomic(repo)
-        .map_err(|e| partial(e, repo, &report, true))?;
+        .map_err(|e| partial(e, repo, &report, Some(ctx.undo)))?;
 
     if !ctx.plan.conflicts.is_empty() {
         let cmds = post_runs(&ctx.post, ctx.when);
@@ -111,8 +113,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
         return Err(SpliceError::Conflict(report));
     }
     if !ctx.no_post {
-        run_post(repo, &ctx.post, ctx.when, ctx.json)
-            .map_err(|e| partial(e, repo, &report, false))?;
+        run_post(repo, &ctx.post, ctx.when).map_err(|e| partial(e, repo, &report, None))?;
     }
     Ok(report)
 }
@@ -197,6 +198,7 @@ mod tests {
             changes,
             drift: vec![],
             conflicts: conflicts.iter().map(|s| s.to_string()).collect(),
+            marked: vec![],
         }
     }
 
@@ -217,6 +219,7 @@ mod tests {
             when: When::Update,
             no_post: false,
             json: false,
+            undo: Undo::Git,
         }
     }
 
@@ -262,6 +265,30 @@ mod tests {
             panic!("expected Partial")
         };
         assert_eq!(report.changes.len(), 2);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn failing_step_advice_depends_on_what_git_can_undo() {
+        let ver = v("2.0.0");
+        let s = step("exit 7");
+        for (undo, has_clean, needle) in [
+            (Undo::Git, true, "restores the previous state"),
+            (
+                Undo::Unverified,
+                false,
+                "uncommitted changes before the update",
+            ),
+            (Undo::NoGit, false, "no git undo"),
+        ] {
+            let d = repo();
+            let p = basic_plan();
+            let mut c = ctx(&d, &p, vec![(&ver, &s)], vec![]);
+            c.undo = undo;
+            let msg = apply(c).unwrap_err().to_string();
+            assert_eq!(msg.contains("git clean"), has_clean, "{undo:?}: {msg}");
+            assert!(msg.contains(needle), "{undo:?}: {msg}");
+        }
     }
 
     #[test]

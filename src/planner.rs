@@ -65,6 +65,9 @@ pub struct Plan {
     pub changes: Vec<Planned>,
     pub drift: Vec<String>,
     pub conflicts: Vec<String>,
+    /// Lock-listed shared files that would be merged but still hold conflict markers on disk
+    /// (spec §10 item 26): the update is refused, nothing is written.
+    pub marked: Vec<String>,
 }
 
 impl Plan {
@@ -130,6 +133,11 @@ fn merge_shared(
             note: Some(format!("conflicts: {}", m.conflicts.join(", "))),
         });
     }
+}
+
+/// Leftover conflict markers in a UTF-8 file.
+fn has_markers(bytes: &[u8]) -> bool {
+    std::str::from_utf8(bytes).is_ok_and(|t| !crate::markers::find_markers(t).is_empty())
 }
 
 const STILL_RENDERED: &str = "listed in [[remove]] but still rendered by the target; ignored";
@@ -199,6 +207,9 @@ pub fn plan(input: &PlanInput) -> Plan {
                     ),
                     (_, Some(c)) if c == b.bytes => {
                         out.push(path, Action::Update, t.class, Some(t.bytes.clone()))
+                    }
+                    (_, Some(c)) if lock.files.contains_key(path.as_str()) && has_markers(c) => {
+                        out.marked.push(path.clone())
                     }
                     (_, Some(c)) => merge_shared(&mut out, path, t.strategy, &b.bytes, c, &t.bytes),
                 }

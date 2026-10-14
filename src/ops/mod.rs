@@ -2,6 +2,7 @@
 
 use crate::error::SpliceError;
 use crate::paths::validate_segment;
+use crate::post::Undo;
 use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
@@ -95,12 +96,7 @@ pub(crate) struct Locked {
 /// Read the lock (and its warnings), check out the template at the locked commit, load it and
 /// check `min_splice`. Shared by every command that works on an existing instance.
 pub(crate) fn load_locked(repo: &Path) -> Result<Locked> {
-    let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| {
-        usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        ))
-    })?;
+    let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| no_lock(repo))?;
     let source = TemplateSource::parse(&lock.template.source)?;
     let resolved = Fetcher::from_env().checkout(
         &source,
@@ -168,22 +164,73 @@ pub(crate) fn check_requires(
 }
 
 /// Spec §8.3 step 1: refuse a dirty tree, or no git work tree, with exit 2 unless `allow_dirty`.
-/// `verb` completes the hint (`pass --allow-dirty to {verb} anyway`).
-pub(crate) fn ensure_clean(repo: &Path, allow_dirty: bool, verb: &str) -> Result<()> {
+/// `verb` completes the hint (`pass --allow-dirty to {verb} anyway`). The result says what git
+/// can undo afterwards: only a tree verified clean may be told to `git checkout`/`git clean`
+/// (spec §10 item 25).
+pub(crate) fn ensure_clean(repo: &Path, allow_dirty: bool, verb: &str) -> Result<Undo> {
+    let state = crate::git::Git::is_clean(repo);
     if allow_dirty {
-        return Ok(());
+        return Ok(match state {
+            Ok(Some(true)) => Undo::Git,
+            Ok(None) => Undo::NoGit,
+            _ => Undo::Unverified,
+        });
     }
-    match crate::git::Git::is_clean(repo)? {
+    match state? {
         None => Err(usage(format!(
-            "{} is not the top level of a git work tree; pass --allow-dirty to {verb} anyway",
+            "{} is not inside a git work tree; pass --allow-dirty to {verb} anyway",
             repo.display()
         ))),
         Some(false) => Err(usage(
             "the working tree has uncommitted changes; commit or stash them, or pass \
              --allow-dirty",
         )),
-        Some(true) => Ok(()),
+        Some(true) => Ok(Undo::Git),
     }
+}
+
+/// `--to` as a version: `1.2.3` or `v1.2.3`.
+pub(crate) fn parse_to(raw: Option<&str>) -> Result<Option<semver::Version>> {
+    raw.map(|v| {
+        semver::Version::parse(v.strip_prefix('v').unwrap_or(v))
+            .map_err(|e| usage(format!("invalid --to version {v:?}: {e}")))
+    })
+    .transpose()
+}
+
+/// A repo without a lock is a usage error (checked before the dirty check can mislead).
+pub(crate) fn no_lock(repo: &Path) -> SpliceError {
+    usage(format!(
+        "{} has no .splice/lock.toml; use `splice new` first",
+        repo.display()
+    ))
+}
+
+/// Exit 1 when the plan was refused (owned drift, or unresolved markers in a file that would
+/// be merged): a report with no changes, one message per file, then `nothing was written`.
+/// `None` when the plan is fine. `verb` is `update` or `add`.
+pub(crate) fn refusal(
+    verb: &str,
+    plan: &crate::planner::Plan,
+    messages: &[String],
+) -> Option<SpliceError> {
+    if plan.drift.is_empty() && plan.marked.is_empty() {
+        return None;
+    }
+    let mut report = crate::output::Report::new(verb);
+    report.messages.extend(messages.iter().cloned());
+    for d in &plan.drift {
+        report.msg(format!(
+            "{d}: owned file was edited or deleted locally; {verb} refused (--force replaces it)"
+        ));
+    }
+    for m in &plan.marked {
+        report.msg(format!(
+            "resolve conflict markers in {m} first (splice check)"
+        ));
+    }
+    report.msg("nothing was written");
+    Some(SpliceError::Drift(report))
 }
 
 /// Put `msgs` (lock and template warnings, notes) in front of the messages of an apply result.

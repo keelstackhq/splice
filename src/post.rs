@@ -10,6 +10,33 @@ use std::process::{Command, Stdio};
 /// The git part of the restore command (spec §8.3 step 1).
 pub const RESTORE: &str = "git checkout -- . && git clean -fd";
 
+/// What git can do to undo a partial update (spec §8.3 step 1, §10 item 25).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Undo {
+    /// The tree was verified clean before the update: the restore command is safe.
+    Git,
+    /// The tree had uncommitted changes (`--allow-dirty`) or could not be checked.
+    Unverified,
+    /// Not inside a git work tree.
+    NoGit,
+}
+
+impl Undo {
+    /// The advice that ends an error message after files were written.
+    pub fn advice(self, repo: &Path) -> String {
+        match self {
+            Undo::Git => format!("`{}` restores the previous state", restore_cmd(repo)),
+            Undo::Unverified => "the tree had uncommitted changes before the update, so git \
+                cannot separate them from the update's changes; inspect `git status` and \
+                `git diff` and undo by hand"
+                .to_string(),
+            Undo::NoGit => "this is not a git work tree, so there is no git undo; inspect the \
+                files by hand"
+                .to_string(),
+        }
+    }
+}
+
 /// What to run to undo a partial update: `cd <dir> && git checkout -- . && git clean -fd`. The
 /// `cd` matters in a monorepo: run inside the project directory, git only touches that subtree.
 pub fn restore_cmd(repo: &Path) -> String {
@@ -62,7 +89,7 @@ pub fn post_runs(cmds: &[PostCmd], when: When) -> Vec<&str> {
 /// Run every command whose `when` contains `when`, in order, skipping repeated `run` strings.
 /// The child's stdout and stderr are both forwarded to our stderr, so with `--json` stdout stays
 /// exactly one object (spec §3).
-pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, _json: bool) -> Result<(), SpliceError> {
+pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When) -> Result<(), SpliceError> {
     for run in post_runs(cmds, when) {
         let mut cmd = shell(run);
         let out = cmd
@@ -93,9 +120,9 @@ pub fn run_steps(
     steps: &[(&Version, &Step)],
     from: &Version,
     to: &Version,
-    _json: bool,
+    undo: Undo,
 ) -> Result<(), SpliceError> {
-    let restore = restore_cmd(repo);
+    let advice = undo.advice(repo);
     for (version, step) in steps {
         let status = shell(&step.run)
             .current_dir(repo)
@@ -107,13 +134,13 @@ pub fn run_steps(
             .status()
             .map_err(|e| {
                 SpliceError::Env(format!(
-                    "migration step `{}` ({version}) could not start: {e}; the lock still records {from}; `{restore}` restores the previous state",
+                    "migration step `{}` ({version}) could not start: {e}; the lock still records {from}; {advice}",
                     step.run
                 ))
             })?;
         if !status.success() {
             return Err(SpliceError::Env(format!(
-                "migration step `{}` ({version}) failed ({status}); the lock still records {from}; `{restore}` restores the previous state",
+                "migration step `{}` ({version}) failed ({status}); the lock still records {from}; {advice}",
                 step.run
             )));
         }

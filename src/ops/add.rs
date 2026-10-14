@@ -1,8 +1,8 @@
 //! `splice add` (spec §8.2): the full planner of `update` on the lock's own template commit.
 
 use super::{
-    Locked, check_requires, ensure_clean, load_locked, parse_data, safe_segment, usage,
-    validate_instance, with_messages,
+    Locked, check_requires, ensure_clean, load_locked, no_lock, parse_data, refusal, safe_segment,
+    usage, validate_instance, with_messages,
 };
 use crate::apply::{ApplyCtx, apply};
 use crate::cli::{AddArgs, GlobalArgs};
@@ -29,12 +29,9 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     // 1. lock, dirty tree (no lock is a usage error before the dirty check can mislead),
     // template at the lock's commit
     if Lock::read(repo)?.is_none() {
-        return Err(usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        )));
+        return Err(no_lock(repo));
     }
-    ensure_clean(repo, a.allow_dirty, "add")?;
+    let undo = ensure_clean(repo, a.allow_dirty, "add")?;
     let Locked {
         lock,
         warnings: lock_warnings,
@@ -106,16 +103,8 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     });
     let mut messages: Vec<String> = lock_warnings;
     messages.extend(template.warnings.iter().cloned());
-    if !plan.drift.is_empty() {
-        let mut report = Report::new("add");
-        report.messages.extend(messages);
-        for d in &plan.drift {
-            report.msg(format!(
-                "{d}: owned file was edited or deleted locally; add refused (--force replaces it)"
-            ));
-        }
-        report.msg("nothing was written");
-        return Err(SpliceError::Drift(report));
+    if let Some(e) = refusal("add", &plan, &messages) {
+        return Err(e);
     }
     let result = apply(ApplyCtx {
         repo,
@@ -128,6 +117,7 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         when: When::Add,
         no_post: a.no_post,
         json: g.json,
+        undo,
     });
     with_messages(result, &messages)
 }

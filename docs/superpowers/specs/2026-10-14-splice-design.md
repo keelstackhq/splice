@@ -203,8 +203,8 @@ Details of `add` on the full planner (§8.4), each path in base or theirs:
   base piece, a `multiple = false` piece already present or given `--name`, a missing `requires`,
   a duplicate (id, name), an unsafe name, a `--data` key that is not a var of the added piece
   (template vars come from the lock and cannot be changed by `add`).
-- Owned drift (an owned file edited or deleted locally whose render changes) refuses the add like
-  `update`: nothing is written, exit 1, the files are listed; `--force` replaces them. Shared files
+- Any owned drift (an owned file edited or deleted locally) refuses the add like
+  `update` (§10 item 20): nothing is written, exit 1, the files are listed; `--force` replaces them. Shared files
   merge by their strategy (`merge`) or get diff3 markers (`conflict`, exit 1); `--force` never
   overwrites a shared file. Seeds are created only when absent and never modified. A file only in
   base is deleted when unedited, else kept (`skip`) with the message `<path>: … no longer managed
@@ -222,7 +222,9 @@ Details of `add` on the full planner (§8.4), each path in base or theirs:
    `--allow-dirty`; refuse outside a git work tree unless `--allow-dirty`. The clean tree is the
    recovery story: every failure can be undone with `git checkout -- . && git clean -fd` run in the project
    directory, and every error message after files were written says so as `cd <dir> && git
-   checkout -- . && git clean -fd` (in a monorepo subdir this restores only the project).
+   checkout -- . && git clean -fd` (in a monorepo subdir this restores only the project). That
+   advice is given only when the tree was verified clean; with `--allow-dirty` on a dirty tree the
+   message says git cannot separate the earlier changes (§10 item 25).
 2. Target = `--to` or latest stable tag. Target < lock version → exit 2. Target = lock version →
    nothing to do (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
 3. Fetch both trees. Load the target manifest; check `format` and `min_splice` (exit 3).
@@ -417,6 +419,17 @@ into the contract at its next `format` bump.
     an error; (d) lock warnings are report messages, first; (e) no dirty-tree check (read-only);
     a symlink or directory on a lock path is exit 3 `unsafe path` as in `update`; a non-UTF-8
     file is not scanned for markers; (f) findings are exit 1 with `ok: false` and the full report.
+
+25. The restore advice of §8.3 step 1 is printed only when the tree was verified clean before the
+    update (also under `--allow-dirty`, when it happened to be clean), because `git checkout -- .
+    && git clean -fd` would destroy uncommitted user work. On a tree that had uncommitted changes
+    (or could not be checked) the message says so: git cannot separate them from the update's
+    changes, inspect `git status` and `git diff` by hand. Outside a git work tree it says there is
+    no git undo.
+26. `update` and `add` refuse (exit 1, nothing written, report with no changes) when a lock-listed
+    shared file that the plan would merge still contains conflict markers on disk (`find_markers`):
+    message `resolve conflict markers in <path> first (splice check)`, then `nothing was written`.
+    `--force` does not override it; `diff` reports it as a message.
 
 ## 11. Testing
 

@@ -1,7 +1,9 @@
 //! `splice update` (spec §8.3). `prepare` is the pure part (steps 1-6, minus the dirty check) and
 //! is shared with `diff` and `check`; `run` adds the dirty-tree check and applies the plan.
 
-use super::{Locked, ensure_clean, load_locked, parse_data, usage, with_messages};
+use super::{
+    Locked, ensure_clean, load_locked, no_lock, parse_data, parse_to, refusal, usage, with_messages,
+};
 use crate::apply::{ApplyCtx, apply};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
@@ -287,22 +289,13 @@ fn prepend(report: &mut Report, msgs: &[String]) {
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     let repo = g.dir.as_path();
     let data = parse_data(&a.data)?;
-    let to =
-        a.to.as_deref()
-            .map(|v| {
-                Version::parse(v.strip_prefix('v').unwrap_or(v))
-                    .map_err(|e| usage(format!("invalid --to version {v:?}: {e}")))
-            })
-            .transpose()?;
+    let to = parse_to(a.to.as_deref())?;
 
     // no lock is a usage error before the dirty check can mislead
     if Lock::read(repo)?.is_none() {
-        return Err(usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        )));
+        return Err(no_lock(repo));
     }
-    ensure_clean(repo, a.allow_dirty, "update")?;
+    let undo = ensure_clean(repo, a.allow_dirty, "update")?;
 
     let p = prepare(g, to.as_ref(), &data, a.force, true)?;
     let mut report = Report::new("update");
@@ -310,15 +303,8 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         prepend(&mut report, &p.messages);
         return Ok(report);
     }
-    if !p.plan.drift.is_empty() {
-        prepend(&mut report, &p.messages);
-        for d in &p.plan.drift {
-            report.msg(format!(
-                "{d}: owned file was edited or deleted locally; update refused (--force replaces it)"
-            ));
-        }
-        report.msg("nothing was written");
-        return Err(SpliceError::Drift(report));
+    if let Some(e) = refusal("update", &p.plan, &p.messages) {
+        return Err(e);
     }
 
     let migrations = select(&p.template.migrations, &p.from, &p.to);
@@ -342,6 +328,7 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         when: When::Update,
         no_post: a.no_post,
         json: g.json,
+        undo,
     });
     with_messages(result, &p.messages)
 }

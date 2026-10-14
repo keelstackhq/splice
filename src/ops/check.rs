@@ -1,7 +1,7 @@
 //! `splice check` (spec §8.7): owned drift, leftover conflict markers, an available update.
 //! Reads only the lock and the disk (plus the tag list unless `--offline`); writes nothing.
 
-use super::check_readable;
+use super::{check_readable, no_lock};
 use crate::cli::{CheckArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
@@ -15,12 +15,7 @@ type Result<T> = std::result::Result<T, SpliceError>;
 
 pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
     let repo = g.dir.as_path();
-    let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| {
-        SpliceError::Usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        ))
-    })?;
+    let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| no_lock(repo))?;
     let mut report = Report::new("check");
     report.messages.extend(warnings);
 
