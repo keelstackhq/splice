@@ -1,0 +1,24 @@
+---
+source: src/lock.rs
+expression: text
+---
+format = 1
+splice = "0.1.0"
+
+[template]
+source = "gh:keelstack/hull//template"
+version = "1.2.0"
+commit = "3f2c0a1b3f2c0a1b3f2c0a1b3f2c0a1b3f2c0a1b"
+
+[vars]
+scope = "acme"
+env = "prod"
+
+[[pieces]]
+id = "preact-app"
+name = "web"
+vars = { name = "web" }
+
+[files]
+"apps/web/package.json" = { class = "shared", sha256 = "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356" }
+"apps/web/vite.config.ts" = { class = "owned", sha256 = "33bff9108736f23280e9cd50cb1472e3a5b4403ed3f2da1fe67b8487a4fb75c6" }

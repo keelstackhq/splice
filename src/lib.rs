@@ -4,6 +4,7 @@ pub mod error;
 pub mod fetch;
 pub mod fsio;
 pub mod git;
+pub mod lock;
 pub mod manifest;
 pub mod output;
 pub mod paths;

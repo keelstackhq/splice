@@ -20,15 +20,8 @@ fn is_windows_reserved(seg: &str) -> bool {
             && matches!(stem.as_bytes()[3], b'1'..=b'9'))
 }
 
-/// Render one `/`-free segment and check the result is still exactly one safe segment.
-fn render_segment(
-    seg: &str,
-    full: &str,
-    renderer: &Renderer,
-    ctx: &Value,
-) -> Result<String, SpliceError> {
-    subset::validate_path_segment(seg, full)?;
-    let out = renderer.render_str(seg, ctx, full)?;
+/// Shared segment rules (spec §10 item 17) for one rendered or stored path segment.
+fn check_segment(out: &str, seg: &str, full: &str) -> Result<(), SpliceError> {
     if out.is_empty() || out == "." || out == ".." {
         return Err(bad(full, format!("segment `{seg}` renders to `{out}`")));
     }
@@ -38,12 +31,48 @@ fn render_segment(
             format!("segment `{seg}` renders to {out:?}, which is not one safe path segment"),
         ));
     }
-    if out.ends_with(['.', ' ']) || is_windows_reserved(&out) {
+    if out.ends_with(['.', ' ']) || is_windows_reserved(out) {
         return Err(bad(
             full,
             format!("segment `{seg}` renders to {out:?}, which is not portable to Windows"),
         ));
     }
+    Ok(())
+}
+
+/// Validate a stored, already-rendered relative path (a lock `files` key): `/`-separated,
+/// every segment safe, and not the reserved lock path.
+pub fn validate_rel_path(path: &str) -> Result<(), SpliceError> {
+    if path.contains('\\') {
+        return Err(bad(path, "backslash in path"));
+    }
+    for seg in path.split('/') {
+        check_segment(seg, seg, path)?;
+    }
+    if path.eq_ignore_ascii_case(LOCK_PATH) {
+        return Err(bad(
+            path,
+            "`.splice/lock.toml` is reserved for the lock file",
+        ));
+    }
+    Ok(())
+}
+
+/// Validate one stored path segment (a piece id or instance name).
+pub fn validate_segment(seg: &str) -> Result<(), SpliceError> {
+    check_segment(seg, seg, seg)
+}
+
+/// Render one `/`-free segment and check the result is still exactly one safe segment.
+fn render_segment(
+    seg: &str,
+    full: &str,
+    renderer: &Renderer,
+    ctx: &Value,
+) -> Result<String, SpliceError> {
+    subset::validate_path_segment(seg, full)?;
+    let out = renderer.render_str(seg, ctx, full)?;
+    check_segment(&out, seg, full)?;
     Ok(out)
 }
 

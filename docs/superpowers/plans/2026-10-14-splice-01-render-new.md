@@ -373,7 +373,7 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
   - `fn Lock::write_atomic(&self, repo: &Path) -> Result<()>` (`.splice/lock.toml.tmp` + fsync + rename)
   - `fn Lock::instances(&self) -> Vec<PieceInstance>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn roundtrip_matches_contract_shape() {
@@ -388,10 +388,10 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
 #[test] fn unknown_format_is_template_error() { /* write format = 9 → read → exit 3 */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement** reading with `toml` + serde and writing with `toml_edit` (inline tables for `vars` and each `[files]` entry, as in contract §6).
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: lock file read and atomic write`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement** reading with `toml` + serde and writing with `toml_edit` (inline tables for `vars` and each `[files]` entry, as in contract §6).
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: lock file read and atomic write`
 
 ---
 
