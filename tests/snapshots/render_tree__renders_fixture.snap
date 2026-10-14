@@ -18,5 +18,5 @@ logo.png | Owned | Text | base:base | Some("logo.png") | 14 bytes
 notes.txt | Shared | Text | base:base | Some("notes.txt") | 55 bytes
 old.txt | Owned | Text | base:base | Some("old.txt") | 12 bytes
 only-with-app.txt | Owned | Text | base:base | None | 16 bytes
-package.json | Shared | Json | base:base | Some("package.json") | 147 bytes
+package.json | Shared | Json | base:base | Some("package.json") | 206 bytes
 tool.config.mts | Owned | Text | base:base | Some("tool.config.mts") | 33 bytes

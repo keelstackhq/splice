@@ -53,7 +53,10 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
         }
     }
 
-    let mut report = Report::new("update");
+    let mut report = Report::new(match ctx.when {
+        When::Add => "add",
+        _ => "update",
+    });
     let mut wrote = false;
     // Files first, then removals.
     for deleting in [false, true] {

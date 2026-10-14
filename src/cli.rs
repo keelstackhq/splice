@@ -84,6 +84,8 @@ pub struct AddArgs {
     pub no_post: bool,
     #[arg(long)]
     pub force: bool,
+    #[arg(long)]
+    pub allow_dirty: bool,
 }
 
 #[derive(Debug, Args)]

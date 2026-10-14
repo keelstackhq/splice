@@ -52,7 +52,7 @@ vars = { name = "web" }
 "notes.txt" = { class = "shared", sha256 = "f75c9a862304c0159b3177a91d0c3d81ddc718b332561642d267ba245d3739cd" }
 "old.txt" = { class = "owned", sha256 = "2ed93b04807efb14d2186e20bb6f8c45264a32d08bd97df62316cccd6ded4894" }
 "only-with-app.txt" = { class = "owned", sha256 = "03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c" }
-"package.json" = { class = "shared", sha256 = "929a4170c32fd3c17b0891be1d4a33e16d6c18f93217335ef63b8b53329692ad" }
+"package.json" = { class = "shared", sha256 = "a840cc668785fa944a2d505004725f2dfd93ec09e157b65fc7aab68e8c806900" }
 "tool.config.mts" = { class = "owned", sha256 = "9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0" }
 README.md 7e07d6978e5f4f29a0be7fc4dca6d39f09bb6d858edef2deffba9e1657dce50c
 # DEMO
@@ -101,10 +101,15 @@ legacy file
 only-with-app.txt 03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c
 app is present
 
-package.json 929a4170c32fd3c17b0891be1d4a33e16d6c18f93217335ef63b8b53329692ad
+package.json a840cc668785fa944a2d505004725f2dfd93ec09e157b65fc7aab68e8c806900
 {
   "name": "@acme/demo",
   "private": true,
+  "workspaces": [
+    "base",
+    "app",
+    "apps/*"
+  ],
   "scripts": {
     "build": "echo build"
   },

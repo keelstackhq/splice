@@ -46,10 +46,10 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | Command | Purpose |
 |---|---|
 | `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
-| `splice add <piece-id> [--name N] [--data K=V]… [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
+| `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
 | `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post]` | Move to a newer template version (default: latest stable tag). |
 | `splice check [--offline]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
-| `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
+| `splice diff [--to VERSION]` | Show what `update` would change, without writing (never prompts, no dirty-tree check). |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var; for `update` it
@@ -195,31 +195,26 @@ Uses the lock's template source and commit (no version change). Validates `multi
 name, `requires`. Because `pieces` changes, every instance is re-rendered: base = render of the
 lock state, theirs = render with the new instance. The result goes through the same planner as
 `update` (§8.3), so other pieces' `{% if "x" in pieces %}` blocks update with full merge rules.
-Milestone 1 ships a reduced planner (replace only unedited files, report the rest); milestone 2
-switches `add` to the full planner.
+`add` first applies the §8.3 step 1 check (dirty tree or no git work tree → exit 2 unless
+`--allow-dirty`), after the no-lock check.
 
-Milestone 1 details (the reduced planner, `ops::add::plan_reduced`), each path in base or theirs:
-- Invalid input is exit 2 with tree and lock untouched: no lock, unknown piece, the base piece, a
-  `multiple = false` piece already present or given `--name`, a missing `requires`, a duplicate
-  (id, name), an unsafe name, a `--data` key that is not a var of the added piece (template vars
-  come from the lock and cannot be changed by `add`).
-- New path: create (a seed only if absent; an existing seed is `skip`). Existing file with other
-  bytes: `conflict`, not written.
-- In both with a changed render: replaced (`update`) when the disk sha equals the lock sha or the
-  bytes already equal theirs (then omitted); otherwise `conflict`, not written. `--force` replaces
-  an edited or user-created file only when it is owned; an edited or user-created shared file stays
-  a `conflict` even with `--force`. A file the user deleted: shared is `skip`, owned is `conflict`
-  (recreated with `--force`). Seeds are never modified (`skip` when their render changed).
-- Only in base: deleted when unedited. An edited one is kept (`skip`, even with `--force`) with the
-  message `<path>: … no longer managed by splice`, and the new lock does not list it (§8.4).
-- Unchanged files are omitted from the report.
-- Every path is checked for symlinks and directories first (exit 3, §10 item 19). The lock records
-  the theirs render's hashes even when conflicts remain. For an owned conflict the kept edit then
-  shows as drift. For a shared conflict a later `update` may treat the missing change as a user
-  edit; the `merge by hand` message is the signal to act now.
-- Conflicts: each gets a message `<path>: edited locally; …`; the other files and the lock are
-  still written, exit 1, `[[post]]` is skipped. Otherwise `[[post]]` of the added piece with
-  `when` ∋ `add` runs after the lock. `add` has no dirty-tree check in milestone 1 (§10 item 20). Unknown lock keys are reported as messages.
+Details of `add` on the full planner (§8.4), each path in base or theirs:
+- Invalid input is exit 2 with tree and lock untouched: no lock, dirty tree, unknown piece, the
+  base piece, a `multiple = false` piece already present or given `--name`, a missing `requires`,
+  a duplicate (id, name), an unsafe name, a `--data` key that is not a var of the added piece
+  (template vars come from the lock and cannot be changed by `add`).
+- Owned drift (an owned file edited or deleted locally whose render changes) refuses the add like
+  `update`: nothing is written, exit 1, the files are listed; `--force` replaces them. Shared files
+  merge by their strategy (`merge`) or get diff3 markers (`conflict`, exit 1); `--force` never
+  overwrites a shared file. Seeds are created only when absent and never modified. A file only in
+  base is deleted when unedited, else kept (`skip`) with the message `<path>: … no longer managed
+  by splice`, and the new lock does not list it (§8.4).
+- Unchanged files are omitted from the report. Every path is checked for symlinks and directories
+  first (exit 3, §10 item 19). The lock records the theirs render's hashes even when conflicts
+  remain; a later `update` may treat a missing change as a user edit, so resolve the markers now.
+- Conflicts: the other files and the lock are still written, exit 1, `[[post]]` is skipped (a
+  message lists the commands). Otherwise `[[post]]` of the added piece with `when` ∋ `add` runs
+  after the lock. There are no migration steps. Unknown lock keys are reported as messages.
 
 ### 8.3 `update`
 
@@ -312,7 +307,13 @@ checks out the template, so `--offline` makes no git call at all, and it never w
 ### 8.8 `diff`
 
 Runs steps 2–6 of `update` without writing, and prints a unified diff (`diffy::create_patch`)
-per changed file plus one line per removal. `--json` returns the planned `changes` only.
+per changed file (`--- a/<path>` / `+++ b/<path>`, `/dev/null` for a side that does not exist;
+a conflicted file shows its diff3 markers) plus one line per removal. `--json` returns the planned
+`changes` and messages only, the same as `update --json` would (§10 item 9). It writes no file, no
+lock and nothing else, needs no clean tree, and exits 0 even when `update` would conflict or
+refuse. It never prompts: a var that is new in the target takes its default, and one without a
+default is a usage error (exit 2) that names the var and points to `splice update --data`. Owned
+drift is listed in a message (`update would refuse`), the other planned changes are still shown.
 
 ### 8.9 `explain`
 
@@ -374,9 +375,9 @@ into the contract at its next `format` bump.
 19. `new --force` (and later `add`/`update`) refuses to write through a symlink below the
     destination or over a directory: template/environment error "unsafe path" (exit 3), checked
     for every file before anything is written.
-20. `add` has no dirty-tree check in milestone 1, and no `--allow-dirty` flag (§3): the reduced
-    planner never overwrites an edit (`--force` only replaces edited owned files). Plan 02's full
-    planner adds the §8.3 dirty-tree check to `add` (exit 2) and then the flag.
+20. `add` runs the full planner of `update` and therefore its §8.3 step 1 check: a dirty tree or
+    a missing git work tree is exit 2 unless `--allow-dirty` (§3). Owned drift refuses the add
+    (exit 1, nothing written) like `update`.
 21. `explain <path>` normalises `\` to `/` and drops `./` and empty segments. An absolute path, a
     drive prefix or any `..` segment cannot name a rendered file, so it is `unmanaged` (ok, exit 0,
     message `unmanaged (not a repo-relative path)`), not a usage error. The human line replaces the

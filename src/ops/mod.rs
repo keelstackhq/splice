@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 pub mod add;
 pub mod check;
+pub mod diff;
 pub mod explain;
 pub mod new;
 pub mod update;
@@ -164,4 +165,51 @@ pub(crate) fn check_requires(
         }
     }
     Ok(())
+}
+
+/// Spec §8.3 step 1: refuse a dirty tree, or no git work tree, with exit 2 unless `allow_dirty`.
+/// `verb` completes the hint (`pass --allow-dirty to {verb} anyway`).
+pub(crate) fn ensure_clean(repo: &Path, allow_dirty: bool, verb: &str) -> Result<()> {
+    if allow_dirty {
+        return Ok(());
+    }
+    match crate::git::Git::is_clean(repo)? {
+        None => Err(usage(format!(
+            "{} is not the top level of a git work tree; pass --allow-dirty to {verb} anyway",
+            repo.display()
+        ))),
+        Some(false) => Err(usage(
+            "the working tree has uncommitted changes; commit or stash them, or pass \
+             --allow-dirty",
+        )),
+        Some(true) => Ok(()),
+    }
+}
+
+/// Put `msgs` (lock and template warnings, notes) in front of the messages of an apply result.
+pub(crate) fn with_messages(
+    result: Result<crate::output::Report>,
+    msgs: &[String],
+) -> Result<crate::output::Report> {
+    let prepend = |r: &mut crate::output::Report| {
+        r.messages.splice(0..0, msgs.iter().cloned());
+    };
+    match result {
+        Ok(mut r) => {
+            prepend(&mut r);
+            Ok(r)
+        }
+        Err(SpliceError::Conflict(mut r)) => {
+            prepend(&mut r);
+            Err(SpliceError::Conflict(r))
+        }
+        Err(SpliceError::Partial {
+            message,
+            mut report,
+        }) => {
+            prepend(&mut report);
+            Err(SpliceError::Partial { message, report })
+        }
+        Err(e) => Err(e),
+    }
 }

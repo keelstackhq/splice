@@ -1,6 +1,10 @@
 {
   "name": "@{{ scope }}/{{ project }}",
   "private": true,
+  "workspaces": [
+{% for p in pieces %}    "{{ p }}",
+{% endfor %}    "apps/*"
+  ],
   "scripts": {
     "build": "echo build"
   },

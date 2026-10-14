@@ -393,7 +393,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 - Consumes: `ops::update::prepare`, `planner::plan`, `apply`
 - Produces: `fn ops::diff::run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn diff_writes_nothing() {
@@ -407,8 +407,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement**; update the v1 fixture's root `package.json.jinja` to list `{% for p in pieces %}` entries if not already there (and refresh plan 01 snapshots). **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice diff; add uses the full planner`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement**; update the v1 fixture's root `package.json.jinja` to list `{% for p in pieces %}` entries if not already there (and refresh plan 01 snapshots). **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice diff; add uses the full planner`
 
 ---
 

@@ -1,12 +1,11 @@
 //! `splice update` (spec §8.3). `prepare` is the pure part (steps 1-6, minus the dirty check) and
 //! is shared with `diff` and `check`; `run` adds the dirty-tree check and applies the plan.
 
-use super::{Locked, load_locked, parse_data, usage};
+use super::{Locked, ensure_clean, load_locked, parse_data, usage, with_messages};
 use crate::apply::{ApplyCtx, apply};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
-use crate::git::Git;
 use crate::lock::Lock;
 use crate::manifest::{PostCmd, Template, When};
 use crate::migrate::{Remove, select};
@@ -49,7 +48,7 @@ fn resolve_target_vars(
     lock: &Lock,
     target: &Template,
     data: &IndexMap<String, String>,
-    g: &GlobalArgs,
+    prompt: bool,
 ) -> Result<(IndexMap<String, String>, Vec<PieceInstance>)> {
     let locked = lock.instances();
     let ids: Vec<&str> = locked.iter().map(|i| i.id.as_str()).collect();
@@ -102,7 +101,7 @@ fn resolve_target_vars(
 
     let src = VarSource {
         data,
-        interactive: interactive(g),
+        interactive: prompt,
     };
     let none = IndexMap::new();
     let merge = |declared: &IndexMap<String, crate::manifest::VarSpec>,
@@ -166,11 +165,14 @@ fn from_ref(v: &Version) -> bool {
 
 /// Spec §8.3 steps 1-6 (the dirty check is `run`'s): resolve the target, vars, base and theirs,
 /// plan. Writes nothing. With `force` owned drift is planned as an update instead of refused.
+/// `prompt` lets a new var be asked for on a terminal; `diff` passes false, so it never prompts
+/// (a new var then takes its default, or is a usage error without one).
 pub fn prepare(
     g: &GlobalArgs,
     to: Option<&Version>,
     data: &IndexMap<String, String>,
     force: bool,
+    prompt: bool,
 ) -> Result<Prepared> {
     let repo = g.dir.as_path();
     let Locked {
@@ -227,7 +229,7 @@ pub fn prepare(
     template.check_min_splice(&running())?;
     messages.extend(template.warnings.iter().cloned());
 
-    let (vars, instances) = resolve_target_vars(&lock, &template, data, g)?;
+    let (vars, instances) = resolve_target_vars(&lock, &template, data, prompt && interactive(g))?;
 
     let base = render_tree(
         &base_template,
@@ -300,25 +302,9 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             repo.display()
         )));
     }
-    if !a.allow_dirty {
-        match Git::is_clean(repo)? {
-            None => {
-                return Err(usage(format!(
-                    "{} is not the top level of a git work tree; pass --allow-dirty to update anyway",
-                    repo.display()
-                )));
-            }
-            Some(false) => {
-                return Err(usage(
-                    "the working tree has uncommitted changes; commit or stash them, or pass \
-                     --allow-dirty",
-                ));
-            }
-            Some(true) => {}
-        }
-    }
+    ensure_clean(repo, a.allow_dirty, "update")?;
 
-    let p = prepare(g, to.as_ref(), &data, a.force)?;
+    let p = prepare(g, to.as_ref(), &data, a.force, true)?;
     let mut report = Report::new("update");
     if p.up_to_date {
         prepend(&mut report, &p.messages);
@@ -357,22 +343,5 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         no_post: a.no_post,
         json: g.json,
     });
-    match result {
-        Ok(mut r) => {
-            prepend(&mut r, &p.messages);
-            Ok(r)
-        }
-        Err(SpliceError::Conflict(mut r)) => {
-            prepend(&mut r, &p.messages);
-            Err(SpliceError::Conflict(r))
-        }
-        Err(SpliceError::Partial {
-            message,
-            mut report,
-        }) => {
-            prepend(&mut report, &p.messages);
-            Err(SpliceError::Partial { message, report })
-        }
-        Err(e) => Err(e),
-    }
+    with_messages(result, &p.messages)
 }
