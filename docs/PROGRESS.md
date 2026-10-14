@@ -39,6 +39,9 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   remove path missing from `Disk`); map `Disk::snapshot`'s wrapped "unsafe path" io error back
   to exit 3 with its message.
 
+- plan 02 Tasks 8–9 (`check`, `diff`): `update::prepare` may prompt and always fetches; give it
+  a non-interactive mode for diff/check and an offline path for `check --offline`.
+
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
