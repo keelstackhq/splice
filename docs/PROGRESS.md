@@ -29,6 +29,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 03/2 · fd61fd2 · actionlint clean, node 6/6, nextest 263/263; release build + musl build + smoke test run locally (GitHub dry run: see Blocked)
 2026-10-14 · 03/3 · fffa3f0, 54cddfb · node 23/23, nextest 263/263, actionlint clean; local proof: staged linux-x64 + launcher installed via npm and via pnpm 10.28 → `splice --version` = `splice 0.1.0`, exit codes pass through
 2026-10-14 · 03/4 · 2020d0e, 5017a25 · actionlint+shellcheck clean, node 47/47 (7 stub-gh/git publish tests), nextest 263/263; fixtures are real splice output (GitHub selftest: see Blocked)
+2026-10-14 · 03/5 · b33b163, 6f439b5 · fmt+clippy clean (linux + windows-gnu), nextest 264/264 (incl. docs flag drift test), node 47/47
 
 ## Notes for later tasks
 
