@@ -19,17 +19,18 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   them as Report messages in `update`/`check`. `min_splice_refused` uses a temp template, not v3.
 - `tests/fixtures/template/v2` is a placeholder (v1 + one README line) used only for tags in
   `tests/git.rs`; plan 02 Task 1 replaces it wholesale.
-- plan 02 (update/check): `Git::is_clean` treats a fresh dir inside a parent repo as a work tree; compare with
-  `--show-toplevel`.
+- plan 02 (update/check): `Git::is_clean` treats a fresh dir inside a parent repo as a work
+  tree; compare with `--show-toplevel`.
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): spec §10 items 10–19, §8.1 usage rules for `new`, (post `when` required,
-  manifest defaults, subset rules, symlinks, empty files, path-segment rules, piece names) and the spec §5 rule that template vars may not use
-  `pieces`/`piece`/`template` need hull's agreement; then add them to `docs/template-format.md` §9
-  in both repos together.
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–19 (post
+  `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
+  piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
+  vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
+  both repos together.
 
 ## Status
 
