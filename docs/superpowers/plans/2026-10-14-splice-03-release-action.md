@@ -124,7 +124,7 @@ jobs:
   - `bin/splice.js`: `spawnSync(binaryPath(), process.argv.slice(2), { stdio: "inherit", windowsHide: true })`; exit with `status`; on `signal` re-raise via `process.kill(process.pid, signal)`.
   - `npm-stage.mjs <version> <artifacts-dir> <out-dir>`: writes `out/splice-<os>-<cpu>/{package.json,bin/<bin>}` with `os`, `cpu`, `"preferUnplugged": true`, `files: ["bin"]`, and `out/splice/` with `optionalDependencies` pinned to `<version>` and `bin: {"splice": "bin/splice.js"}`. Sets mode 755 on unix binaries.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```js
 test("maps platforms", () => {
@@ -142,10 +142,10 @@ test("exit code passes through", () => {
 test("stage writes no install scripts", () => { /* every staged package.json has no scripts.preinstall/install/postinstall */ });
 ```
 
-- [ ] **Step 2: Run `node --test 'npm/splice/test/**/*.test.mjs' 'scripts/**/*.test.mjs'` — FAIL**
-- [ ] **Step 3: Implement.** Release `npm` job (needs `release`): `actions/setup-node@v5` with `registry-url: https://registry.npmjs.org`, run `npm-stage.mjs`, then `npm publish --access public --provenance` for each platform package, then the launcher (`permissions: id-token: write` for provenance; `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`). Re-running for an already published version skips with a notice (check `npm view <pkg>@<v> version` first).
-- [ ] **Step 4: Run tests — PASS.** Then locally: `node scripts/npm-stage.mjs 0.0.0-local target/stage-artifacts target/npm` with a host binary, `pnpm add -g ./target/npm/splice-<host> ./target/npm/splice` in a scratch prefix (or `npm pack` + `pnpm dlx file:…`), and run `splice --version` through the launcher — paste output.
-- [ ] **Step 5: Commit** — `feat: npm launcher with per-platform packages`
+- [x] **Step 2: Run `node --test 'npm/splice/test/**/*.test.mjs' 'scripts/**/*.test.mjs'` — FAIL**
+- [x] **Step 3: Implement.** Release `npm` job (needs `release`): `actions/setup-node@v5` with `registry-url: https://registry.npmjs.org`, run `npm-stage.mjs`, then `npm publish --access public --provenance` for each platform package, then the launcher (`permissions: id-token: write` for provenance; `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`). Re-running for an already published version skips with a notice (check `npm view <pkg>@<v> version` first).
+- [x] **Step 4: Run tests — PASS.** Then locally: `node scripts/npm-stage.mjs 0.0.0-local target/stage-artifacts target/npm` with a host binary, `pnpm add -g ./target/npm/splice-<host> ./target/npm/splice` in a scratch prefix (or `npm pack` + `pnpm dlx file:…`), and run `splice --version` through the launcher — paste output.
+- [x] **Step 5: Commit** — `feat: npm launcher with per-platform packages`
 
 ---
 

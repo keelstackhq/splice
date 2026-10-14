@@ -1,0 +1,24 @@
+{
+  "name": "@keelstack/splice",
+  "version": "0.0.0",
+  "description": "Bootstrap a repo from versioned template pieces and keep it current. A Copier alternative in one static binary.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keelstack/splice.git"
+  },
+  "bin": {
+    "splice": "bin/splice.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "platforms.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
