@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
 pub mod add;
+pub mod check;
 pub mod explain;
 pub mod new;
 pub mod update;

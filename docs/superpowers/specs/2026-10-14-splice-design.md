@@ -305,6 +305,10 @@ block, or `>>>>>>> template`; a newer stable tag than the lock version (skipped 
 and a fetch failure is a message, not an error). Changes: drift → `update/owned`, markers →
 `conflict/shared`. Messages: `update available: 1.2.0 → 1.3.0`.
 
+`check` reads only the lock, the disk and (without `--offline`) the tag list: it never fetches or
+checks out the template, so `--offline` makes no git call at all, and it never writes. Details in
+§10 item 24.
+
 ### 8.8 `diff`
 
 Runs steps 2–6 of `update` without writing, and prints a unified diff (`diffy::create_patch`)
@@ -397,6 +401,17 @@ into the contract at its next `format` bump.
     at a newer prerelease) is "up to date", exit 0; only an explicit `--to` below the lock is a
     downgrade (exit 2); (i) a lock from `new --ref` has version `0.0.0+g<sha>`: `update` says the
     lock came from a ref and suggests `--to`, instead of the moved-tag message.
+
+24. `check` details the spec leaves open: (a) every lock-listed file is scanned for markers, owned
+    and shared alike (a seed is not in the lock, so a stray or real marker block there never
+    counts); the change's class is the lock's class; (b) an owned file is drift when missing or
+    its sha differs, one change `update/owned` per path (an owned file with drift is not also
+    scanned for markers); a missing shared file is not a finding; (c) the update test compares the
+    newest stable tag with the lock version by semver precedence; any error while listing tags
+    (offline remote, deleted repo, bad source) is a message `could not look for updates: …`, not
+    an error; (d) lock warnings are report messages, first; (e) no dirty-tree check (read-only);
+    a symlink or directory on a lock path is exit 3 `unsafe path` as in `update`; a non-UTF-8
+    file is not scanned for markers; (f) findings are exit 1 with `ok: false` and the full report.
 
 ## 11. Testing
 

@@ -31,6 +31,7 @@ pub fn run(cli: Cli) -> Result<Report, SpliceError> {
         Command::Add(a) => ops::add::run(&cli.global, &a),
         Command::Explain(a) => ops::explain::run(&cli.global, &a),
         Command::Update(a) => ops::update::run(&cli.global, &a),
-        Command::Check(_) | Command::Diff(_) => Err(SpliceError::Usage("not implemented".into())),
+        Command::Check(a) => ops::check::run(&cli.global, &a),
+        Command::Diff(_) => Err(SpliceError::Usage("not implemented".into())),
     }
 }

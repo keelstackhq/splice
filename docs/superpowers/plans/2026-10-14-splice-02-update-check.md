@@ -364,7 +364,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 - Consumes: `Lock`, `find_markers`, `sha256_hex`, `Fetcher::available_versions`
 - Produces: `fn ops::check::run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn clean_repo_passes() { /* new at v2 → check --offline exit 0, changes [] */ }
@@ -378,8 +378,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn fetch_failure_is_message_not_error() { /* template dir removed → exit 0 with message when nothing else is wrong */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.7. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice check`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.7. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice check`
 
 ---
 
