@@ -375,6 +375,50 @@ fn post_is_skipped_on_conflict_and_runs_otherwise() {
 }
 
 #[test]
+fn edited_base_only_file_is_kept_and_left_out_of_the_lock() {
+    let tpl = template_repo(&["v1"]);
+    let f = tpl.path().join("pieces/base/files/gone.txt.jinja");
+    std::fs::write(&f, "{% if \"app\" in pieces %}{% else %}hello\n{% endif %}").unwrap();
+    common::git_commit_all(tpl.path(), "gone");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", s(tpl.path()), s(repo.path()), "--ref", "main"])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    assert!(
+        Lock::read(repo.path())
+            .unwrap()
+            .unwrap()
+            .files
+            .contains_key("gone.txt")
+    );
+    std::fs::write(repo.path().join("gone.txt"), "mine\n").unwrap();
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert_eq!(change_action(&v, "gone.txt").as_deref(), Some("skip"));
+    assert!(
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m.as_str().unwrap().contains("gone.txt")
+                && m.as_str().unwrap().contains("no longer managed")),
+        "{v}"
+    );
+    assert_eq!(read(&repo, "gone.txt"), "mine\n");
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert!(!lock.files.contains_key("gone.txt"));
+}
+
+#[test]
 fn conflicted_owned_file_lock_records_theirs() {
     let (_tpl, repo) = new_repo(&[]);
     std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();

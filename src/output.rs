@@ -32,6 +32,9 @@ pub struct Report {
     pub command: String,
     pub changes: Vec<Change>,
     pub messages: Vec<String>,
+    /// Human output lines that replace the per-change lines (never serialised).
+    #[serde(skip)]
+    pub lines: Vec<String>,
 }
 
 impl Report {
@@ -41,6 +44,7 @@ impl Report {
             command: command.to_string(),
             changes: Vec::new(),
             messages: Vec::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -73,6 +77,15 @@ impl Report {
             return;
         }
         let r = self.sorted();
+        if !r.lines.is_empty() {
+            for l in &r.lines {
+                println!("{l}");
+            }
+            for m in &r.messages {
+                eprintln!("{m}");
+            }
+            return;
+        }
         for c in &r.changes {
             println!("{:<8} {}  {}", lower(&c.action), c.path, lower(&c.class));
         }

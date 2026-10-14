@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
 pub mod add;
+pub mod explain;
 pub mod new;
 
 type Result<T> = std::result::Result<T, SpliceError>;

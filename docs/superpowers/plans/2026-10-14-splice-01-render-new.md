@@ -493,7 +493,7 @@ Reduced rules: new path → create (seed: only if absent); path in both with cha
 - Consumes: `Lock`, `Fetcher::checkout`, `render_tree`
 - Produces: `fn ops::explain::run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn explains_classes() {
@@ -508,10 +508,10 @@ Reduced rules: new path → create (seed: only if absent); path in both with cha
 #[test] fn works_offline_after_new() { /* delete the template repo dir, explain still succeeds (cache) */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement** spec §8.9. Accept paths with `./` prefix or `\` separators by normalising first.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: splice explain`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement** spec §8.9. Accept paths with `./` prefix or `\` separators by normalising first.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: splice explain`
 
 ---
 
