@@ -224,7 +224,7 @@ Fixture v1 (every contract feature; plan 02 adds v2/v3):
 | `lib` (`multiple=false`, `requires=["app"]`) | requires check; owned `lib.txt` |
 | template vars | `scope` (pattern `^[a-z0-9-]+$`, default `acme`), `project` (no default) |
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn loads_fixture() {
@@ -253,10 +253,10 @@ Fixture v1 (every contract feature; plan 02 adds v2/v3):
 
 (`load_inline` writes the strings into a temp template dir; the implementer fills in the full TOML for each case.)
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement** with `toml` + serde raw structs, then convert + validate into the types above. Unknown keys → a warning string collected in `Template::warnings: Vec<String>` (reported as messages).
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: parse and validate template and piece manifests`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement** with `toml` + serde raw structs, then convert + validate into the types above. Unknown keys → a warning string collected in `Template::warnings: Vec<String>` (reported as messages).
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: parse and validate template and piece manifests`
 
 ---
 

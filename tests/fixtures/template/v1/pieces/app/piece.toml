@@ -1,0 +1,16 @@
+id = "app"
+description = "App piece"
+multiple = true
+requires = ["base"]
+target = "apps/{{ name }}"
+
+[vars]
+name = { prompt = "app name", default = "web", pattern = "^[a-z][a-z0-9-]*$" }
+
+[files]
+owned  = ["tsconfig.json"]
+shared = ["package.json"]
+seed   = ["src/**"]
+
+[merge]
+"package.json" = "json"
