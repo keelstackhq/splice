@@ -22,22 +22,20 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/5 · 4e71c56, da26f5f · fmt+clippy clean (also clippy --target x86_64-pc-windows-gnu), nextest 208/208 passed
 2026-10-14 · 02/6 · 79c22bb, 3da40fa · fmt+clippy clean (linux + windows-gnu), nextest 228/228 passed
 2026-10-14 · 02/7 · 7fe7d4f, ca1ed33 · fmt+clippy clean (linux + windows-gnu), nextest 234/234 passed (all 12 fixture rows verified)
+2026-10-14 · 02/8 · 263f738, 5c7fa60 · fmt+clippy clean (linux + windows-gnu), nextest 249/249 passed
 
 ## Notes for later tasks
-
-- plan 02 Task 8 (`check`): surface `Lock::read_with_warnings` warnings as Report messages.
 
 - plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
   `--allow-dirty` for `add`; update the §3 CLI table and README with it.
 
-- plan 02 Tasks 8–9 (`check`, `diff`): `update::prepare` may prompt and always fetches; give it
-  a non-interactive mode for diff/check and an offline path for `check --offline`.
+- plan 02 Task 9 (`diff`): `update::prepare` may prompt; give it a non-interactive mode for diff.
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–23 (post
+- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–24 (post
   `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
   piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
   vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
