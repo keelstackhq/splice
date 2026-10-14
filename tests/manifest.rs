@@ -86,3 +86,28 @@ mod symlinks {
         assert_rejected(&d);
     }
 }
+
+#[test]
+fn fixture_v2_loads_with_migration() {
+    let t = Template::load(Path::new("tests/fixtures/template/v2")).unwrap();
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+    assert_eq!(t.migrations.len(), 1);
+    let m = &t.migrations[0];
+    assert_eq!(m.version, semver::Version::new(2, 0, 0));
+    assert_eq!(m.removes[0].path, "tool.config.mts");
+    assert_eq!(m.removes[0].piece.as_deref(), Some("base"));
+    assert!(m.steps[0].run.contains("SPLICE_FIXTURE_FAIL"));
+    assert!(t.manifest.vars.contains_key("license"));
+}
+
+#[test]
+fn fixture_v1_has_no_migrations_and_v3_needs_newer_splice() {
+    let t1 = Template::load(Path::new("tests/fixtures/template/v1")).unwrap();
+    assert!(t1.migrations.is_empty());
+    let t3 = Template::load(Path::new("tests/fixtures/template/v3")).unwrap();
+    assert_eq!(t3.migrations.len(), 1);
+    let e = t3
+        .check_min_splice(&semver::Version::new(0, 1, 0))
+        .unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+}

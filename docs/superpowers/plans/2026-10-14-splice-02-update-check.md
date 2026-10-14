@@ -83,7 +83,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn select(all: &[Migration], from: &Version, to: &Version) -> Vec<&Migration>` (from < v ≤ to)
   - `Template { …, migrations: Vec<Migration> }`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn selects_range_in_semver_order() {
@@ -96,8 +96,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn fixture_v2_loads_with_migration() { /* Template::load(v2).migrations[0].removes[0].path == "tool.config.mts" */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: fixture v2/v3 and migration loading`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: fixture v2/v3 and migration loading`
 
 ---
 

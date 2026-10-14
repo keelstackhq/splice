@@ -7,11 +7,11 @@ root = true
 
 [*]
 indent_size = 2
-.github/workflows/ci.yml 9b548c9783854d2c2a20ceadc1731e79805610d8a1dce4514c675ca39b41287f
+.github/workflows/ci.yml 0f51643a6def5e479641ba3fc40ca97bc8711c8aa34a6d3801ce825f0be6a09d
 name: ci
 on: [push]
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - run: echo demo
@@ -42,16 +42,17 @@ vars = { name = "web" }
 
 [files]
 ".editorconfig" = { class = "owned", sha256 = "11208d938c655e1d0b5e6c5cf1fd4cfc9e635399c48d0c93eeafe1b2ce60e8ed" }
-".github/workflows/ci.yml" = { class = "shared", sha256 = "9b548c9783854d2c2a20ceadc1731e79805610d8a1dce4514c675ca39b41287f" }
+".github/workflows/ci.yml" = { class = "shared", sha256 = "0f51643a6def5e479641ba3fc40ca97bc8711c8aa34a6d3801ce825f0be6a09d" }
 "apps.txt" = { class = "owned", sha256 = "c8d0cfc412961b1904898e1834bcec115556e4207a97b5bebb6bfe6d518914b8" }
 "apps/web/package.json" = { class = "shared", sha256 = "975cc45a85460399eb9e149353e469fd595a31124dafa592df0254f01fa1bff6" }
-"apps/web/tsconfig.json" = { class = "owned", sha256 = "80ca0517735626c88e402c7c9c1d4e28d2380ee05cf952b4b7bf60e832b139d3" }
-"config/settings.toml" = { class = "shared", sha256 = "adc51da1e4b1fd6a4f9fc6cdb85a90e9c96aec7106c9bdb926ea97d6898d34a9" }
+"apps/web/tsconfig.json" = { class = "owned", sha256 = "33ebe6038f9d1386f609ac4750422b3578edc34cab2497c3e897209fe9e23f10" }
+"config/settings.toml" = { class = "shared", sha256 = "a95d9d0c3a493f6618963ab3d18996f9f29d302bb420d6b6cf2c50d278874445" }
 "demo.code-workspace" = { class = "owned", sha256 = "af0827ab09fab041970f7eaf904a714557cf985a12362e7d63ab92aed40b9003" }
 "logo.png" = { class = "owned", sha256 = "07583f04da7ba2b66d75f7adfe0228f90da4bb3160f6478b3b935de86cd330c5" }
-"notes.txt" = { class = "shared", sha256 = "ec185342e24df29876a80b199b7c12bb7899fcac68df115477b9e33de38f0403" }
+"notes.txt" = { class = "shared", sha256 = "f75c9a862304c0159b3177a91d0c3d81ddc718b332561642d267ba245d3739cd" }
+"old.txt" = { class = "owned", sha256 = "2ed93b04807efb14d2186e20bb6f8c45264a32d08bd97df62316cccd6ded4894" }
 "only-with-app.txt" = { class = "owned", sha256 = "03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c" }
-"package.json" = { class = "shared", sha256 = "9e3c7ea03e6119925f523a0f6ec099f2f3bc46402cb2806bc6cbebdde49e9677" }
+"package.json" = { class = "shared", sha256 = "929a4170c32fd3c17b0891be1d4a33e16d6c18f93217335ef63b8b53329692ad" }
 "tool.config.mts" = { class = "owned", sha256 = "9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0" }
 README.md 7e07d6978e5f4f29a0be7fc4dca6d39f09bb6d858edef2deffba9e1657dce50c
 # DEMO
@@ -68,37 +69,47 @@ apps/web/src/main.ts 8f3fb0c328b160359edeb9cc7e4072e1ab3f328fc883f5357d042411093
 const name = "WEB";
 console.log("instance web");
 
-apps/web/tsconfig.json 80ca0517735626c88e402c7c9c1d4e28d2380ee05cf952b4b7bf60e832b139d3
+apps/web/tsconfig.json 33ebe6038f9d1386f609ac4750422b3578edc34cab2497c3e897209fe9e23f10
 {
-  "compilerOptions": { "strict": true }
+  "compilerOptions": { "strict": false }
 }
 apps.txt c8d0cfc412961b1904898e1834bcec115556e4207a97b5bebb6bfe6d518914b8
 base
 app
-config/settings.toml adc51da1e4b1fd6a4f9fc6cdb85a90e9c96aec7106c9bdb926ea97d6898d34a9
+config/settings.toml a95d9d0c3a493f6618963ab3d18996f9f29d302bb420d6b6cf2c50d278874445
 # settings for demo
 [project]
 name = "demo"
 scope = "acme"
+
+[build]
+target = "es2020"
 demo.code-workspace af0827ab09fab041970f7eaf904a714557cf985a12362e7d63ab92aed40b9003
 {
   "folders": [{ "path": "." }],
   "name": "demo"
 }
 logo.png 07583f04da7ba2b66d75f7adfe0228f90da4bb3160f6478b3b935de86cd330c5
-notes.txt ec185342e24df29876a80b199b7c12bb7899fcac68df115477b9e33de38f0403
+notes.txt f75c9a862304c0159b3177a91d0c3d81ddc718b332561642d267ba245d3739cd
 Notes for demo
 line two
 line three
+line four
+line five
+old.txt 2ed93b04807efb14d2186e20bb6f8c45264a32d08bd97df62316cccd6ded4894
+legacy file
 only-with-app.txt 03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c
 app is present
 
-package.json 9e3c7ea03e6119925f523a0f6ec099f2f3bc46402cb2806bc6cbebdde49e9677
+package.json 929a4170c32fd3c17b0891be1d4a33e16d6c18f93217335ef63b8b53329692ad
 {
   "name": "@acme/demo",
   "private": true,
   "scripts": {
     "build": "echo build"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
   }
 }
 tool.config.mts 9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0

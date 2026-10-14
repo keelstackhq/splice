@@ -1,0 +1,7 @@
+[[step]]
+run = "test -z \"$SPLICE_FIXTURE_FAIL\" && echo migrated > .splice/migrated.txt"
+description = "Record that the 2.0.0 migration ran"
+
+[[remove]]
+path = "tool.config.mts"
+piece = "base"

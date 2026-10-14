@@ -131,7 +131,7 @@ fn binary_shared_is_error() {
     let s = std::fs::read_to_string(&p).unwrap();
     std::fs::write(
         &p,
-        s.replace("\"logo.png\"]", "]")
+        s.replace("\"logo.png\", ", "")
             .replace("\"notes.txt\"]", "\"notes.txt\", \"logo.png\"]"),
     )
     .unwrap();

@@ -1,0 +1,6 @@
+{# entry point #}
+const name = "{{ name | upper }}";
+{% if piece.name %}console.log("instance {{ piece.name }}");
+{% elif name %}console.log("named {{ name }}");
+{% else %}console.log("anonymous");
+{% endif %}

@@ -65,6 +65,7 @@ pub struct Template {
     pub root: PathBuf,
     pub manifest: TemplateManifest,
     pub pieces: IndexMap<String, PieceManifest>,
+    pub migrations: Vec<crate::migrate::Migration>,
     pub warnings: Vec<String>,
 }
 
@@ -135,12 +136,12 @@ struct RawPiece {
 
 const RESERVED: [&str; 3] = ["pieces", "piece", "template"];
 
-fn bad(file: &str, msg: impl std::fmt::Display) -> SpliceError {
+pub(crate) fn bad(file: &str, msg: impl std::fmt::Display) -> SpliceError {
     SpliceError::Template(format!("{file}: {msg}"))
 }
 
 /// Symlinks in a template could lead reads outside its root: exit 3.
-fn reject_symlink(path: &Path, label: &str) -> Result<()> {
+pub(crate) fn reject_symlink(path: &Path, label: &str) -> Result<()> {
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.file_type().is_symlink() => Err(bad(
             label,
@@ -150,7 +151,7 @@ fn reject_symlink(path: &Path, label: &str) -> Result<()> {
     }
 }
 
-fn read_toml<T: serde::de::DeserializeOwned>(path: &Path, label: &str) -> Result<T> {
+pub(crate) fn read_toml<T: serde::de::DeserializeOwned>(path: &Path, label: &str) -> Result<T> {
     reject_symlink(path, label)?;
     let text =
         std::fs::read_to_string(path).map_err(|e| bad(label, format!("cannot read ({e})")))?;
@@ -369,24 +370,7 @@ impl Template {
             }
         }
         dirs.sort();
-        let mig_dir = root.join("migrations");
-        reject_symlink(&mig_dir, "migrations")?;
-        if mig_dir.is_dir() {
-            for e in std::fs::read_dir(&mig_dir)? {
-                let e = e?;
-                let name = e.file_name().to_string_lossy().into_owned();
-                reject_symlink(&e.path(), &format!("migrations/{name}"))?;
-                let ok = name
-                    .strip_suffix(".toml")
-                    .is_some_and(|stem| semver::Version::parse(stem).is_ok());
-                if !ok {
-                    return Err(bad(
-                        &format!("migrations/{name}"),
-                        "migration file names must be <semver>.toml",
-                    ));
-                }
-            }
-        }
+        let migrations = crate::migrate::load_migrations(root)?;
         let mut pieces = IndexMap::new();
         for d in dirs {
             let piece = load_piece(&pieces_dir.join(&d), &d, &vars, &mut warnings)?;
@@ -429,6 +413,7 @@ impl Template {
                 vars,
             },
             pieces,
+            migrations,
             warnings,
         })
     }

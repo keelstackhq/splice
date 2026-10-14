@@ -6,6 +6,7 @@ pub mod fsio;
 pub mod git;
 pub mod lock;
 pub mod manifest;
+pub mod migrate;
 pub mod ops;
 pub mod output;
 pub mod paths;
