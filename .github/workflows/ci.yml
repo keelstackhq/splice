@@ -1,18 +1,58 @@
 name: ci
 on:
+  pull_request:
+  merge_group:
   push:
     branches: [main]
-  pull_request:
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: taiki-e/install-action@2eb6de229bc778f7df20e106e4b34e9a364c73e6 # nextest
+        with:
+          tool: nextest,actionlint
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo nextest run --locked
+      # Node tests: run only the test dirs that exist (npm/ and action/ arrive in later tasks).
+      - name: node tests
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dirs=()
+          for d in npm/splice/test action/test scripts; do
+            [ -d "$d" ] && dirs+=("$d")
+          done
+          if [ "${#dirs[@]}" -gt 0 ]; then node --test "${dirs[@]}"; else echo "no node test dirs yet"; fi
+      - name: no OpenSSL or rustls in the dependency tree
+        if: runner.os == 'Linux'
+        run: |
+          if cargo tree --locked --target all -i openssl; then echo "openssl is in the tree"; exit 1; fi
+          if cargo tree --locked --target all -i rustls; then echo "rustls is in the tree"; exit 1; fi
+      - name: actionlint
+        if: runner.os == 'Linux'
+        run: actionlint
+  ci-ok:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.test.result }}" = success ]'
