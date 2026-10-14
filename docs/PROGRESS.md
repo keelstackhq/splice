@@ -24,13 +24,10 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Notes for later tasks
 
-- plan 02 Task 1: `Lock::read_with_warnings` warnings are not yet surfaced by any command; surface
-  them as Report messages in `update`/`check`.
+- plan 02 Task 8 (`check`): surface `Lock::read_with_warnings` warnings as Report messages.
 
 - plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
   `--allow-dirty` for `add`; update the §3 CLI table and README with it.
-
-
 
 - plan 02 Tasks 8–9 (`check`, `diff`): `update::prepare` may prompt and always fetches; give it
   a non-interactive mode for diff/check and an offline path for `check --offline`.
