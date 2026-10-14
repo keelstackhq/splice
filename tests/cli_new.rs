@@ -326,7 +326,6 @@ fn force_omits_identical_files() {
 #[test]
 fn write_through_symlink_or_over_dir_is_exit_3() {
     let tpl = template_repo(&["v1"]);
-    let outside = tempdir().unwrap();
     let dest = tempdir().unwrap();
     std::fs::create_dir(dest.path().join(".editorconfig")).unwrap();
     let mut a = base_args(tpl.path(), dest.path());
@@ -335,6 +334,7 @@ fn write_through_symlink_or_over_dir_is_exit_3() {
     assert!(!dest.path().join(".splice").exists());
     #[cfg(unix)]
     {
+        let outside = tempdir().unwrap();
         let dest = tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), dest.path().join("config")).unwrap();
         let mut a = base_args(tpl.path(), dest.path());

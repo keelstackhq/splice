@@ -179,6 +179,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn read(d: &tempfile::TempDir, rel: &str) -> String {
         std::fs::read_to_string(d.path().join(rel)).unwrap_or_default()
     }
