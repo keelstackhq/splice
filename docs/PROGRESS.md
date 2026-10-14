@@ -15,13 +15,12 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 01/9 · 133cdbc, 4966458 · fmt+clippy clean, nextest 113/113 passed
 2026-10-14 · 01/10 · a0b087e, 8a73b02 · fmt+clippy clean, nextest 125/125 passed (a0b087e also adds a CLI test for the task 9 base-only fix)
 2026-10-14 · Milestone 1 reviewed · d8591f0 · 8 findings fixed (.git segments, partial --json reports, shared ops prologue); nextest 128/128 passed
+2026-10-14 · 02/1 · e6c843e, 4d90fa4 · fmt+clippy clean, nextest 138/138 passed
 
 ## Notes for later tasks
 
 - plan 02 Task 1: `Lock::read_with_warnings` warnings are not yet surfaced by any command; surface
-  them as Report messages in `update`/`check`. `min_splice_refused` uses a temp template, not v3.
-- `tests/fixtures/template/v2` is a placeholder (v1 + one README line) used only for tags in
-  `tests/git.rs`; plan 02 Task 1 replaces it wholesale.
+  them as Report messages in `update`/`check`.
 - plan 02 (update/check): `Git::is_clean` treats a fresh dir inside a parent repo as a work
   tree; compare with `--show-toplevel`.
 
