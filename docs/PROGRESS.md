@@ -14,6 +14,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 01/8 · c36008f, bc1e919 · fmt+clippy clean, nextest 93/93 passed
 2026-10-14 · 01/9 · 133cdbc, 4966458 · fmt+clippy clean, nextest 113/113 passed
 2026-10-14 · 01/10 · a0b087e, 8a73b02 · fmt+clippy clean, nextest 125/125 passed (a0b087e also adds a CLI test for the task 9 base-only fix)
+2026-10-14 · Milestone 1 reviewed · d8591f0 · 8 findings fixed (.git segments, partial --json reports, shared ops prologue); nextest 128/128 passed
 
 ## Notes for later tasks
 
@@ -26,6 +27,10 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 - plan 02 Task 9 (`add` on the full planner): spec §10 item 20 promises a dirty-tree check and
   `--allow-dirty` for `add`; update the §3 CLI table and README with it.
+
+- plan 02 (apply): keep the partial Report on a failure inside the file-write loop (before the
+  lock), as `SpliceError::Partial` does after it; extend the case-insensitive collision check to
+  directory prefixes (`Apps/x` vs `apps/y`).
 
 ## Blocked
 
