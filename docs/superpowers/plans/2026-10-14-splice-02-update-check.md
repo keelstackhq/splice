@@ -262,7 +262,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `struct ApplyCtx<'a> { repo: &'a Path, plan: &'a Plan, steps: Vec<(&'a Version, &'a Step)>, from: Version, to: Version, lock: Lock, post: Vec<PostCmd>, when: When, no_post: bool, json: bool }`
   - `fn apply(ctx: ApplyCtx) -> Result<Report>` — the fixed order from Global Constraints; returns a Report with every change; `Err(SpliceError::Conflict(report))` when `plan.conflicts` is non-empty (after the lock is written).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn order_is_files_removals_steps_lock_post() {
@@ -281,8 +281,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn conflicts_still_write_lock_and_exit_1() { /* plan with one conflict → Err(Conflict), lock = target, file has markers */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: apply plans with migrations, atomic lock and post commands`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: apply plans with migrations, atomic lock and post commands`
 
 ---
 

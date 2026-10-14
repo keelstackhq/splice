@@ -1,3 +1,4 @@
+pub mod apply;
 pub mod classify;
 pub mod cli;
 pub mod error;
