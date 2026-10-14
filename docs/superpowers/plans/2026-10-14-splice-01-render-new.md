@@ -273,7 +273,7 @@ Fixture v1 (every contract feature; plan 02 adds v2/v3):
   - `struct Renderer { env: minijinja::Environment<'static> }` with `fn new() -> Self` and `fn render_str(&self, text: &str, ctx: &minijinja::Value, origin: &str) -> Result<String>` (validate → render → normalise `\r\n` → `\n`).
 - Corpus cases (each `name.jinja`, `name.ctx.json`, `name.out`): `var`, `filters`, `if-elif-else`, `in-pieces`, `for-pieces`, `comment`, `dotted`, `trailing-newline`, `no-trailing-newline`, `blank-lines-around-blocks`, `unicode`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn accepts_subset() {
@@ -294,10 +294,10 @@ Fixture v1 (every contract feature; plan 02 adds v2/v3):
 
 The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown names are left to strict undefined at render time.
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement.** The gate is a hand-written scanner over tag boundaries (`{{`, `{%`, `{#`) plus a tiny tokenizer per tag; do not use regex for nesting — `if`/`for` blocks must balance (`endif`/`endfor` in order) or it is an error. Renderer config exactly as Global Constraints.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: rendering subset gate, MiniJinja renderer, conformance corpus`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement.** The gate is a hand-written scanner over tag boundaries (`{{`, `{%`, `{#`) plus a tiny tokenizer per tag; do not use regex for nesting — `if`/`for` blocks must balance (`endif`/`endfor` in order) or it is an error. Renderer config exactly as Global Constraints.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: rendering subset gate, MiniJinja renderer, conformance corpus`
 
 ---
 
