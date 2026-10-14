@@ -110,6 +110,9 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree, Sp
     }
     let root = t.root.canonicalize()?;
     let mut tree = RenderedTree::new();
+    // lowercased path -> (path, piece id, instance name), for case-insensitive collisions
+    let mut seen: std::collections::HashMap<String, (String, String, String)> =
+        std::collections::HashMap::new();
     for inst in &input.instances {
         let piece = t
             .pieces
@@ -188,12 +191,16 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree, Sp
                 piece_name: inst.name.clone(),
                 glob,
             };
-            if let Some(prev) = tree.insert(path.clone(), file) {
+            let folded = path.to_lowercase();
+            if let Some((prev_path, prev_id, prev_name)) = seen.get(&folded) {
                 return Err(tpl_err(format!(
-                    "path `{path}` is produced twice (pieces `{}:{}` and `{}:{}`)",
-                    prev.piece_id, prev.piece_name, inst.id, inst.name
+                    "paths `{prev_path}` and `{path}` are produced twice, or differ only in case \
+                     (pieces `{prev_id}:{prev_name}` and `{}:{}`)",
+                    inst.id, inst.name
                 )));
             }
+            seen.insert(folded, (path.clone(), inst.id.clone(), inst.name.clone()));
+            tree.insert(path.clone(), file);
         }
     }
     Ok(tree)

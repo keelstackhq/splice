@@ -359,12 +359,20 @@ fn deleted_owned_is_conflict_deleted_shared_is_skip() {
 fn post_is_skipped_on_conflict_and_runs_otherwise() {
     let (_tpl, repo) = custom_repo();
     std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
-    splice_cmd()
+    let out = splice_cmd()
         .current_dir(repo.path())
-        .args(["add", "app", "--yes"])
+        .args(["add", "app", "--yes", "--json"])
         .assert()
-        .code(1);
+        .code(1)
+        .get_output()
+        .stdout
+        .clone();
     assert!(!repo.path().join(".post-add").exists());
+    let msgs = json(out)["messages"].to_string();
+    assert!(
+        msgs.contains("post commands skipped") && msgs.contains("echo x> .post-add"),
+        "{msgs}"
+    );
     let (_tpl2, repo2) = custom_repo();
     splice_cmd()
         .current_dir(repo2.path())

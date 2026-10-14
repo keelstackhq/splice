@@ -49,6 +49,12 @@ fn main() {
                     r.ok = false;
                     r
                 }
+                SpliceError::Partial { message, report } => {
+                    let mut r = *report;
+                    r.ok = false;
+                    r.messages.insert(0, message);
+                    r
+                }
                 other => {
                     let mut r = Report::new(command);
                     r.ok = false;

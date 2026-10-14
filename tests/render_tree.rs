@@ -115,6 +115,16 @@ fn same_path_twice_is_error() {
 }
 
 #[test]
+fn case_insensitive_path_collision_is_error() {
+    let d = temp_template();
+    std::fs::write(d.path().join("pieces/base/files/readme.md"), "x\n").unwrap();
+    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(m.contains("README.md") && m.contains("readme.md"), "{m}");
+}
+
+#[test]
 fn binary_shared_is_error() {
     let d = temp_template();
     let p = d.path().join("pieces/base/piece.toml");
@@ -136,6 +146,19 @@ fn var_escaping_the_repo_is_error() {
     for bad in ["../../etc", "a/b"] {
         let e = render_tree(&t, &input(&["base"], &[("project", bad)])).unwrap_err();
         assert_eq!(e.exit_code(), 3, "{bad}");
+    }
+}
+
+#[test]
+fn var_rendering_to_dot_git_segment_is_error() {
+    let d = temp_template();
+    let dir = d.path().join("pieces/base/files/{{ project }}");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("x.txt"), "x\n").unwrap();
+    for bad in [".git", ".GIT"] {
+        let e = render_at(d.path(), &["base"], &[("project", bad)]);
+        assert_eq!(e.exit_code(), 3, "{bad}");
+        assert!(e.to_string().contains(".git"), "{e}");
     }
 }
 

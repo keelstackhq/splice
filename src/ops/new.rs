@@ -15,7 +15,7 @@ use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 use indexmap::IndexMap;
 use std::path::Path;
 
-use super::{check_target, parse_data, safe_segment, usage};
+use super::{check_requires, check_target, parse_data, safe_segment, usage, validate_instance};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -61,9 +61,6 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
     }
     match std::fs::read_dir(dest) {
         Ok(entries) => {
-            if !dest.is_dir() {
-                return Err(usage(format!("{} is not a directory", dest.display())));
-            }
             let busy = entries
                 .filter_map(|e| e.ok())
                 .any(|e| e.file_name() != ".git");
@@ -76,10 +73,6 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
             Ok(())
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) if dest.is_file() => Err(usage(format!(
-            "{} is not a directory ({e})",
-            dest.display()
-        ))),
         Err(e) => Err(e.into()),
     }
 }
@@ -103,35 +96,13 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     // 3. instances: base, then each --piece in order
     let mut wanted: Vec<(String, Option<String>)> = vec![(template.manifest.base.clone(), None)];
     for (id, name) in flags {
-        let piece = template
-            .pieces
-            .get(&id)
-            .ok_or_else(|| usage(format!("unknown piece `{id}`")))?;
-        if id == template.manifest.base {
-            return Err(usage(format!(
-                "`{id}` is the base piece and is always included"
-            )));
-        }
-        if name.is_some() && !piece.multiple {
-            return Err(usage(format!(
-                "piece `{id}` is not `multiple`; it cannot be named"
-            )));
-        }
-        if !piece.multiple && wanted.iter().any(|(i, _)| *i == id) {
-            return Err(usage(format!(
-                "piece `{id}` is not `multiple` and was given twice"
-            )));
-        }
+        let present: Vec<&str> = wanted.iter().map(|(i, _)| i.as_str()).collect();
+        validate_instance(&template, &id, name.is_some(), &present)?;
         wanted.push((id, name));
     }
-    for (id, _) in &wanted {
-        for r in &template.pieces[id].requires {
-            if !wanted.iter().any(|(i, _)| i == r) {
-                return Err(usage(format!(
-                    "piece `{id}` requires piece `{r}`; add --piece {r}"
-                )));
-            }
-        }
+    let present: Vec<&str> = wanted.iter().map(|(i, _)| i.as_str()).collect();
+    for id in &present {
+        check_requires(&template, id, &present, "add --piece {r}")?;
     }
 
     // 4. vars: template vars, then each instance's piece vars
@@ -214,16 +185,23 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
         };
         report.push(f.path.clone(), action, f.class);
     }
-    Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)?;
-    if !Git::is_inside_work_tree(&dest)? {
-        Git::init(&dest)?;
+    // from here on files are on disk: a failure must still report them
+    let finish = || -> Result<()> {
+        Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)?;
+        if !Git::is_inside_work_tree(&dest)? {
+            Git::init(&dest)?;
+        }
+        if !a.no_post {
+            let cmds: Vec<PostCmd> = instances
+                .iter()
+                .flat_map(|i| template.pieces[&i.id].post.clone())
+                .collect();
+            run_post(&dest, &cmds, When::New, g.json)?;
+        }
+        Ok(())
+    };
+    match finish() {
+        Ok(()) => Ok(report),
+        Err(e) => Err(e.with_report(report)),
     }
-    if !a.no_post {
-        let cmds: Vec<PostCmd> = instances
-            .iter()
-            .flat_map(|i| template.pieces[&i.id].post.clone())
-            .collect();
-        run_post(&dest, &cmds, When::New, g.json)?;
-    }
-    Ok(report)
 }

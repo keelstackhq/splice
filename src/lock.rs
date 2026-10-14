@@ -224,6 +224,15 @@ impl Lock {
         for p in raw.pieces {
             validate_segment(&p.id).map_err(in_lock)?;
             validate_segment(&p.name).map_err(in_lock)?;
+            if pieces
+                .iter()
+                .any(|q: &LockPiece| q.id == p.id && q.name == p.name)
+            {
+                return Err(bad(format!(
+                    "duplicate piece instance `{}:{}` in [[pieces]]",
+                    p.id, p.name
+                )));
+            }
             check_var_names(p.vars.keys(), &format!("piece `{}`", p.id))?;
             pieces.push(LockPiece {
                 id: p.id,
@@ -538,6 +547,21 @@ mod tests {
         }
         let bad_sha = good.replace(&sha256_hex(b"owned\n"), "zz");
         assert_eq!(read_err(&bad_sha).exit_code(), 3);
+    }
+
+    #[test]
+    fn duplicate_piece_instance_is_rejected() {
+        let good = valid_text();
+        let start = good.find("[[pieces]]").expect("fixture has a piece");
+        let end = good[start..]
+            .find("\n\n")
+            .map_or(good.len(), |i| start + i + 1);
+        let block = &good[start..end];
+        let dup = good.replacen(block, &format!("{block}\n{block}"), 1);
+        let e = read_err(&dup);
+        assert_eq!(e.exit_code(), 3, "{e}");
+        let m = e.to_string();
+        assert!(m.contains("lock.toml") && m.contains("duplicate"), "{m}");
     }
 
     #[test]

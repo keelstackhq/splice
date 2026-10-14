@@ -31,6 +31,12 @@ fn check_segment(out: &str, seg: &str, full: &str) -> Result<(), SpliceError> {
             format!("segment `{seg}` renders to {out:?}, which is not one safe path segment"),
         ));
     }
+    if out.eq_ignore_ascii_case(".git") {
+        return Err(bad(
+            full,
+            format!("segment `{seg}` renders to {out:?}; `.git` is reserved"),
+        ));
+    }
     if out.ends_with(['.', ' ']) || is_windows_reserved(out) {
         return Err(bad(
             full,
@@ -150,6 +156,9 @@ mod tests {
             "a.",
             "a ",
             "aux.tar.gz",
+            ".git",
+            ".GIT",
+            ".Git",
         ] {
             assert_eq!(render_with_name_var(v).unwrap_err().exit_code(), 3, "{v}");
         }
@@ -157,7 +166,17 @@ mod tests {
 
     #[test]
     fn near_misses_are_fine() {
-        for v in ["console", "com10", "lpt0", "a.b", "-x", "a b", "コン"] {
+        for v in [
+            "console",
+            "com10",
+            "lpt0",
+            "a.b",
+            "-x",
+            "a b",
+            "コン",
+            ".github",
+            ".gitignore",
+        ] {
             assert!(render_with_name_var(v).is_ok(), "{v}");
         }
     }
@@ -187,6 +206,10 @@ mod tests {
         assert!(bad("{{ name }}", "C:"));
         assert!(bad("{{ name }}", "C:foo"));
         assert!(bad("{{ name }}", "prn"));
+        assert!(bad("{{ name }}", ".git"));
+        assert!(bad("{{ name }}", ".GIT"));
+        assert!(render_rel_path(".git/config", None, &r, &ctx("x")).is_err());
+        assert!(render_rel_path("a/.GIT/config", Some("t"), &r, &ctx("x")).is_err());
     }
 
     #[test]

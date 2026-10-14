@@ -286,8 +286,11 @@ fn post_failure_says_files_and_lock_were_written() {
         .get_output()
         .stdout
         .clone();
-    let m = json(out)["messages"][0].as_str().unwrap().to_string();
+    let v = json(out);
+    let m = v["messages"][0].as_str().unwrap().to_string();
     assert!(m.contains("exit 7") && m.contains("lock"), "{m}");
+    assert_eq!(v["ok"], false);
+    assert!(!v["changes"].as_array().unwrap().is_empty(), "{v}");
     assert!(dest.path().join(".splice/lock.toml").exists());
 }
 

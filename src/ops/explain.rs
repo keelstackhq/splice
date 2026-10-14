@@ -1,14 +1,11 @@
 //! `splice explain` (spec §8.9): which piece, class, glob and merge strategy own a path.
 
-use super::usage;
+use super::{Locked, load_locked};
 use crate::cli::{ExplainArgs, GlobalArgs};
 use crate::error::SpliceError;
-use crate::fetch::Fetcher;
-use crate::lock::Lock;
-use crate::manifest::{MergeStrategy, Template};
+use crate::manifest::MergeStrategy;
 use crate::output::{Action, Report};
 use crate::render::{RenderInput, render_tree};
-use crate::source::TemplateSource;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -41,19 +38,12 @@ fn strategy_name(s: MergeStrategy) -> &'static str {
 
 pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
     let repo = g.dir.as_path();
-    let (lock, lock_warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| {
-        usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        ))
-    })?;
-    let source = TemplateSource::parse(&lock.template.source)?;
-    let resolved = Fetcher::from_env().checkout(
-        &source,
-        &lock.template.commit,
-        lock.template.version.clone(),
-    )?;
-    let template = Template::load(&resolved.root)?;
+    let Locked {
+        lock,
+        warnings: lock_warnings,
+        resolved,
+        template,
+    } = load_locked(repo)?;
     let tree = render_tree(
         &template,
         &RenderInput {

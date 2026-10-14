@@ -351,7 +351,10 @@ into the contract at its next `format` bump.
 17. Each rendered path segment must be non-empty, not `.`/`..`, free of `/`, `\`, `:` and ASCII
     control characters, not end in `.` or space, and not be a Windows reserved name (`CON`, `PRN`,
     `AUX`, `NUL`, `COM1-9`, `LPT1-9`, case-insensitive, with or without extension). The lock path
-    is reserved case-insensitively.
+    is reserved case-insensitively. A segment equal to `.git` (any case) is rejected anywhere in a
+    rendered path, including one produced by a var or a `target`. Two rendered paths that are equal
+    ignoring case are a collision (exit 3, naming both paths and their pieces), because they would
+    clash on case-insensitive filesystems.
 18. Piece ids and instance names follow item 17's segment rule.
 19. `new --force` (and later `add`/`update`) refuses to write through a symlink below the
     destination or over a directory: template/environment error "unsafe path" (exit 3), checked

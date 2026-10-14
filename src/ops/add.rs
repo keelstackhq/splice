@@ -1,16 +1,17 @@
 //! `splice add` with the reduced planner (spec §8.2).
 
-use super::{check_target, parse_data, safe_segment, usage};
+use super::{
+    Locked, check_requires, check_target, load_locked, parse_data, safe_segment, usage,
+    validate_instance,
+};
 use crate::cli::{AddArgs, GlobalArgs};
 use crate::error::SpliceError;
-use crate::fetch::Fetcher;
-use crate::fsio::{sha256_hex, write_file};
+use crate::fsio::{read_opt, sha256_hex, write_file};
 use crate::lock::Lock;
-use crate::manifest::{Template, When};
+use crate::manifest::When;
 use crate::output::{Action, Class, Report};
-use crate::post::run_post;
+use crate::post::{post_runs, run_post};
 use crate::render::{PieceInstance, RenderInput, RenderedTree, render_tree};
-use crate::source::TemplateSource;
 use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 use indexmap::IndexMap;
 use std::path::Path;
@@ -28,15 +29,6 @@ pub struct Planned {
 
 const EDITED: &str = "edited locally; run `splice update` after milestone 2 or merge by hand";
 
-/// Disk state of one path: `None` when absent.
-fn disk(repo: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
-    match std::fs::read(repo.join(rel)) {
-        Ok(b) => Ok(Some(b)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-
 /// Reduced planner (spec §8.2): replace a file only when it is unedited (disk sha = lock sha) or
 /// `force` and the file is owned (shared files and base-only deletions never yield to `force`); report everything else. Pure apart from reading `repo`; writes nothing. Every path it
 /// might touch is checked for symlinks/directories first (exit 3).
@@ -53,7 +45,7 @@ pub fn plan_reduced(
     let mut plan = Vec::new();
     for path in paths {
         check_target(repo, path)?;
-        let cur = disk(repo, path)?;
+        let cur = read_opt(repo, path)?;
         let unedited = |cur: &[u8]| {
             lock.files
                 .get(path.as_str())
@@ -126,52 +118,20 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     }
 
     // 1. lock, template at the lock's commit
-    let (lock, lock_warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| {
-        usage(format!(
-            "{} has no .splice/lock.toml; use `splice new` first",
-            repo.display()
-        ))
-    })?;
-    let source = TemplateSource::parse(&lock.template.source)?;
-    let resolved = Fetcher::from_env().checkout(
-        &source,
-        &lock.template.commit,
-        lock.template.version.clone(),
-    )?;
-    let template = Template::load(&resolved.root)?;
-    template.check_min_splice(
-        &semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version is semver"),
-    )?;
+    let Locked {
+        lock,
+        warnings: lock_warnings,
+        resolved,
+        template,
+    } = load_locked(repo)?;
 
     // 2. validate the new instance
     let id = &a.piece_id;
-    let piece = template
-        .pieces
-        .get(id)
-        .ok_or_else(|| usage(format!("unknown piece `{id}`")))?;
-    if *id == template.manifest.base {
-        return Err(usage(format!(
-            "`{id}` is the base piece and is always included"
-        )));
-    }
-    if a.name.is_some() && !piece.multiple {
-        return Err(usage(format!(
-            "piece `{id}` is not `multiple`; it cannot be named"
-        )));
-    }
     let existing = lock.instances();
-    if !piece.multiple && existing.iter().any(|i| i.id == *id) {
-        return Err(usage(format!(
-            "piece `{id}` is not `multiple` and is already present"
-        )));
-    }
-    for r in &piece.requires {
-        if !existing.iter().any(|i| i.id == *r) {
-            return Err(usage(format!(
-                "piece `{id}` requires piece `{r}`; add it first"
-            )));
-        }
-    }
+    let present: Vec<&str> = existing.iter().map(|i| i.id.as_str()).collect();
+    validate_instance(&template, id, a.name.is_some(), &present)?;
+    check_requires(&template, id, &present, "add it first")?;
+    let piece = &template.pieces[id];
 
     // 3. vars: only the new piece's vars are asked for; template vars come from the lock
     if let Some(k) = data.keys().find(|k| !piece.vars.contains_key(*k)) {
@@ -237,12 +197,26 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         }
         report.push(p.path.clone(), p.action, p.class);
     }
-    Lock::from_tree(&resolved, &lock.vars, &instances, &theirs).write_atomic(repo)?;
+    Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)
+        .write_atomic(repo)
+        .map_err(|e| e.with_report(report.clone()))?;
     if conflicts {
+        let cmds = post_runs(&template.pieces[id].post, When::Add);
+        if !a.no_post && !cmds.is_empty() {
+            let list = cmds
+                .iter()
+                .map(|c| format!("`{c}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            report.msg(format!(
+                "post commands skipped because of conflicts; run them by hand after resolving: {list}"
+            ));
+        }
         return Err(SpliceError::Conflict(report));
     }
     if !a.no_post {
-        run_post(repo, &template.pieces[id].post, When::Add, g.json)?;
+        run_post(repo, &template.pieces[id].post, When::Add, g.json)
+            .map_err(|e| e.with_report(report.clone()))?;
     }
     Ok(report)
 }

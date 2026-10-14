@@ -9,6 +9,11 @@ pub mod add;
 pub mod explain;
 pub mod new;
 
+use crate::fetch::{Fetcher, ResolvedTemplate};
+use crate::lock::Lock;
+use crate::manifest::Template;
+use crate::source::TemplateSource;
+
 type Result<T> = std::result::Result<T, SpliceError>;
 
 pub(crate) fn usage(msg: impl Into<String>) -> SpliceError {
@@ -63,4 +68,87 @@ pub(crate) fn check_target(dest: &Path, rel: &str) -> Result<PathBuf> {
         }
     }
     Ok(p)
+}
+
+/// The lock of an existing repo with the template checked out at its commit.
+pub(crate) struct Locked {
+    pub lock: Lock,
+    pub warnings: Vec<String>,
+    pub resolved: ResolvedTemplate,
+    pub template: Template,
+}
+
+/// Read the lock (and its warnings), check out the template at the locked commit, load it and
+/// check `min_splice`. Shared by every command that works on an existing instance.
+pub(crate) fn load_locked(repo: &Path) -> Result<Locked> {
+    let (lock, warnings) = Lock::read_with_warnings(repo)?.ok_or_else(|| {
+        usage(format!(
+            "{} has no .splice/lock.toml; use `splice new` first",
+            repo.display()
+        ))
+    })?;
+    let source = TemplateSource::parse(&lock.template.source)?;
+    let resolved = Fetcher::from_env().checkout(
+        &source,
+        &lock.template.commit,
+        lock.template.version.clone(),
+    )?;
+    let template = Template::load(&resolved.root)?;
+    template.check_min_splice(
+        &semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version is semver"),
+    )?;
+    Ok(Locked {
+        lock,
+        warnings,
+        resolved,
+        template,
+    })
+}
+
+/// Checks on one piece instance about to be added (to a new repo or an existing one):
+/// `present` holds the ids already chosen or locked.
+pub(crate) fn validate_instance(
+    template: &Template,
+    id: &str,
+    named: bool,
+    present: &[&str],
+) -> Result<()> {
+    let piece = template
+        .pieces
+        .get(id)
+        .ok_or_else(|| usage(format!("unknown piece `{id}`")))?;
+    if id == template.manifest.base {
+        return Err(usage(format!(
+            "`{id}` is the base piece and is always included"
+        )));
+    }
+    if named && !piece.multiple {
+        return Err(usage(format!(
+            "piece `{id}` is not `multiple`; it cannot be named"
+        )));
+    }
+    if !piece.multiple && present.contains(&id) {
+        return Err(usage(format!(
+            "piece `{id}` is not `multiple` and is already present"
+        )));
+    }
+    Ok(())
+}
+
+/// Every piece `id` requires must be in `present`; `fix` completes the hint (`{r}` is the missing id).
+pub(crate) fn check_requires(
+    template: &Template,
+    id: &str,
+    present: &[&str],
+    fix: &str,
+) -> Result<()> {
+    for r in &template.pieces[id].requires {
+        if !present.contains(&r.as_str()) {
+            return Err(usage(format!(
+                "piece `{id}` requires piece `{r}`; {}",
+                fix.replace("{r}", r)
+            )));
+        }
+    }
+    Ok(())
 }
