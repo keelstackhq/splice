@@ -78,7 +78,7 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
   - `struct GlobalArgs { json: bool, yes: bool, dir: PathBuf /* -C */ }`; `enum Command { New(NewArgs), Add(AddArgs), Update(UpdateArgs), Check(CheckArgs), Diff(DiffArgs), Explain(ExplainArgs) }` with all flags from spec §3 (update/check/diff bodies return `SpliceError::Usage("not implemented")` until plan 02).
   - `fn run(cli: Cli) -> Result<Report, SpliceError>` in `lib.rs`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn report_json_shape() {
@@ -102,10 +102,10 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
 }
 ```
 
-- [ ] **Step 2: Run `cargo nextest run` — expect FAIL (types missing)**
-- [ ] **Step 3: Implement.** `main.rs` uses `Cli::try_parse()`; on clap error, if argv contains `--json` print an error Report (command = first non-flag arg if it names a subcommand) and exit 2, else let clap print and exit 2. On `Err(e)`: Conflict/Drift print their Report with `ok=false`; others print a Report with the message. CI (temporary, plan 03 finalizes): one job, `dtolnay/rust-toolchain@stable` + rustfmt/clippy, `Swatinem/rust-cache@v2`, `taiki-e/install-action@nextest`, `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo nextest run --locked`.
-- [ ] **Step 4: Run `cargo nextest run` — expect PASS; clippy clean**
-- [ ] **Step 5: Commit** — `feat: scaffold splice CLI, report and exit codes`
+- [x] **Step 2: Run `cargo nextest run` — expect FAIL (types missing)**
+- [x] **Step 3: Implement.** `main.rs` uses `Cli::try_parse()`; on clap error, if argv contains `--json` print an error Report (command = first non-flag arg if it names a subcommand) and exit 2, else let clap print and exit 2. On `Err(e)`: Conflict/Drift print their Report with `ok=false`; others print a Report with the message. CI (temporary, plan 03 finalizes): one job, `dtolnay/rust-toolchain@stable` + rustfmt/clippy, `Swatinem/rust-cache@v2`, `taiki-e/install-action@nextest`, `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, `cargo nextest run --locked`.
+- [x] **Step 4: Run `cargo nextest run` — expect PASS; clippy clean**
+- [x] **Step 5: Commit** — `feat: scaffold splice CLI, report and exit codes`
 
 ---
 
