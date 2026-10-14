@@ -17,7 +17,7 @@
 - Planner is pure (no I/O); disk reads go through a `Disk` snapshot built before planning.
 - Owned drift without `--force` → nothing written, exit 1.
 - Apply order: write files → removals → migration `[[step]]`s (A < v ≤ B, semver order) → lock (atomic) → `[[post]]`. A failed step exits 3 before the lock; a failed post exits 3 after it.
-- Dirty git tree or no work tree → exit 2 unless `--allow-dirty`. Messages after a partial write say `git checkout -- . && git clean -fd` restores the previous state.
+- Dirty git tree or no work tree → exit 2 unless `--allow-dirty`. Messages after a partial write say `cd <dir> && git checkout -- . && git clean -fd` restores the previous state (`<dir>` is the project directory, so a monorepo subdir is restored alone).
 - Structured merge rules exactly contract §5; any structured conflict ends as diff3 markers in the file (spec §8.5).
 - Downgrade (`--to` < lock version) → exit 2. Target `min_splice` > running → exit 3 before any write.
 
@@ -25,7 +25,7 @@
 
 1. **A user on Windows whose shared text file has CRLF endings** → merge works line by line and the result keeps CRLF; no whole-file conflict. Test in Task 2.
 2. **A shared file that contains a literal line `||||||| original` outside any conflict** → left untouched by marker relabelling. Test in Task 2.
-3. **The update crashes or a migration step fails after files were written** → the lock still describes the old version, the message names the restore command, and a rerun after `git checkout -- . && git clean -fd` succeeds. Test in Task 7.
+3. **The update crashes or a migration step fails after files were written** → the lock still describes the old version, the message names the restore command, and a rerun after `cd <dir> && git checkout -- . && git clean -fd` succeeds, also for a project in a monorepo subdir. Test in Task 7.
 4. **A JSON `package.json` where the user added a dependency and the template bumped another** → both survive, user key order kept, the template's new key appended, file indentation (2 spaces or tabs) kept. Test in Task 3.
 5. **`splice check` right after a conflicted update, then after the user resolves markers but leaves a stray `=======` line in a Markdown file** → exit 1 with markers; after resolution exit 0 (a lone `=======` outside a `<<<<<<< ours` block is not a marker). Test in Task 8.
 
@@ -274,7 +274,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn failing_step_leaves_old_lock() {
     let r = apply(ctx_with_step("exit 7"));
     let e = r.unwrap_err(); assert_eq!(e.exit_code(), 3);
-    assert!(e.to_string().contains("git checkout -- . && git clean -fd"));
+    assert!(e.to_string().contains(&restore_cmd(d.path())));   // `cd <dir> && git checkout -- . && git clean -fd`
     assert_eq!(read_lock(&repo).template.version, Version::parse("1.0.0").unwrap());
 }
 #[test] fn failing_post_keeps_new_lock() { /* post "exit 1" → exit 3, lock version is the target */ }
@@ -327,7 +327,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 **Interfaces:**
 - Consumes: the binary; fixture table above.
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 ```rust
 #[test] fn golden_v1_to_v2_with_user_edits() {
@@ -343,15 +343,14 @@ v3 = v2 with `min_splice = "99.0.0"`.
 }
 #[test] fn rerun_after_restore_succeeds() {
     // make the v2 step fail via a var-controlled env (`SPLICE_FIXTURE_FAIL=1` read by the step command),
-    // run update → exit 3; run `git checkout -- . && git clean -fd`; unset the env; update → exit 1 (the yaml conflict), lock = 2.0.0
+    // run update → exit 3; run the printed `cd <dir> && git checkout -- . && git clean -fd`; unset the env; update → exit 1 (the yaml conflict), lock = 2.0.0
 }
-#[test] fn resolve_conflict_then_check_passes() { /* edit ci.yml to remove markers, commit → `splice check --offline` exit 0 */ }
 ```
 
-- [ ] **Step 2: Run, review the snapshots by hand against the fixture table, accept with `cargo insta accept`**
-- [ ] **Step 3: Fix any planner/merge bug the snapshot exposes (test first in the owning module)**
-- [ ] **Step 4: Run `cargo nextest run` — PASS**
-- [ ] **Step 5: Commit** — `test: golden v1 to v2 update with edits on every class`
+- [x] **Step 2: Run, review the snapshots by hand against the fixture table, accept with `cargo insta accept`**
+- [x] **Step 3: Fix any planner/merge bug the snapshot exposes (test first in the owning module)**
+- [x] **Step 4: Run `cargo nextest run` — PASS**
+- [x] **Step 5: Commit** — `test: golden v1 to v2 update with edits on every class`
 
 ---
 
@@ -375,6 +374,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
     // resolve, add "=======\n" to README.md (seed, not in lock) and to notes.txt → exit 0
 }
 #[test] fn update_available() { /* repo at v1, template has v2 → exit 1, message "update available: 1.0.0 → 2.0.0"; --offline → exit 0 */ }
+#[test] fn resolve_conflict_then_check_passes() { /* (moved from Task 7, tests/golden_update.rs) golden v1→v2 update with a ci.yml conflict, edit ci.yml to remove markers, commit → `splice check --offline` exit 0 */ }
 #[test] fn fetch_failure_is_message_not_error() { /* template dir removed → exit 0 with message when nothing else is wrong */ }
 ```
 

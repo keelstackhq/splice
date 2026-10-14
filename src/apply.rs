@@ -8,7 +8,7 @@ use crate::manifest::{PostCmd, When};
 use crate::migrate::Step;
 use crate::output::{Action, Report};
 use crate::planner::Plan;
-use crate::post::{RESTORE, post_runs, run_post, run_steps};
+use crate::post::{post_runs, restore_cmd, run_post, run_steps};
 use semver::Version;
 use std::path::Path;
 
@@ -29,9 +29,9 @@ pub struct ApplyCtx<'a> {
 }
 
 /// A failure after something was written: keep the report, name the restore command.
-fn partial(e: SpliceError, report: &Report, restore: bool) -> SpliceError {
+fn partial(e: SpliceError, repo: &Path, report: &Report, restore: bool) -> SpliceError {
     let message = if restore {
-        format!("{e}; `{RESTORE}` restores the previous state")
+        format!("{e}; `{}` restores the previous state", restore_cmd(repo))
     } else {
         e.to_string()
     };
@@ -73,7 +73,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
             };
             if let Err(e) = res {
                 let e = SpliceError::Io(std::io::Error::new(e.kind(), format!("{}: {e}", c.path)));
-                return Err(partial(e, &report, wrote));
+                return Err(partial(e, repo, &report, wrote));
             }
             if c.bytes.is_some() || c.action == Action::Delete {
                 wrote = true;
@@ -86,12 +86,12 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
     }
 
     run_steps(repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json)
-        .map_err(|e| partial(e, &report, false))?;
+        .map_err(|e| partial(e, repo, &report, false))?;
 
     // The lock is the last write; a failure leaves the old lock in place.
     ctx.lock
         .write_atomic(repo)
-        .map_err(|e| partial(e, &report, true))?;
+        .map_err(|e| partial(e, repo, &report, true))?;
 
     if !ctx.plan.conflicts.is_empty() {
         let cmds = post_runs(&ctx.post, ctx.when);
@@ -108,7 +108,8 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
         return Err(SpliceError::Conflict(report));
     }
     if !ctx.no_post {
-        run_post(repo, &ctx.post, ctx.when, ctx.json).map_err(|e| partial(e, &report, false))?;
+        run_post(repo, &ctx.post, ctx.when, ctx.json)
+            .map_err(|e| partial(e, repo, &report, false))?;
     }
     Ok(report)
 }
@@ -250,7 +251,8 @@ mod tests {
         let s = step("exit 7");
         let e = apply(ctx(&d, &p, vec![(&ver, &s)], vec![])).unwrap_err();
         assert_eq!(e.exit_code(), 3);
-        assert!(e.to_string().contains("git checkout -- . && git clean -fd"));
+        assert!(e.to_string().contains(&crate::post::restore_cmd(d.path())));
+        assert!(e.to_string().contains("cd "));
         assert!(e.to_string().contains("exit 7") || e.to_string().contains("`exit 7`"));
         assert_eq!(lock_version(&d), v("1.0.0"));
         let SpliceError::Partial { report, .. } = e else {
@@ -330,7 +332,8 @@ mod tests {
         c.json = true;
         let e = apply(c).unwrap_err();
         assert_eq!(e.exit_code(), 3);
-        assert!(e.to_string().contains("git checkout -- . && git clean -fd"));
+        assert!(e.to_string().contains(&crate::post::restore_cmd(d.path())));
+        assert!(e.to_string().contains("cd "));
         let SpliceError::Partial { report, .. } = e else {
             panic!("expected Partial")
         };

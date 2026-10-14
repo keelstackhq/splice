@@ -1,0 +1,133 @@
+---
+source: tests/golden_update.rs
+expression: "redact(&tree_snapshot(repo.path()), repo.path(), tpl.path())"
+---
+.editorconfig ae9c9ed6d8d6135b63ea1164cbf3ece9b0c5f354071918ec4ded7d8d3e43b370
+root = true
+
+[*]
+indent_size = 4
+.github/workflows/ci.yml 991092ee18775dbaa61edadeb860860e593677fb6bf70fb61afe01ce946bd7cc
+name: ci
+on: [push]
+jobs:
+  test:
+<<<<<<< ours
+    runs-on: ubuntu-22.04
+||||||| base
+    runs-on: ubuntu-latest
+=======
+    runs-on: ubuntu-24.04
+>>>>>>> template
+    steps:
+      - run: echo demo
+.post-ran 8030404398e6639ff1395dd8e38c782bf6c9e00229adfc54408c967a2e981b51
+post
+.splice/lock.toml <hash>
+format = 1
+splice = "0.1.0"
+
+[template]
+source = "<tpl>"
+version = "2.0.0"
+commit = "<sha>"
+
+[vars]
+scope = "acme"
+project = "demo"
+license = "MIT"
+
+[[pieces]]
+id = "base"
+name = "base"
+vars = {}
+
+[[pieces]]
+id = "app"
+name = "web"
+vars = { name = "web" }
+
+[files]
+".editorconfig" = { class = "owned", sha256 = "ae9c9ed6d8d6135b63ea1164cbf3ece9b0c5f354071918ec4ded7d8d3e43b370" }
+".github/workflows/ci.yml" = { class = "shared", sha256 = "2bc5cc8e0365350e16659f55dbd3e9332e55794fa825601ebaa62e22dd018fc6" }
+"apps.txt" = { class = "owned", sha256 = "c8d0cfc412961b1904898e1834bcec115556e4207a97b5bebb6bfe6d518914b8" }
+"apps/web/package.json" = { class = "shared", sha256 = "975cc45a85460399eb9e149353e469fd595a31124dafa592df0254f01fa1bff6" }
+"apps/web/tsconfig.json" = { class = "owned", sha256 = "80ca0517735626c88e402c7c9c1d4e28d2380ee05cf952b4b7bf60e832b139d3" }
+"config/settings.toml" = { class = "shared", sha256 = "8006e41aad3b32d45375e142567f21afdaef19f53cf9210e755ec697cfb5c167" }
+"demo.code-workspace" = { class = "owned", sha256 = "af0827ab09fab041970f7eaf904a714557cf985a12362e7d63ab92aed40b9003" }
+"logo.png" = { class = "owned", sha256 = "07583f04da7ba2b66d75f7adfe0228f90da4bb3160f6478b3b935de86cd330c5" }
+"notes.txt" = { class = "shared", sha256 = "ad8c4b1d4fc3c345bfc4184367499026822ae667866a5f76426153cb91d2cef7" }
+"only-with-app.txt" = { class = "owned", sha256 = "03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c" }
+"package.json" = { class = "shared", sha256 = "bc46fc21d104a4f390fb834056f9c71f4812bef7aa464c1ca522e661f23a3d7c" }
+"tool.config.ts" = { class = "owned", sha256 = "9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0" }
+.splice/migrated.txt b0a1de67696fb59a924cd5f5b1d51f7e5bcc1352ac47cb9866ee66689c05bb4b
+migrated
+CHANGELOG.md 8131cb1480890d80dddf584e783db0837a2a978002b7daefa8c081ceb25dc711
+# Changelog
+
+Started with fixture 2.0.0.
+README.md 8fdaa226f73fec8b077d8ecc34eb4b6a37f83b08345744799d8163011368b490
+# my own readme
+
+hand written
+apps/web/package.json 975cc45a85460399eb9e149353e469fd595a31124dafa592df0254f01fa1bff6
+{
+  "name": "@acme/web",
+  "private": true
+}
+apps/web/src/main.ts 8f3fb0c328b160359edeb9cc7e4072e1ab3f328fc883f5357d0424110936d951
+
+const name = "WEB";
+console.log("instance web");
+
+apps/web/tsconfig.json 80ca0517735626c88e402c7c9c1d4e28d2380ee05cf952b4b7bf60e832b139d3
+{
+  "compilerOptions": { "strict": true }
+}
+apps.txt c8d0cfc412961b1904898e1834bcec115556e4207a97b5bebb6bfe6d518914b8
+base
+app
+config/settings.toml 8dab8886d507829fdf5a124316aad119602e66740dc3eca919e901d0957e5a2b
+# settings for demo
+[project]
+name = "demo"
+scope = "acme"
+
+# keep this comment
+[build]
+target = "es2022"
+
+[local]
+x = 1
+demo.code-workspace af0827ab09fab041970f7eaf904a714557cf985a12362e7d63ab92aed40b9003
+{
+  "folders": [{ "path": "." }],
+  "name": "demo"
+}
+logo.png 07583f04da7ba2b66d75f7adfe0228f90da4bb3160f6478b3b935de86cd330c5
+notes.txt b58940d7af16fe3197735b3b7773cc142a5d0fa892f93458bb84e10b2f43ec6a
+Notes for demo
+line 2 from template v2
+line three
+line four
+line 5 from the user
+only-with-app.txt 03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c
+app is present
+
+package.json 6da6cf8f51d221e3b6e06910ca4f397265e07011fbdc908109a0ff660c512d15
+{
+  "name": "@acme/demo",
+  "private": true,
+  "dependencies": {
+    "left-pad": "^1.3.0"
+  },
+  "scripts": {
+    "build": "echo build",
+    "lint": "echo lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
+tool.config.ts 9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0
+export default { name: "tool" };

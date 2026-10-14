@@ -7,8 +7,26 @@ use semver::Version;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-/// What to run to undo a partial update (spec §8.3 step 1).
+/// The git part of the restore command (spec §8.3 step 1).
 pub const RESTORE: &str = "git checkout -- . && git clean -fd";
+
+/// What to run to undo a partial update: `cd <dir> && git checkout -- . && git clean -fd`. The
+/// `cd` matters in a monorepo: run inside the project directory, git only touches that subtree.
+pub fn restore_cmd(repo: &Path) -> String {
+    let abs = std::path::absolute(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let dir = abs.display().to_string();
+    let plain = dir
+        .chars()
+        .all(|c| c.is_alphanumeric() || "/\\._-:+@%,=~".contains(c));
+    let dir = if plain {
+        dir
+    } else if cfg!(windows) {
+        format!("\"{dir}\"")
+    } else {
+        format!("'{}'", dir.replace('\'', "'\\''"))
+    };
+    format!("cd {dir} && {RESTORE}")
+}
 
 #[cfg(windows)]
 fn shell(run: &str) -> Command {
@@ -73,6 +91,7 @@ pub fn run_steps(
     to: &Version,
     _json: bool,
 ) -> Result<(), SpliceError> {
+    let restore = restore_cmd(repo);
     for (version, step) in steps {
         let status = shell(&step.run)
             .current_dir(repo)
@@ -84,16 +103,38 @@ pub fn run_steps(
             .status()
             .map_err(|e| {
                 SpliceError::Env(format!(
-                    "migration step `{}` ({version}) could not start: {e}; the lock still records {from}; `{RESTORE}` restores the previous state",
+                    "migration step `{}` ({version}) could not start: {e}; the lock still records {from}; `{restore}` restores the previous state",
                     step.run
                 ))
             })?;
         if !status.success() {
             return Err(SpliceError::Env(format!(
-                "migration step `{}` ({version}) failed ({status}); the lock still records {from}; `{RESTORE}` restores the previous state",
+                "migration step `{}` ({version}) failed ({status}); the lock still records {from}; `{restore}` restores the previous state",
                 step.run
             )));
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restore_names_the_directory() {
+        let c = restore_cmd(Path::new("/work/proj"));
+        assert!(c.ends_with(" && git checkout -- . && git clean -fd"));
+        assert!(c.starts_with("cd "));
+        assert!(c.contains("proj"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_quotes_odd_paths() {
+        assert_eq!(
+            restore_cmd(Path::new("/a b/it's")),
+            format!("cd '/a b/it'\\''s' && {RESTORE}")
+        );
+    }
 }

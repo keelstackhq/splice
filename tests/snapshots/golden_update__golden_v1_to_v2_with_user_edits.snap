@@ -1,0 +1,64 @@
+---
+source: tests/golden_update.rs
+expression: value
+---
+{
+  "ok": false,
+  "command": "update",
+  "changes": [
+    {
+      "path": ".editorconfig",
+      "action": "update",
+      "class": "owned"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "conflict",
+      "class": "shared"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "action": "create",
+      "class": "seed"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "action": "update",
+      "class": "owned"
+    },
+    {
+      "path": "config/settings.toml",
+      "action": "merge",
+      "class": "shared"
+    },
+    {
+      "path": "notes.txt",
+      "action": "merge",
+      "class": "shared"
+    },
+    {
+      "path": "old.txt",
+      "action": "delete",
+      "class": "owned"
+    },
+    {
+      "path": "package.json",
+      "action": "merge",
+      "class": "shared"
+    },
+    {
+      "path": "tool.config.mts",
+      "action": "delete",
+      "class": "owned"
+    },
+    {
+      "path": "tool.config.ts",
+      "action": "create",
+      "class": "owned"
+    }
+  ],
+  "messages": [
+    ".github/workflows/ci.yml: conflicts: jobs.test.runs-on",
+    "post commands skipped because of conflicts; run them by hand after resolving: `echo post> .post-ran`"
+  ]
+}

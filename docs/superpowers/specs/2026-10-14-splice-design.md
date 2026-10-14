@@ -225,8 +225,9 @@ Milestone 1 details (the reduced planner, `ops::add::plan_reduced`), each path i
 
 1. Read the lock. Refuse a dirty tree (`git status --porcelain` not empty) with exit 2 unless
    `--allow-dirty`; refuse outside a git work tree unless `--allow-dirty`. The clean tree is the
-   recovery story: every failure can be undone with `git checkout -- . && git clean -fd`, and
-   every error message after files were written says so.
+   recovery story: every failure can be undone with `git checkout -- . && git clean -fd` run in the project
+   directory, and every error message after files were written says so as `cd <dir> && git
+   checkout -- . && git clean -fd` (in a monorepo subdir this restores only the project).
 2. Target = `--to` or latest stable tag. Target < lock version → exit 2. Target = lock version →
    nothing to do (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
 3. Fetch both trees. Load the target manifest; check `format` and `min_splice` (exit 3).
