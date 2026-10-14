@@ -91,6 +91,23 @@ fn render_path(raw: &str, renderer: &Renderer, ctx: &Value) -> Result<Vec<String
         .collect()
 }
 
+/// Render a repo-relative path template (a `[[remove]].path`): same subset gate and segment
+/// rules as file paths, but no `.jinja` stripping and no `target`. Never the lock path.
+pub fn render_repo_path(
+    raw: &str,
+    renderer: &Renderer,
+    ctx: &Value,
+) -> Result<String, SpliceError> {
+    let fin = render_path(raw, renderer, ctx)?.join("/");
+    if fin.eq_ignore_ascii_case(LOCK_PATH) {
+        return Err(bad(
+            &fin,
+            "`.splice/lock.toml` is reserved for the lock file",
+        ));
+    }
+    Ok(fin)
+}
+
 /// Render `src_rel` (relative to `files/`, `/`-separated) and the optional `target`.
 /// Returns `(final path, class key)`; the class key is rendered, without `.jinja` and without
 /// the target prefix.

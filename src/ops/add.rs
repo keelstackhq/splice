@@ -18,14 +18,7 @@ use std::path::Path;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
-/// One step of the plan: what to do with `path`; `bytes` is `Some` only for a write.
-#[derive(Debug, Clone)]
-pub struct Planned {
-    pub path: String,
-    pub action: Action,
-    pub class: Class,
-    pub bytes: Option<Vec<u8>>,
-}
+pub use crate::planner::Planned;
 
 const EDITED: &str = "edited locally; run `splice update` after milestone 2 or merge by hand";
 
@@ -57,6 +50,7 @@ pub fn plan_reduced(
                 action,
                 class,
                 bytes,
+                note: None,
             })
         };
         match (base.get(path), theirs.get(path)) {

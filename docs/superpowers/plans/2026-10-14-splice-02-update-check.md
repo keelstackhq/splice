@@ -210,7 +210,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn plan(input: &PlanInput) -> Plan`
   - `fn render_removes(t: &Template, removes: &[&Remove], instances: &[PieceInstance], vars) -> Result<Vec<String>>`
 
-- [ ] **Step 1: Write failing tests** — table-driven, one case per cell:
+- [x] **Step 1: Write failing tests** — table-driven, one case per cell:
 
 ```rust
 #[test] fn table() {
@@ -242,10 +242,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn remove_list_deletes_unedited_and_ignores_still_rendered() { /* [[remove]] for a path theirs still renders → warning note, no delete */ }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement `plan`** exactly per spec §8.4; `Skip` changes carry a `note` that becomes a message. Paths in drift produce no change entry; `Plan.drift` lists them.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: pure update planner for all ownership classes`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement `plan`** exactly per spec §8.4; `Skip` changes carry a `note` that becomes a message. Paths in drift produce no change entry; `Plan.drift` lists them.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: pure update planner for all ownership classes`
 
 ---
 

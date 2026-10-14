@@ -12,6 +12,7 @@ pub mod migrate;
 pub mod ops;
 pub mod output;
 pub mod paths;
+pub mod planner;
 pub mod post;
 pub mod render;
 pub mod source;
