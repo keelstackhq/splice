@@ -26,6 +26,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/9 · 336d613, d68311e · fmt+clippy clean (linux + windows-gnu), nextest 258/258 passed
 2026-10-14 · Milestone 2 reviewed · fc0be00 · safe restore advice under --allow-dirty, refuse merging over markers, helpers; nextest 263/263 passed
 2026-10-14 · 03/1 · c9b39df, 086963c · actionlint clean; fmt+clippy+nextest 263/263 locally, warm wall time 8.3s (first GitHub run: see Blocked)
+2026-10-14 · 03/2 · fd61fd2 · actionlint clean, node 6/6, nextest 263/263; release build + musl build + smoke test run locally (GitHub dry run: see Blocked)
 
 ## Notes for later tasks
 
@@ -44,6 +45,9 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   GitHub. Action: open a PR from `claude/awesome-galileo-cunc0r` (with a personal token or the web
   UI, not `GITHUB_TOKEN`, which does not trigger CI), confirm both matrix legs (ubuntu, windows) and
   `ci-ok` pass, then make `ci-ok` a required check in branch protection for `main`.
+- plan 03 Task 2 (release dry run): run `.github/workflows/release.yml` via "Run workflow"
+  (workflow_dispatch) on the branch; confirm all five builds and smoke tests pass (macOS x64 runs
+  under Rosetta). No release or npm publish happens on a dispatch.
 
 ## Status
 
