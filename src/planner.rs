@@ -168,19 +168,30 @@ pub fn plan(input: &PlanInput) -> Plan {
                 (_, Some(c)) => merge_shared(&mut out, path, t.strategy, b"", c, &t.bytes),
             },
             (Some(b), Some(t)) => {
-                if t.class == Class::Seed || b.bytes == t.bytes {
+                if t.class == Class::Seed {
+                    continue;
+                }
+                if t.class == Class::Owned {
+                    // contract §5: owned drift refuses unless --force, whether or not the
+                    // template changed the file
+                    match cur {
+                        None if force => {
+                            out.push(path, Action::Create, t.class, Some(t.bytes.clone()))
+                        }
+                        None => out.drift.push(path.clone()),
+                        Some(c) if c == t.bytes => {}
+                        Some(c) if unedited(c) && b.bytes == t.bytes => {}
+                        Some(c) if force || unedited(c) => {
+                            out.push(path, Action::Update, t.class, Some(t.bytes.clone()))
+                        }
+                        Some(_) => out.drift.push(path.clone()),
+                    }
+                    continue;
+                }
+                if b.bytes == t.bytes {
                     continue;
                 }
                 match (t.class, cur) {
-                    (Class::Owned, None) if force => {
-                        out.push(path, Action::Create, t.class, Some(t.bytes.clone()))
-                    }
-                    (Class::Owned, None) => out.drift.push(path.clone()),
-                    (Class::Owned, Some(c)) if c == t.bytes => {}
-                    (Class::Owned, Some(c)) if force || unedited(c) => {
-                        out.push(path, Action::Update, t.class, Some(t.bytes.clone()))
-                    }
-                    (Class::Owned, Some(_)) => out.drift.push(path.clone()),
                     (_, None) => out.skip(
                         path,
                         t.class,
@@ -261,13 +272,15 @@ pub fn plan(input: &PlanInput) -> Plan {
 
 /// Render the `[[remove]]` paths of the selected migrations. A path with `piece` is rendered
 /// once per instance of that piece (an id naming no piece in the template is exit 3); without
-/// `piece` only the template vars are in scope. Every result is re-checked with the rendered
+/// `piece` only the template vars, `pieces` and `template` are in scope. `version` is the
+/// base (lock) version, like `render_tree` uses for `template.version`. Every result is re-checked with the rendered
 /// path rules of `paths.rs`.
 pub fn render_removes(
     t: &Template,
     removes: &[&Remove],
     instances: &[PieceInstance],
     vars: &IndexMap<String, String>,
+    version: &semver::Version,
 ) -> Result<Vec<String>> {
     let renderer = Renderer::new();
     let mut ids: Vec<&str> = Vec::new();
@@ -281,17 +294,17 @@ pub fn render_removes(
         for (k, v) in vars.iter().chain(extra.iter()) {
             m.insert(k.clone(), serde_json::Value::String(v.clone()));
         }
+        m.insert("pieces".into(), serde_json::json!(ids));
         if let Some(i) = inst {
-            m.insert("pieces".into(), serde_json::json!(ids));
             m.insert(
                 "piece".into(),
                 serde_json::json!({ "id": i.id, "name": i.name }),
             );
-            m.insert(
-                "template".into(),
-                serde_json::json!({ "name": t.manifest.name }),
-            );
         }
+        m.insert(
+            "template".into(),
+            serde_json::json!({ "name": t.manifest.name, "version": version.to_string() }),
+        );
         Value::from_serialize(serde_json::Value::Object(m))
     };
     let mut out: Vec<String> = Vec::new();
@@ -392,10 +405,12 @@ mod tests {
         bool,
         Option<Action>,
         Option<&'static str>,
+        bool, // drift expected
     );
 
     fn check_case(c: Case) {
-        let (name, class, base, theirs, on_disk, lock_sha_of, force, action, bytes) = c;
+        let (name, class, base, theirs, on_disk, lock_sha_of, force, action, bytes, drift_expected) =
+            c;
         let p = "f.txt";
         let base_t: RenderedTree = base.iter().map(|b| (p.into(), file(p, b, class))).collect();
         let theirs_t: RenderedTree = theirs
@@ -414,13 +429,6 @@ mod tests {
             removes: vec![],
             force,
         });
-        let drift_expected = action.is_none()
-            && (name.contains("drift")
-                || name.contains("deleted by user")
-                || name.contains("user file"))
-            && !name.contains("equals")
-            && !name.contains("--force")
-            && class == Class::Owned;
         assert_eq!(
             plan.drift.contains(&p.to_string()),
             drift_expected,
@@ -465,6 +473,7 @@ mod tests {
                 false,
                 Some(Update),
                 Some("b"),
+                false,
             ),
             (
                 "owned unchanged",
@@ -476,6 +485,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "owned drift",
@@ -487,6 +497,7 @@ mod tests {
                 false,
                 None,
                 None,
+                true,
             ),
             (
                 "owned drift --force",
@@ -498,6 +509,7 @@ mod tests {
                 true,
                 Some(Update),
                 Some("b"),
+                false,
             ),
             (
                 "owned deleted by user",
@@ -509,6 +521,7 @@ mod tests {
                 false,
                 None,
                 None,
+                true,
             ),
             (
                 "owned new, absent",
@@ -520,6 +533,7 @@ mod tests {
                 false,
                 Some(Create),
                 Some("b"),
+                false,
             ),
             (
                 "owned new, user file",
@@ -531,6 +545,7 @@ mod tests {
                 false,
                 None,
                 None,
+                true,
             ),
             (
                 "shared ours==base",
@@ -542,6 +557,7 @@ mod tests {
                 false,
                 Some(Update),
                 Some("b\n"),
+                false,
             ),
             (
                 "shared theirs==base",
@@ -553,6 +569,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "shared merge",
@@ -564,6 +581,7 @@ mod tests {
                 false,
                 Some(Merge),
                 Some("U\n2\nT\n"),
+                false,
             ),
             (
                 "shared conflict",
@@ -575,6 +593,7 @@ mod tests {
                 false,
                 Some(Conflict),
                 None,
+                false,
             ),
             (
                 "shared deleted by user",
@@ -586,6 +605,7 @@ mod tests {
                 false,
                 Some(Skip),
                 None,
+                false,
             ),
             (
                 "shared new, user file",
@@ -597,6 +617,7 @@ mod tests {
                 false,
                 Some(Conflict),
                 None,
+                false,
             ),
             (
                 "seed exists",
@@ -608,6 +629,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "seed new, absent",
@@ -619,6 +641,7 @@ mod tests {
                 false,
                 Some(Create),
                 Some("b"),
+                false,
             ),
             (
                 "owned gone, unedited",
@@ -630,6 +653,7 @@ mod tests {
                 false,
                 Some(Delete),
                 None,
+                false,
             ),
             (
                 "owned gone, edited",
@@ -641,6 +665,7 @@ mod tests {
                 false,
                 Some(Skip),
                 None,
+                false,
             ),
             (
                 "shared gone, edited",
@@ -652,6 +677,7 @@ mod tests {
                 false,
                 Some(Skip),
                 None,
+                false,
             ),
             (
                 "seed gone",
@@ -663,6 +689,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
         ];
         for c in cases {
@@ -674,7 +701,7 @@ mod tests {
     fn more_cells_of_the_table() {
         use Action::*;
         use Class::*;
-        let more: [Case; 9] = [
+        let more: [Case; 13] = [
             (
                 "owned deleted by user --force",
                 Owned,
@@ -685,6 +712,7 @@ mod tests {
                 true,
                 Some(Create),
                 Some("b"),
+                false,
             ),
             (
                 "owned new, user file equals theirs",
@@ -696,6 +724,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "owned new, user file --force",
@@ -707,6 +736,7 @@ mod tests {
                 true,
                 Some(Update),
                 Some("b"),
+                false,
             ),
             (
                 "owned gone, edited --force",
@@ -718,6 +748,7 @@ mod tests {
                 true,
                 Some(Skip),
                 None,
+                false,
             ),
             (
                 "shared gone, unedited",
@@ -729,6 +760,7 @@ mod tests {
                 false,
                 Some(Delete),
                 None,
+                false,
             ),
             (
                 "shared new, absent",
@@ -740,6 +772,7 @@ mod tests {
                 false,
                 Some(Create),
                 Some("t\n"),
+                false,
             ),
             (
                 "shared new, user file equals theirs",
@@ -751,6 +784,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "seed deleted by user",
@@ -762,6 +796,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             ),
             (
                 "owned gone, already deleted",
@@ -773,6 +808,55 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
+            ),
+            (
+                "owned edited, T=B",
+                Owned,
+                Some("a"),
+                Some("a"),
+                Some("x"),
+                Some("a"),
+                false,
+                None,
+                None,
+                true,
+            ),
+            (
+                "owned edited, T=B --force",
+                Owned,
+                Some("a"),
+                Some("a"),
+                Some("x"),
+                Some("a"),
+                true,
+                Some(Update),
+                Some("a"),
+                false,
+            ),
+            (
+                "owned deleted, T=B",
+                Owned,
+                Some("a"),
+                Some("a"),
+                None,
+                Some("a"),
+                false,
+                None,
+                None,
+                true,
+            ),
+            (
+                "owned deleted, T=B --force",
+                Owned,
+                Some("a"),
+                Some("a"),
+                None,
+                Some("a"),
+                true,
+                Some(Create),
+                Some("a"),
+                false,
             ),
         ];
         for c in more {
@@ -1001,6 +1085,10 @@ mod tests {
         }
     }
 
+    fn v1() -> semver::Version {
+        semver::Version::new(1, 2, 3)
+    }
+
     fn vars(kv: &[(&str, &str)]) -> IndexMap<String, String> {
         kv.iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -1014,8 +1102,14 @@ mod tests {
         let r1 = rm("apps/{{ name }}/old.json", Some("app"));
         let r2 = rm("{{ scope }}/old.txt", None);
         let r3 = rm("plain.txt", None);
-        let out =
-            render_removes(&t, &[&r1, &r2, &r3], &instances, &vars(&[("scope", "pkg")])).unwrap();
+        let out = render_removes(
+            &t,
+            &[&r1, &r2, &r3],
+            &instances,
+            &vars(&[("scope", "pkg")]),
+            &v1(),
+        )
+        .unwrap();
         assert_eq!(
             out,
             [
@@ -1030,7 +1124,7 @@ mod tests {
     #[test]
     fn render_removes_unknown_piece_is_exit_3() {
         let r = rm("a.txt", Some("nope"));
-        let e = render_removes(&template(), &[&r], &[], &vars(&[])).unwrap_err();
+        let e = render_removes(&template(), &[&r], &[], &vars(&[]), &v1()).unwrap_err();
         assert_eq!(e.exit_code(), 3);
         assert!(e.to_string().contains("nope"), "{e}");
     }
@@ -1047,28 +1141,38 @@ mod tests {
             ("{{ name }}", ""),
         ] {
             let r = rm(path, None);
-            let e = render_removes(&t, &[&r], &[], &vars(&[("name", v)])).unwrap_err();
+            let e = render_removes(&t, &[&r], &[], &vars(&[("name", v)]), &v1()).unwrap_err();
             assert_eq!(e.exit_code(), 3, "{path} {v:?}");
         }
         let r = rm("{{ name }}/x", Some("app"));
         assert_eq!(
-            render_removes(&t, &[&r], &instances, &vars(&[]))
+            render_removes(&t, &[&r], &instances, &vars(&[]), &v1())
                 .unwrap_err()
                 .exit_code(),
             3
         );
         let r = rm("{{ name }}", None);
-        let e = render_removes(&t, &[&r], &[], &vars(&[("name", ".splice")])).unwrap();
+        let e = render_removes(&t, &[&r], &[], &vars(&[("name", ".splice")]), &v1()).unwrap();
         assert_eq!(e, [".splice"]);
         let r = rm(".splice/{{ name }}", None);
-        let e = render_removes(&t, &[&r], &[], &vars(&[("name", "lock.toml")])).unwrap_err();
+        let e = render_removes(&t, &[&r], &[], &vars(&[("name", "lock.toml")]), &v1()).unwrap_err();
         assert_eq!(e.exit_code(), 3);
     }
 
     #[test]
     fn render_removes_undefined_var_is_exit_3() {
         let r = rm("{{ missing }}/x", None);
-        let e = render_removes(&template(), &[&r], &[], &vars(&[])).unwrap_err();
+        let e = render_removes(&template(), &[&r], &[], &vars(&[]), &v1()).unwrap_err();
         assert_eq!(e.exit_code(), 3);
+    }
+
+    #[test]
+    fn render_removes_has_template_name_version_and_pieces() {
+        let t = template();
+        let r1 = rm("{{ template.name }}-{{ template.version }}/x", None);
+        let r3 = rm("{{ template.version }}/{{ piece.id }}", Some("app"));
+        let out =
+            render_removes(&t, &[&r1, &r3], &[inst("app", "web")], &vars(&[]), &v1()).unwrap();
+        assert_eq!(out, ["t-1.2.3/x", "1.2.3/app"]);
     }
 }
