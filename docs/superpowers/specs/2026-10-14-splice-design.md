@@ -69,7 +69,9 @@ object; post-command and git output go to stderr.
 | 3 | template or environment error: bad manifest, unknown `format`, `min_splice` too new, render error, unsafe path, git failure, failed migration step or post command |
 
 clap parse errors still exit 2; when `--json` is in argv they are also reported as the JSON object
-(`command` = the subcommand if known, else `""`).
+(`command` = the subcommand if known, else `""`). `--help` and `--version` are not command runs: they
+print clap's plain text and exit 0, even with `--json`. On a failed human-mode run stdout still
+holds the summary line (`0 changes`); the message goes to stderr.
 
 ## 4. Template sources and fetching
 
