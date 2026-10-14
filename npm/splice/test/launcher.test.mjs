@@ -58,12 +58,15 @@ test("missing platform package gives a helpful message", () => {
 });
 
 test("unsupported platform: message, exit 1, no stack trace", () => {
-  const shim = join(mkdtempSync(join(tmpdir(), "splice-shim-")), "shim.cjs");
-  writeFileSync(
-    shim,
-    'Object.defineProperty(process, "platform", { value: "freebsd" });\n',
-  );
-  const r = spawnSync(process.execPath, ["--require", shim, launcher, "--version"], { encoding: "utf8" });
+  const dir = mkdtempSync(join(tmpdir(), "splice-shim-"));
+  let r;
+  try {
+    const shim = join(dir, "shim.cjs");
+    writeFileSync(shim, 'Object.defineProperty(process, "platform", { value: "freebsd" });\n');
+    r = spawnSync(process.execPath, ["--require", shim, launcher, "--version"], { encoding: "utf8", timeout: 15000 });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
   assert.equal(r.status, 1);
   assert.match(r.stderr, /freebsd-/);
   assert.match(r.stderr, /linux-x64/);
@@ -71,38 +74,51 @@ test("unsupported platform: message, exit 1, no stack trace", () => {
 });
 
 for (const code of [0, 1, 3]) {
-  test(`exit code ${code} passes through`, { skip: isWin }, () => {
+  test(`exit code ${code} passes through`, { skip: isWin, timeout: 20000 }, () => {
     const { tmp, env } = fakeInstall(`process.exit(${code});`);
-    const r = spawnSync(process.execPath, [launcher], { env });
-    rmSync(tmp, { recursive: true, force: true });
-    assert.equal(r.status, code);
+    try {
+      const r = spawnSync(process.execPath, [launcher], { env, timeout: 15000 });
+      assert.equal(r.status, code);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 }
 
-test("arguments are forwarded", { skip: isWin }, () => {
+test("arguments are forwarded", { skip: isWin, timeout: 20000 }, () => {
   const { tmp, env } = fakeInstall("console.log(JSON.stringify(process.argv.slice(2)));");
-  const r = spawnSync(process.execPath, [launcher, "new", "--yes"], { env, encoding: "utf8" });
-  rmSync(tmp, { recursive: true, force: true });
-  assert.equal(r.stdout.trim(), '["new","--yes"]');
+  try {
+    const r = spawnSync(process.execPath, [launcher, "new", "--yes"], { env, encoding: "utf8", timeout: 15000 });
+    assert.equal(r.stdout.trim(), '["new","--yes"]');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
-test("a child killed by SIGTERM is re-raised", { skip: isWin }, () => {
+test("a child killed by SIGTERM is re-raised", { skip: isWin, timeout: 20000 }, () => {
   const { tmp, env } = fakeInstall('process.kill(process.pid, "SIGTERM"); setTimeout(() => {}, 5000);');
-  const r = spawnSync(process.execPath, [launcher], { env });
-  rmSync(tmp, { recursive: true, force: true });
-  assert.equal(r.signal, "SIGTERM");
+  try {
+    const r = spawnSync(process.execPath, [launcher], { env, timeout: 15000 });
+    assert.equal(r.signal, "SIGTERM");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
-test("SIGINT to the process group: launcher survives and the child decides", { skip: isWin }, async () => {
+test("SIGINT to the process group: launcher survives and the child decides", { skip: isWin, timeout: 20000 }, async () => {
   const { tmp, env } = fakeInstall(
     'process.on("SIGINT", () => { setTimeout(() => process.exit(7), 100); });\n' +
       'process.stdout.write("ready\\n"); setTimeout(() => process.exit(9), 10000);',
   );
   const child = spawn(process.execPath, [launcher], { env, detached: true, stdio: ["ignore", "pipe", "inherit"] });
-  await new Promise((resolve) => child.stdout.once("data", resolve));
-  process.kill(-child.pid, "SIGINT"); // like a terminal Ctrl-C
-  const [code, signal] = await new Promise((resolve) => child.on("exit", (c, s) => resolve([c, s])));
-  rmSync(tmp, { recursive: true, force: true });
-  assert.equal(signal, null);
-  assert.equal(code, 7);
+  try {
+    await new Promise((resolve) => child.stdout.once("data", resolve));
+    process.kill(-child.pid, "SIGINT"); // like a terminal Ctrl-C
+    const [code, signal] = await new Promise((resolve) => child.on("exit", (c, s) => resolve([c, s])));
+    assert.equal(signal, null);
+    assert.equal(code, 7);
+  } finally {
+    try { process.kill(-child.pid, "SIGKILL"); } catch {}
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

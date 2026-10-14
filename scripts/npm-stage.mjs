@@ -6,13 +6,18 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-// TODO(human): confirm the GitHub org; the plan names keelstack/splice (origin is keelstackhq/splice).
-const repository = { type: "git", url: "git+https://github.com/keelstack/splice.git" };
+const DEFAULT_REPO = "keelstack/splice";
+// Provenance must match the repo that publishes, so CI's GITHUB_REPOSITORY wins.
+const repositoryFor = (env) => ({
+  type: "git",
+  url: `git+https://github.com/${env.GITHUB_REPOSITORY || DEFAULT_REPO}.git`,
+});
 const NO_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
 
 const writeJson = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 
-export function stage({ version, artifacts, out }) {
+export function stage({ version, artifacts, out, env = process.env }) {
+  const repository = repositoryFor(env);
   if (!version) throw new Error("version is required");
   const platforms = JSON.parse(readFileSync(join(root, "npm", "platforms.json"), "utf8"));
   rmSync(out, { recursive: true, force: true });

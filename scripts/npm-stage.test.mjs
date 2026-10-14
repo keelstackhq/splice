@@ -7,7 +7,7 @@ import { stage } from "./npm-stage.mjs";
 
 const platforms = JSON.parse(readFileSync(new URL("../npm/platforms.json", import.meta.url), "utf8"));
 
-function setup(only = platforms) {
+function setup(only = platforms, env = {}) {
   const root = mkdtempSync(join(tmpdir(), "splice-stage-"));
   const artifacts = join(root, "artifacts");
   mkdirSync(artifacts);
@@ -17,7 +17,7 @@ function setup(only = platforms) {
     writeFileSync(join(dir, p.bin), "binary");
   }
   const out = join(root, "out");
-  stage({ version: "1.2.3", artifacts, out });
+  stage({ version: "1.2.3", artifacts, out, env });
   return out;
 }
 
@@ -78,4 +78,14 @@ test("README and LICENSE are copied into every package", () => {
 
 test("a missing binary fails loudly", () => {
   assert.throws(() => setup(platforms.slice(1)), /splice-linux-x64|x86_64-unknown-linux-musl/);
+});
+
+test("repository comes from GITHUB_REPOSITORY, with a default", () => {
+  const dflt = setup();
+  const custom = setup(platforms, { GITHUB_REPOSITORY: "acme/widgets" });
+  for (const [out, repo] of [[dflt, "keelstack/splice"], [custom, "acme/widgets"]]) {
+    for (const d of readdirSync(out)) {
+      assert.equal(readPkg(out, d).repository.url, `git+https://github.com/${repo}.git`, d);
+    }
+  }
 });
