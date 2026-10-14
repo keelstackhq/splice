@@ -26,7 +26,7 @@ export function summarize(report, exitCode, version) {
   if (exitCode !== 0 && !(exitCode === 1 && conflicted)) {
     // Exit 1 without a conflict is owned drift: nothing was written, so there is nothing to
     // put in a PR. Failing the run makes the drift visible instead of hiding it in a PR.
-    const why = exitCode === 1 ? "owned files were edited locally; nothing was written" : `splice exited ${exitCode}`;
+    const why = exitCode === 1 ? "owned files were edited locally, or conflict markers are left on disk" : `splice exited ${exitCode}`;
     throw new Error(`${why}\n${messages.join("\n")}`);
   }
   if (changes.length === 0) return { title: "", body: "", result: "current" };

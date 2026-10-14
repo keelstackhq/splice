@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 const script = join(dirname(fileURLToPath(import.meta.url)), "..", "publish.sh");
 
 // Runs publish.sh with stub `gh` and `git` on PATH that log their argv, one line per call.
-function run(env, { openPr = "", staged = true } = {}) {
+function run(env, { openPr = "", staged = true, crossPr = "" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pub-"));
   const log = join(dir, "log");
   const out = join(dir, "out");
@@ -31,7 +31,7 @@ case " $* " in *" ls-remote "*) printf 'abc123\\trefs/heads/x\\n';; esac`,
   stub(
     "gh",
     `case "$1 $2" in
-  "pr list") echo "$STUB_PR";;
+  "pr list") case " $* " in *isCrossRepository*) echo "$STUB_PR";; *) echo "$STUB_ALLPR";; esac;;
   "pr create") echo https://github.com/o/r/pull/9;;
   "pr view") echo https://github.com/o/r/pull/5;;
   "repo view") echo trunk;;
@@ -42,6 +42,7 @@ esac`,
       PATH: `${dir}:${process.env.PATH}`,
       STUB_LOG: log,
       STUB_PR: openPr,
+      STUB_ALLPR: crossPr,
       STUB_STAGED: staged ? "1" : "0",
       GITHUB_OUTPUT: out,
       GH_TOKEN: "tok",
@@ -121,4 +122,15 @@ test("nothing staged after a reported change is treated as current", () => {
   assert.ok(has(r.calls, /^gh pr close 5 /), r.calls.join("\n"));
   assert.ok(!has(r.calls, / push /));
   assert.match(r.outputs, /^result=current$/m);
+});
+
+test("only a cross-repo (fork) PR on the branch: never edited or closed", () => {
+  // The stub honours the --jq filter by returning only same-repo numbers; the script must ask for it.
+  const upd = run({}, { crossPr: "7" });
+  assert.ok(has(upd.calls, /^gh pr list .*isCrossRepository/), upd.calls.join("\n"));
+  assert.ok(!has(upd.calls, /pr (edit|close) 7/));
+  assert.ok(has(upd.calls, /^gh pr create /));
+  const cur = run({ RESULT: "current", TITLE: "", BODY: "" }, { crossPr: "7" });
+  assert.ok(!has(cur.calls, /pr (edit|close)/));
+  assert.match(cur.outputs, /^result=current$/m);
 });

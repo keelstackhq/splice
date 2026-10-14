@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: keelstack/splice/action@v1
         with:
-          token: ${{ secrets.SPLICE_BOT_TOKEN }}   # optional, see below
+          token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}   # optional, see below
 ```
 
 Inputs: `version` (splice npm version, default `latest`), `to` (template version, default latest),

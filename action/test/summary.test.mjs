@@ -55,6 +55,7 @@ test("exit 3 throws with messages", () => {
 
 test("owned drift (exit 1, no changes) is an error, not a conflicts PR", () => {
   assert.throws(() => summarize(load("drift.json"), 1, "1.0.0"), /apps\/web\/tsconfig\.json: owned file was edited/);
+  assert.throws(() => summarize(load("drift.json"), 1, "1.0.0"), /owned files were edited locally, or conflict markers are left on disk/);
 });
 
 test("exit 2 throws", () => {

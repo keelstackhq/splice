@@ -14,7 +14,7 @@ git_auth() {
   git -c "http.${server}/.extraheader=" -c "http.${server}/.extraheader=AUTHORIZATION: basic ${auth}" "$@"
 }
 
-pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+pr=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository --jq '[.[]|select(.isCrossRepository|not)][0].number // empty')
 
 finish_current() {
   if [ -n "$pr" ]; then
