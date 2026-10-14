@@ -362,7 +362,8 @@ into the contract at its next `format` bump.
     is reserved case-insensitively. A segment equal to `.git` (any case) is rejected anywhere in a
     rendered path, including one produced by a var or a `target`. Two rendered paths that are equal
     ignoring case are a collision (exit 3, naming both paths and their pieces), because they would
-    clash on case-insensitive filesystems.
+    clash on case-insensitive filesystems. The same holds for directory prefixes (`Apps/x` and
+    `apps/y`), and for a file whose name equals a directory's name ignoring case.
 18. Piece ids and instance names follow item 17's segment rule.
 19. `new --force` (and later `add`/`update`) refuses to write through a symlink below the
     destination or over a directory: template/environment error "unsafe path" (exit 3), checked
@@ -442,3 +443,14 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
+23. `update` details the spec leaves open: (a) the dirty-tree check comes first, so a repo at the
+    target version still needs a clean tree (or `--allow-dirty`) before "up to date"; "a git work
+    tree" means `-C` is itself the top level (`git rev-parse --show-toplevel`), a directory inside a
+    parent's work tree is not one; (b) `--data K=V` may only name a var that is new in the target
+    (template var, or piece var of an instance lacking it); any other key is exit 2, since lock
+    values are kept; a new piece var is asked once per instance; (c) `--to` accepts `1.2.3` or
+    `v1.2.3`; (d) owned-drift refusal is a report with no changes, one message per file, and a last
+    message `nothing was written`; (e) lock and template warnings are report messages, before any
+    other message; (f) an unsafe path (symlink or directory in the way) found while reading the
+    disk is exit 3 with `unsafe path: …`, before any write; (g) a moved tag (same version, other
+    commit) proceeds with a message naming both commits.

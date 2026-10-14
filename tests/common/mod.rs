@@ -37,7 +37,7 @@ fn set_git_env(c: &mut Proc) {
         .env("GIT_TERMINAL_PROMPT", "0");
 }
 
-fn git(dir: &Path, args: &[&str]) {
+pub fn git(dir: &Path, args: &[&str]) {
     let mut c = Proc::new("git");
     set_git_env(&mut c);
     let out = c

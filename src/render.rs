@@ -113,6 +113,9 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree, Sp
     // lowercased path -> (path, piece id, instance name), for case-insensitive collisions
     let mut seen: std::collections::HashMap<String, (String, String, String)> =
         std::collections::HashMap::new();
+    // lowercased directory prefix -> (prefix as first spelled, piece id, instance name)
+    let mut dirs: std::collections::HashMap<String, (String, String, String)> =
+        std::collections::HashMap::new();
     for inst in &input.instances {
         let piece = t
             .pieces
@@ -191,7 +194,37 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree, Sp
                 piece_name: inst.name.clone(),
                 glob,
             };
+            // directory prefixes must not differ only in case either (`Apps/x` vs `apps/y`),
+            // and a file may not share a (case-folded) name with a directory
+            let mut prefix = String::new();
+            for seg in path.split('/').take(path.matches('/').count()) {
+                if !prefix.is_empty() {
+                    prefix.push('/');
+                }
+                prefix.push_str(seg);
+                let folded = prefix.to_lowercase();
+                let clash = match (dirs.get(&folded), seen.get(&folded)) {
+                    (Some((dir, id, name)), _) if *dir != prefix => Some((dir, id, name)),
+                    (_, Some((file, id, name))) => Some((file, id, name)),
+                    _ => None,
+                };
+                if let Some((other, id, name)) = clash {
+                    return Err(tpl_err(format!(
+                        "paths `{other}` and `{path}` collide: they differ only in case, or a file \
+                         shares a directory's name (pieces `{id}:{name}` and `{}:{}`)",
+                        inst.id, inst.name
+                    )));
+                }
+                dirs.entry(folded)
+                    .or_insert_with(|| (prefix.clone(), inst.id.clone(), inst.name.clone()));
+            }
             let folded = path.to_lowercase();
+            if let Some((dir, id, name)) = dirs.get(&folded) {
+                return Err(tpl_err(format!(
+                    "path `{path}` is also a directory (`{dir}`, pieces `{id}:{name}` and `{}:{}`)",
+                    inst.id, inst.name
+                )));
+            }
             if let Some((prev_path, prev_id, prev_name)) = seen.get(&folded) {
                 return Err(tpl_err(format!(
                     "paths `{prev_path}` and `{path}` are produced twice, or differ only in case \

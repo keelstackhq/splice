@@ -125,6 +125,20 @@ fn case_insensitive_path_collision_is_error() {
 }
 
 #[test]
+fn case_insensitive_directory_prefix_collision_is_error() {
+    let d = temp_template();
+    let files = d.path().join("pieces/base/files");
+    std::fs::create_dir_all(files.join("Docs")).unwrap();
+    std::fs::create_dir_all(files.join("docs")).unwrap();
+    std::fs::write(files.join("Docs/a.txt"), "a\n").unwrap();
+    std::fs::write(files.join("docs/b.txt"), "b\n").unwrap();
+    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(m.contains("Docs") && m.contains("docs"), "{m}");
+}
+
+#[test]
 fn binary_shared_is_error() {
     let d = temp_template();
     let p = d.path().join("pieces/base/piece.toml");

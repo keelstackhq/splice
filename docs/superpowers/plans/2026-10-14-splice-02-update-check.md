@@ -298,7 +298,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn ops::update::prepare(g: &GlobalArgs, to: Option<&Version>, data, force: bool) -> Result<Prepared>` — steps 1–6 of spec §8.3 except the dirty check; `struct Prepared { plan: Plan, lock_new: Lock, from: Version, to: Version, template: Template, instances: Vec<PieceInstance>, up_to_date: bool }` (reused by `diff` and `check`).
   - `fn ops::update::run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn dirty_tree_refused() { /* new at v1, commit, touch x → update exit 2; --allow-dirty → proceeds */ }
@@ -313,8 +313,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn removed_piece_is_template_error() { /* v2 variant without `lib` while repo has lib → exit 3, nothing written */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice update`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice update`
 
 ---
 

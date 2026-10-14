@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub mod add;
 pub mod explain;
 pub mod new;
+pub mod update;
 
 use crate::fetch::{Fetcher, ResolvedTemplate};
 use crate::lock::Lock;
