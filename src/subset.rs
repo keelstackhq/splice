@@ -33,9 +33,11 @@ pub fn validate_path_segment(seg: &str, origin: &str) -> Result<()> {
 fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
     let mut stack: Vec<(Frame, usize)> = Vec::new();
     let mut pos = 0;
+    let (mut line, mut counted) = (1usize, 0usize);
     while let Some(off) = text[pos..].find('{') {
         let start = pos + off;
-        let line = text[..start].matches('\n').count() + 1;
+        line += text[counted..start].matches('\n').count();
+        counted = start;
         let rest = &text[start..];
         let (close, kind) = match rest.as_bytes().get(1) {
             Some(b'{') => ("}}", 'o'),
@@ -56,7 +58,15 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         let inner = &rest[2..2 + end];
         pos = start + 2 + end + 2;
         match kind {
-            'c' if blocks => {}
+            'c' if blocks => {
+                if inner.starts_with(['-', '+']) || inner.ends_with(['-', '+']) {
+                    return Err(err(
+                        origin,
+                        line,
+                        "whitespace control in a comment is not allowed",
+                    ));
+                }
+            }
             'c' | 'b' if !blocks => {
                 return Err(err(
                     origin,
@@ -91,8 +101,8 @@ fn ws(s: &str) -> &str {
 
 fn is_ident(s: &str) -> bool {
     let mut c = s.chars();
-    matches!(c.next(), Some(ch) if ch.is_ascii_alphabetic() || ch == '_')
-        && c.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    matches!(c.next(), Some(ch) if ch.is_ascii_lowercase() || ch == '_')
+        && c.all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_')
 }
 
 /// `path := ident ("." ident)*`
@@ -121,8 +131,8 @@ fn output(inner: &str) -> std::result::Result<(), String> {
         None => (inner, None),
     };
     path(p)?;
-    if p == "pieces" {
-        return Err("`pieces` cannot be printed directly".into());
+    if ["pieces", "piece", "template"].contains(&p) {
+        return Err(format!("`{p}` cannot be printed directly"));
     }
     match filter {
         None | Some("lower") | Some("upper") => Ok(()),
@@ -268,10 +278,37 @@ mod tests {
             "{{ a -}}",
             "{{ name",
             "{# open",
+            "{#- c #}",
+            "{# c -#}",
+            "{#+ c #}",
+            "{# c +#}",
+            "{#-c-#}",
+            "{{ piece }}",
+            "{{ template }}",
+            "{{ pieces }}",
+            "{% if \"a%}b\" in pieces %}{% endif %}",
+            "{% if 'x' in pieces %}{% endif %}",
+            "{{ a | lower | upper }}",
+            "{{{ x }}}",
+            "{% if \"a\" inpieces %}{% endif %}",
+            "{% for loop in pieces %}{% endfor %}",
+            "{% if a %}{% endif %}{% endif %}",
         ] {
             let e = validate(t, "f.jinja").unwrap_err();
             assert_eq!(e.exit_code(), 3, "{t}");
             assert!(e.to_string().contains("f.jinja:1"), "{t}: {e}");
+        }
+    }
+
+    #[test]
+    fn adversarial_accepts() {
+        for t in [
+            "{# {{ x ~ y }} {% set %} #}",
+            "{% for p in pieces %}{% for q in pieces %}{{ p }}{{ q }}{% endfor %}{% endfor %}",
+            "{{\n name\t|\r\nupper }}",
+            "{ not a tag } {x}",
+        ] {
+            assert!(validate(t, "t").is_ok(), "{t}");
         }
     }
 

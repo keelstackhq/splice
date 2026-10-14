@@ -28,7 +28,7 @@ fn corpus_renders_exactly() {
         assert_eq!(got.as_bytes(), want.as_slice(), "case {name}");
         n += 1;
     }
-    assert_eq!(n, 11);
+    assert_eq!(n, 14);
 }
 
 #[test]
