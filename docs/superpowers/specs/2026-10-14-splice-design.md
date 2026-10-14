@@ -441,8 +441,10 @@ into the contract at its next `format` bump.
 28. Local template sources. A relative local path in the lock resolves against the repo root (the
     `-C` dir), not the process cwd, so every command works from inside the generated repo. `new`
     therefore stores a relative local source rewritten relative to `dest` (`./tpl` from `$T` with
-    dest `demo` is `../tpl`; `//subdir` is kept; a leading `./` is kept only when the result does
-    not start with `..`). "As given" in §4 means exactly that: absolute paths, URLs, `gh:` and scp
+    dest `demo` is `../tpl`; `//subdir` is kept; a result that does not start with `..` gets a
+    leading `./`, so it can never start with `-`). Both paths are canonicalised first (symlinks
+    followed before `..`, as the filesystem does). When no relative path exists (Windows: another
+    drive) the absolute canonical path is stored, without a `\\?\` prefix. "As given" in §4 means exactly that: absolute paths, URLs, `gh:` and scp
     specs are stored unchanged. A missing or non-repo local source is exit 3 `template source <spec>
     not found (resolved to <abs path>)`; the lock-relative path is checked before any git call.
 

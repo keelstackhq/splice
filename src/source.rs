@@ -83,12 +83,11 @@ impl TemplateSource {
         let (Some(src), Some(dst)) = (lenient_canonical(path), lenient_canonical(dest)) else {
             return self.spec.clone();
         };
-        let Some(rel) = relative_to(&src, &dst) else {
-            return self.spec.clone();
-        };
-        let mut out = rel;
-        if self.spec.starts_with("./") && !out.starts_with("..") && out != "." {
-            out = format!("./{out}");
+        // no relative path (e.g. another drive): store the absolute canonical path
+        let mut out = relative_to(&src, &dst).unwrap_or_else(|| src.to_string_lossy().into_owned());
+        let is_rel = out == "." || out == ".." || out.starts_with("../");
+        if Path::new(&out).is_relative() && !is_rel {
+            out = format!("./{out}"); // never starts with `-`
         }
         if let Some(sub) = &self.subdir {
             out = format!("{out}//{sub}");
@@ -166,26 +165,36 @@ impl TemplateSource {
 /// Absolute, `.`/`..` collapsed, symlinks resolved for the longest existing ancestor.
 fn lenient_canonical(p: &Path) -> Option<PathBuf> {
     let abs = std::path::absolute(p).ok()?;
-    let mut norm = PathBuf::new();
+    let mut cur = PathBuf::new();
+    let mut exists = true;
     for c in abs.components() {
         match c {
-            Component::ParentDir => {
-                norm.pop();
-            }
+            Component::Prefix(_) | Component::RootDir => cur.push(c),
             Component::CurDir => {}
-            c => norm.push(c),
+            // `cur` is canonical while `exists`, so popping is what the filesystem does
+            Component::ParentDir => {
+                cur.pop();
+            }
+            Component::Normal(n) => {
+                cur.push(n);
+                if exists {
+                    match cur.canonicalize() {
+                        Ok(real) => cur = real,
+                        Err(_) => exists = false,
+                    }
+                }
+            }
         }
     }
-    let mut rest = Vec::new();
-    let mut head = norm.as_path();
-    loop {
-        if let Ok(c) = head.canonicalize() {
-            let mut out = c;
-            out.extend(rest.iter().rev());
-            return Some(out);
-        }
-        rest.push(head.file_name()?.to_owned());
-        head = head.parent()?;
+    Some(strip_verbatim(cur))
+}
+
+/// Drop a Windows `\\?\` prefix (not `\\?\UNC\`) so paths compare and print normally.
+fn strip_verbatim(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => p,
     }
 }
 
@@ -312,5 +321,42 @@ mod tests {
         ] {
             assert!(TemplateSource::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn rewritten_relative_source_never_starts_with_dash() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("-dash")).unwrap();
+        let s = TemplateSource::parse_from("sub/../-dash", d.path()).unwrap();
+        assert_eq!(s.spec_for_dest(d.path()), "./-dash");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lenient_canonical_follows_symlinks_before_dotdot() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("real/deep")).unwrap();
+        std::fs::create_dir_all(root.join("real/tpl")).unwrap();
+        std::os::unix::fs::symlink(root.join("real/deep"), root.join("link")).unwrap();
+        // link/../tpl is real/tpl on the filesystem, not <root>/tpl
+        assert_eq!(
+            lenient_canonical(&root.join("link/../tpl")).unwrap(),
+            root.join("real/tpl")
+        );
+        // a missing tail is applied lexically
+        assert_eq!(
+            lenient_canonical(&root.join("link/../nope/x")).unwrap(),
+            root.join("real/nope/x")
+        );
+    }
+
+    #[test]
+    fn strips_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim(PathBuf::from(r"\\?\C:\x\y")),
+            PathBuf::from(r"C:\x\y")
+        );
+        assert_eq!(strip_verbatim(PathBuf::from("/a/b")), PathBuf::from("/a/b"));
     }
 }
