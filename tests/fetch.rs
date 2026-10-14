@@ -102,3 +102,20 @@ fn checkout_rejects_non_commit_ids() {
         assert_eq!(e.exit_code(), 3, "{bad}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn symlinked_subdir_escaping_the_tree_is_rejected() {
+    let repo = template_repo(&["v1"]);
+    let outside = tempdir().unwrap();
+    std::fs::write(outside.path().join("splice.toml"), "format = 1\n").unwrap();
+    std::os::unix::fs::symlink(outside.path(), repo.path().join("link")).unwrap();
+    common::git_commit_all(repo.path(), "add link");
+    let cache = tempdir().unwrap();
+    let f = Fetcher::new(cache.path().into());
+    let spec = format!("{}//link", repo.path().to_str().unwrap());
+    let src = TemplateSource::parse(&spec).unwrap();
+    let e = f.resolve(&src, Some("main"), false).unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+    assert!(e.to_string().contains("symlink"), "{e}");
+}

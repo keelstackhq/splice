@@ -313,6 +313,10 @@ into the contract at its next `format` bump.
 13. `{% else %}` is valid only inside `if`; `elif` after `else` is rejected. A comment may not
     start or end with `-` or `+` (whitespace control).
 14. `ws` inside tags is optional space, tab, CR or LF, also around `|`.
+15. A symlink anywhere under a piece's `files/` (or `files/` itself) is a template error (exit 3),
+    and a `//subdir` that resolves through a symlink outside the extracted tree is rejected at
+    fetch; rendering never reads outside the template root. Non-`.jinja` files that are empty
+    are still written (only rendered files are dropped when blank).
 
 ## 11. Testing
 

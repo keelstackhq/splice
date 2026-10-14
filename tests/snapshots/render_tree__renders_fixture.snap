@@ -1,0 +1,21 @@
+---
+source: tests/render_tree.rs
+expression: tree_listing(&tree)
+---
+.editorconfig | Owned | Text | base:base | Some(".editorconfig") | 33 bytes
+.github/workflows/ci.yml | Shared | Yaml | base:base | Some(".github/workflows/ci.yml") | 96 bytes
+README.md | Seed | Text | base:base | Some("README.md") | 33 bytes
+apps.txt | Owned | Text | base:base | None | 9 bytes
+apps/admin/package.json | Shared | Json | app:admin | Some("package.json") | 47 bytes
+apps/admin/src/main.ts | Seed | Text | app:admin | Some("src/**") | 55 bytes
+apps/admin/tsconfig.json | Owned | Text | app:admin | Some("tsconfig.json") | 44 bytes
+apps/web/package.json | Shared | Json | app:web | Some("package.json") | 45 bytes
+apps/web/src/main.ts | Seed | Text | app:web | Some("src/**") | 51 bytes
+apps/web/tsconfig.json | Owned | Text | app:web | Some("tsconfig.json") | 44 bytes
+config/settings.toml | Shared | Toml | base:base | Some("config/settings.toml") | 59 bytes
+demo.code-workspace | Owned | Text | base:base | None | 53 bytes
+logo.png | Owned | Text | base:base | Some("logo.png") | 14 bytes
+notes.txt | Shared | Text | base:base | Some("notes.txt") | 35 bytes
+only-with-app.txt | Owned | Text | base:base | None | 16 bytes
+package.json | Shared | Json | base:base | Some("package.json") | 92 bytes
+tool.config.mts | Owned | Text | base:base | Some("tool.config.mts") | 33 bytes

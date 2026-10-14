@@ -26,8 +26,10 @@ toml = "1.1"
 regex = "1"
 globset = "0.4"
 indexmap = { version = "2", features = ["serde"] }
+walkdir = "2.5"
 minijinja = "~2.24"
 
 [dev-dependencies]
 assert_cmd = "2.2"
 predicates = "3.1"
+insta = { version = "1.49", features = ["json", "yaml"] }

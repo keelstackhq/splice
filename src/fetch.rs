@@ -158,6 +158,7 @@ impl Fetcher {
             let mirror = self.sync(src)?;
             Git::extract_tree(&mirror, commit, &tree)?;
         }
+        let cache_tree = tree.clone();
         let root = match &src.subdir {
             Some(s) => tree.join(s),
             None => tree,
@@ -165,6 +166,18 @@ impl Fetcher {
         if !Path::new(&root).is_dir() {
             return Err(SpliceError::Template(format!(
                 "template path `{}` not found in `{}` at commit {commit}",
+                src.subdir.as_deref().unwrap_or("."),
+                src.spec
+            )));
+        }
+        // A committed symlink (the subdir or one of its parents) must not lead out of the tree.
+        let escapes = match (root.canonicalize(), cache_tree.canonicalize()) {
+            (Ok(r), Ok(t)) => !r.starts_with(&t),
+            _ => true,
+        };
+        if escapes {
+            return Err(SpliceError::Template(format!(
+                "template path `{}` in `{}` resolves through a symlink outside the template tree",
                 src.subdir.as_deref().unwrap_or("."),
                 src.spec
             )));

@@ -153,3 +153,9 @@ pub fn tree_snapshot(dir: &Path) -> String {
     }
     s
 }
+
+/// Stage and commit everything in `dir`.
+pub fn git_commit_all(dir: &Path, msg: &str) {
+    git(dir, &["add", "-A"]);
+    git(dir, &["commit", "-q", "-m", msg]);
+}

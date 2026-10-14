@@ -318,7 +318,7 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
   - `fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree>`
   - `fn sha256_hex(bytes: &[u8]) -> String`; `fn write_file(root: &Path, rel: &str, bytes: &[u8]) -> io::Result<()>`; `fn read_opt(root, rel) -> io::Result<Option<Vec<u8>>>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn first_match_owned_shared_seed_default_owned() {
@@ -350,10 +350,10 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
 #[test] fn binary_shared_is_error() { /* temp template with shared logo.png → exit 3 */ }
 ```
 
-- [ ] **Step 2: Run — expect FAIL**
-- [ ] **Step 3: Implement.** Walk `files/` sorted; build the context per instance (`pieces` = unique ids of `input.instances` in order). Non-`.jinja` files are never decoded.
-- [ ] **Step 4: Run — expect PASS**
-- [ ] **Step 5: Commit** — `feat: render template trees with ownership classes`
+- [x] **Step 2: Run — expect FAIL**
+- [x] **Step 3: Implement.** Walk `files/` sorted; build the context per instance (`pieces` = unique ids of `input.instances` in order). Non-`.jinja` files are never decoded.
+- [x] **Step 4: Run — expect PASS**
+- [x] **Step 5: Commit** — `feat: render template trees with ownership classes`
 
 ---
 
