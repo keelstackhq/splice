@@ -17,6 +17,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · Milestone 1 reviewed · d8591f0 · 8 findings fixed (.git segments, partial --json reports, shared ops prologue); nextest 128/128 passed
 2026-10-14 · 02/1 · e6c843e, 4d90fa4 · fmt+clippy clean, nextest 138/138 passed
 2026-10-14 · 02/2 · c9711ce · fmt+clippy clean, nextest 153/153 passed (plan test crlf_ours_is_kept corrected: adjacent edits conflict in diff3)
+2026-10-14 · 02/3 · 95402f3, df9dd67, 694cff3 · fmt+clippy clean, nextest 185/185 passed
 
 ## Notes for later tasks
 
