@@ -21,6 +21,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 02/4 · e3c3017, 4a6ef01 · fmt+clippy clean, nextest 201/201 passed
 2026-10-14 · 02/5 · 4e71c56, da26f5f · fmt+clippy clean (also clippy --target x86_64-pc-windows-gnu), nextest 208/208 passed
 2026-10-14 · 02/6 · 79c22bb, 3da40fa · fmt+clippy clean (linux + windows-gnu), nextest 228/228 passed
+2026-10-14 · 02/7 · 7fe7d4f, ca1ed33 · fmt+clippy clean (linux + windows-gnu), nextest 234/234 passed (all 12 fixture rows verified)
 
 ## Notes for later tasks
 
@@ -31,9 +32,6 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 - plan 02 Tasks 8–9 (`check`, `diff`): `update::prepare` may prompt and always fetches; give it
   a non-interactive mode for diff/check and an offline path for `check --offline`.
-
-- plan 02 Task 7: the restore message must name the directory to run it in (`cd <dir> && git
-  checkout -- . && git clean -fd`); test it from a project in a monorepo subdir.
 
 ## Blocked
 
