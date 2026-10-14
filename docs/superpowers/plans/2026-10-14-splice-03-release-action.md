@@ -69,7 +69,7 @@ permissions: { contents: read }
 jobs:
   test:      # checkout → toolchain (rustfmt, clippy) → rust-cache → nextest →
              # cargo fmt --check → cargo clippy --all-targets --locked -- -D warnings →
-             # cargo nextest run --locked → node --test npm/splice/test action/test →
+             # cargo nextest run --locked → node --test 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs' →
              # cargo tree -i openssl (must fail: not found) → actionlint
   ci-ok:
     needs: [test]
@@ -105,7 +105,7 @@ jobs:
 ```
 
 - [ ] **Step 1: Write failing test** — `checkVersion({tag:"v0.2.0", cargoToml:'version = "0.1.0"'})` throws `tag v0.2.0 does not match Cargo.toml 0.1.0`; matching inputs return `"0.2.0"`.
-- [ ] **Step 2: Run `node --test scripts/` — FAIL**
+- [ ] **Step 2: Run `node --test 'scripts/**/*.test.mjs'` — FAIL**
 - [ ] **Step 3: Implement the script and the workflow.** Trigger `push: tags: ['v*']` + `workflow_dispatch` (dry run, no publish). Jobs: `check` (version script) → `build` matrix: `ubuntu-24.04` (x86_64 musl, `apt-get install musl-tools`), `ubuntu-24.04-arm` (aarch64 musl, musl-tools), `macos-15` (both darwin targets, `rustup target add x86_64-apple-darwin`), `windows-2025` (msvc). Each native build runs `splice --version` and a `splice new` smoke test against `tests/fixtures/template/v1` (made into a git repo by a 5-line shell step). Linux: verify `file splice` says `statically linked`. → `release` job: download artifacts, write `SHA256SUMS`, `gh release create $TAG --generate-notes` with all files → `npm` job (Task 3).
 - [ ] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists**
 - [ ] **Step 5: Commit** — `ci: release workflow for five targets with checksums`
@@ -142,7 +142,7 @@ test("exit code passes through", () => {
 test("stage writes no install scripts", () => { /* every staged package.json has no scripts.preinstall/install/postinstall */ });
 ```
 
-- [ ] **Step 2: Run `node --test npm/splice/test scripts/` — FAIL**
+- [ ] **Step 2: Run `node --test 'npm/splice/test/**/*.test.mjs' 'scripts/**/*.test.mjs'` — FAIL**
 - [ ] **Step 3: Implement.** Release `npm` job (needs `release`): `actions/setup-node@v5` with `registry-url: https://registry.npmjs.org`, run `npm-stage.mjs`, then `npm publish --access public --provenance` for each platform package, then the launcher (`permissions: id-token: write` for provenance; `NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`). Re-running for an already published version skips with a notice (check `npm view <pkg>@<v> version` first).
 - [ ] **Step 4: Run tests — PASS.** Then locally: `node scripts/npm-stage.mjs 0.0.0-local target/stage-artifacts target/npm` with a host binary, `pnpm add -g ./target/npm/splice-<host> ./target/npm/splice` in a scratch prefix (or `npm pack` + `pnpm dlx file:…`), and run `splice --version` through the launcher — paste output.
 - [ ] **Step 5: Commit** — `feat: npm launcher with per-platform packages`

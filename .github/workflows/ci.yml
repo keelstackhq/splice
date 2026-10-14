@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: rustfmt, clippy
@@ -32,21 +32,20 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo nextest run --locked
-      # Node tests: run only the test dirs that exist (npm/ and action/ arrive in later tasks).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        if: runner.os == 'Linux'
+        with:
+          node-version: 22
+      # Quoted globs: node expands them itself and passes when nothing matches yet.
       - name: node tests
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dirs=()
-          for d in npm/splice/test action/test scripts; do
-            [ -d "$d" ] && dirs+=("$d")
-          done
-          if [ "${#dirs[@]}" -gt 0 ]; then node --test "${dirs[@]}"; else echo "no node test dirs yet"; fi
+        run: node --test 'scripts/**/*.test.mjs' 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'
       - name: no OpenSSL or rustls in the dependency tree
         if: runner.os == 'Linux'
         run: |
-          if cargo tree --locked --target all -i openssl; then echo "openssl is in the tree"; exit 1; fi
-          if cargo tree --locked --target all -i rustls; then echo "rustls is in the tree"; exit 1; fi
+          for c in openssl openssl-sys native-tls rustls; do
+            if cargo tree --locked --target all -i "$c"; then echo "$c is in the tree"; exit 1; fi
+          done
       - name: actionlint
         if: runner.os == 'Linux'
         run: actionlint
