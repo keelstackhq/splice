@@ -239,7 +239,8 @@ Milestone 1 details (the reduced planner, `ops::add::plan_reduced`), each path i
    semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), write the lock atomically
    (§8.6), then run `[[post]]` with `when` ∋ `update`. A failing step exits 3 **before** the lock
    is written; a failing post command exits 3 **after** it (the files and lock agree).
-8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
+8. Conflicts: files carry diff3 markers, the lock still records the target, `[[post]]` is skipped (a message lists the commands),
+   exit 1.
 
 ### 8.4 Planner rules
 

@@ -12,7 +12,8 @@ pub enum SpliceError {
     Conflict(Report),
     #[error("drift detected")]
     Drift(Report),
-    /// A failure after files and the lock were written: the report still lists what changed.
+    /// A failure after some files were written (before or after the lock): the report still lists
+    /// what changed.
     #[error("{message}")]
     Partial {
         message: String,

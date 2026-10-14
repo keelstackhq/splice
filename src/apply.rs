@@ -113,7 +113,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report> {
     Ok(report)
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::lock::{LockFile, LockTemplate};
@@ -163,6 +163,7 @@ mod tests {
         d
     }
 
+    #[cfg(unix)]
     fn pc(run: &str) -> PostCmd {
         PostCmd {
             run: run.into(),
@@ -170,6 +171,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn step(run: &str) -> Step {
         Step {
             run: run.into(),
@@ -224,6 +226,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn order_is_files_removals_steps_lock_post() {
         let d = repo();
         let p = basic_plan();
@@ -238,6 +241,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn failing_step_leaves_old_lock() {
         let d = repo();
         let p = basic_plan();
@@ -255,6 +259,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn failing_post_keeps_new_lock() {
         let d = repo();
         let p = basic_plan();
@@ -268,6 +273,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn conflicts_still_write_lock_and_exit_1() {
         let d = repo();
         let p = plan(
@@ -328,5 +334,23 @@ mod tests {
             panic!("expected Partial")
         };
         assert_eq!(report.changes.len(), 2);
+    }
+
+    #[test]
+    fn deleting_a_directory_is_refused_before_any_write() {
+        let d = repo();
+        std::fs::create_dir(d.path().join("dir")).unwrap();
+        let p = plan(
+            vec![
+                write(Action::Create, "new.txt", Some("n")),
+                write(Action::Delete, "dir", None),
+            ],
+            &[],
+        );
+        let e = apply(ctx(&d, &p, vec![], vec![])).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        assert!(e.to_string().contains("unsafe path"));
+        assert!(!d.path().join("new.txt").exists());
+        assert_eq!(lock_version(&d), v("1.0.0"));
     }
 }

@@ -10,16 +10,20 @@ use std::process::{Command, Stdio};
 /// What to run to undo a partial update (spec §8.3 step 1).
 pub const RESTORE: &str = "git checkout -- . && git clean -fd";
 
+#[cfg(windows)]
 fn shell(run: &str) -> Command {
-    if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args(["/C", run]);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.args(["-c", run]);
-        c
-    }
+    use std::os::windows::process::CommandExt;
+    let mut c = Command::new("cmd");
+    // raw_arg: no re-quoting, so quotes inside the command reach cmd.exe as written.
+    c.arg("/C").raw_arg(run);
+    c
+}
+
+#[cfg(not(windows))]
+fn shell(run: &str) -> Command {
+    let mut c = Command::new("sh");
+    c.args(["-c", run]);
+    c
 }
 
 /// The `run` strings that would execute for `when`, in order, without repeats.
@@ -50,7 +54,7 @@ pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, _json: bool) -> Resul
             })?;
         if !out.success() {
             return Err(SpliceError::Env(format!(
-                "post command `{}` failed ({out}); the files and the lock were already written",
+                "post command `{}` failed ({out}); the files and the lock were already updated; fix the command and rerun it by hand",
                 run
             )));
         }
