@@ -265,8 +265,11 @@ between them (it runs after both).
 
 - **text:** `diffy::MergeOptions` with `ConflictStyle::Diff3`; diffy labels the markers
   `||||||| original` and `>>>>>>> theirs`, so splice relabels them, only on marker lines inside
-  conflict hunks, to the contract's `||||||| base` and `>>>>>>> template`. CRLF in ours is
-  normalised to LF for the merge and restored after.
+  conflict hunks, to the contract's `||||||| base` and `>>>>>>> template` (a marker length no
+  input line uses tells diffy's delimiters from literal text). If ours contains any CRLF, all
+  sides are normalised to LF for the merge and the result is all CRLF (an ours with mixed endings
+  comes out all CRLF). With a missing final newline, markers start on their own line (diffy
+  `IncompleteHunkStyle::Git`), so a conflicted file always ends with a newline, as in git.
 - **json:** `serde_json` with `preserve_order`. **yaml:** `yaml_serde` (maintained fork of the
   archived `serde_yaml`, by the YAML organisation); multi-document files fall back to text.
   **toml:** `toml_edit::DocumentMut`, edited in place so comments and layout survive.

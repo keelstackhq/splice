@@ -126,7 +126,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
     assert_eq!(m.conflicts.len(), 1);
 }
 #[test] fn crlf_ours_is_kept() {
-    assert_eq!(merge_text("a\nb\n", "a\r\nB\r\n", "A\nb\n").text, "A\r\nB\r\n");
+    // adjacent-line edits conflict in diff3 (as in git), so the edits are two lines apart
+    assert_eq!(merge_text("a\nb\nc\n", "a\r\nb\r\nC\r\n", "A\nb\nc\n").text, "A\r\nb\r\nC\r\n");
 }
 #[test] fn literal_marker_text_outside_hunks_untouched() {
     let base = "||||||| original\nk\n"; let m = merge_text(base, base, "||||||| original\nK\n");
@@ -139,7 +140,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 ```
 
 - [x] **Step 2: Run — FAIL**
-- [x] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; walk the output tracking hunk state to relabel. Missing final newline on any side: use diffy's default incomplete-hunk handling and add a test if it surprises you.
+- [x] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; relabel only diffy's own delimiter lines (diffy 0.5 has no custom labels: pick a marker length no input line uses, then rewrite those delimiters to the contract labels). Missing final newline on any side: `IncompleteHunkStyle::Git` (diffy's default glues markers onto the last line, which `find_markers` would miss).
 - [x] **Step 4: Run — PASS**
 - [x] **Step 5: Commit** — `feat: text 3-way merge with contract diff3 markers`
 
