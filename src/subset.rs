@@ -34,11 +34,16 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
     let mut stack: Vec<(Frame, usize)> = Vec::new();
     let mut pos = 0;
     let (mut line, mut counted) = (1usize, 0usize);
+    let mut plain = 0usize;
     while let Some(off) = text[pos..].find('{') {
         let start = pos + off;
         line += text[counted..start].matches('\n').count();
         counted = start;
         let rest = &text[start..];
+        let tag_open = matches!(rest.as_bytes().get(1), Some(b'{' | b'%' | b'#'));
+        if tag_open {
+            stray_comment_end(text, plain, start, origin)?;
+        }
         let (close, kind) = match rest.as_bytes().get(1) {
             Some(b'{') => ("}}", 'o'),
             Some(b'%') => ("%}", 'b'),
@@ -57,38 +62,38 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         };
         let inner = &rest[2..2 + end];
         pos = start + 2 + end + 2;
+        plain = pos;
         if kind == 'b'
             && blocks
             && let Some((name, strict, _)) = lax_tag(&rest[2..])
         {
-            {
-                if name == "endraw" {
-                    return Err(err(
-                        origin,
-                        line,
-                        "`{% endraw %}` without a matching `{% raw %}`",
-                    ));
+            if name == "endraw" {
+                return Err(err(
+                    origin,
+                    line,
+                    "`{% endraw %}` without a matching `{% raw %}`",
+                ));
+            }
+            if !strict {
+                return Err(err(
+                    origin,
+                    line,
+                    "`raw` allows no whitespace control (`-`, `+`) and only space, tab, CR or LF inside the tag",
+                ));
+            }
+            match raw_end(text, pos) {
+                Ok(after) => {
+                    pos = after;
+                    plain = pos;
+                    continue;
                 }
-                if !strict {
-                    return Err(err(
-                        origin,
-                        line,
-                        "`raw` allows no whitespace control (`-`, `+`) and only space, tab, CR or LF inside the tag",
-                    ));
-                }
-                match raw_end(text, pos) {
-                    Ok(after) => {
-                        pos = after;
-                        continue;
-                    }
-                    Err((at, m)) => {
-                        let l = if let Some(at) = at {
-                            1 + text[..at].matches('\n').count()
-                        } else {
-                            line
-                        };
-                        return Err(err(origin, l, m));
-                    }
+                Err((at, m)) => {
+                    let l = if let Some(at) = at {
+                        1 + text[..at].matches('\n').count()
+                    } else {
+                        line
+                    };
+                    return Err(err(origin, l, m));
                 }
             }
         }
@@ -119,6 +124,7 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
                 .map_err(|m| err(origin, line, format!("`{{%{inner}%}}`: {m}")))?,
         }
     }
+    stray_comment_end(text, plain, text.len(), origin)?;
     if let Some((f, line)) = stack.last() {
         let name = if *f == Frame::For { "for" } else { "if" };
         return Err(err(
@@ -126,6 +132,15 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
             *line,
             format!("`{{% {name} %}}` is never closed"),
         ));
+    }
+    Ok(())
+}
+
+/// A `#}` in plain text is an error in Nunjucks ("unexpected end of comment").
+fn stray_comment_end(text: &str, from: usize, to: usize, origin: &str) -> Result<()> {
+    if let Some(off) = text[from..to].find("#}") {
+        let line = 1 + text[..from + off].matches('\n').count();
+        return Err(err(origin, line, "`#}` outside a comment"));
     }
     Ok(())
 }
@@ -343,6 +358,8 @@ mod tests {
             "{% if a %}x{% elif \"app\" in pieces %}y{% else %}z{% endif %}",
             "{% for p in pieces %}{{ p }}{% endfor %}",
             "{# any } thing #}",
+            "{% raw %}a #} b{% endraw %}",
+            "{{ a }}{% raw %}#}{% endraw %}",
             "{% raw %}{% endraw %}",
             "{%raw%}{{ x }}{%endraw%}",
             "{%\n\traw\r\n%}x{% \tendraw\n%}",
@@ -397,6 +414,11 @@ mod tests {
             "{% if \"a\" inpieces %}{% endif %}",
             "{% for loop in pieces %}{% endfor %}",
             "{% if a %}{% endif %}{% endif %}",
+            "a #} b",
+            "{{ a }} #}",
+            "#}{{ a }}",
+            "{# c #} #}",
+            "{% raw %}x{% endraw %} #}",
             "{% raw %}x",
             "{% raw %}{% endraw",
             "{% endraw %}",

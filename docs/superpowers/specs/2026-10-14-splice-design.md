@@ -137,7 +137,7 @@ string   := '"' [a-z0-9-]+ '"'
 ```
 
 No whitespace-control dashes (`{%-`), no `set`, `macro`, `include`, operators or literals
-other than the piece-id string. `raw` outputs its body verbatim (§10 item 29). Path names
+other than the piece-id string. `raw` outputs its body verbatim (§10 item 29); a stray `#}` is rejected (item 30). Path names
 (`{{ var }}` in a path segment) allow only `output`.
 
 **Engine.** `minijinja::Environment::empty()` with exactly two filters (`lower`, `upper`),
@@ -450,6 +450,24 @@ into the contract at its next `format` bump.
     specs are stored unchanged. A missing or non-repo local source is exit 3 `template source <spec>
     not found (resolved to <abs path>)`; the lock-relative path is checked before any git call.
 
+29. `{% raw %}` … `{% endraw %}` (pending contract, like 10-28). The body is output verbatim (after §6 CRLF normalisation) and may
+    be anything except the text of an `endraw` tag; `{{`, `{%` and `{#` inside are neither parsed
+    nor validated, and the body's lines still count for error line numbers. No whitespace
+    control (`-`, `+`) on either tag; `ws` inside the braces follows item 14. An unterminated raw
+    is exit 3 naming the line where it opened; a stray `endraw` is exit 3. `raw` is a block
+    statement allowed anywhere text is (also inside `if`/`for` bodies) and does not affect their
+    balancing; it is not allowed in a path segment. Because MiniJinja ends a raw at the first
+    `endraw` while Nunjucks nests raw blocks, and Nunjucks and MiniJinja read dashes and exotic
+    whitespace (vertical tab, NBSP) in the `endraw` tag differently, the gate also rejects, inside a
+    raw body, an inner `raw` tag (any spelling) and any `endraw` spelling other than the strict
+    one; this deviates from "an inner `{% raw %}` is just text" so both renderers stay identical.
+    Versioning: a template using raw needs a splice with raw support, so it sets `min_splice` to
+    that version (0.1.0, the first release, already has it); there is no `format` bump.
+30. A `#}` in plain text (outside a comment and outside a raw body) is exit 3 naming file:line
+    (pending contract): Nunjucks' lexer throws "unexpected end of comment" on it while MiniJinja
+    prints it, so the gate rejects it. Inside a raw body it stays allowed. It also applies to path
+    segments.
+
 ## 11. Testing
 
 - Unit tests next to each module; `cargo nextest run`.
@@ -522,16 +540,3 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
-29. `{% raw %}` … `{% endraw %}` (pending contract, like 10-28). The body is output verbatim and may
-    be anything except the text of an `endraw` tag; `{{`, `{%` and `{#` inside are neither parsed
-    nor validated, and the body's lines still count for error line numbers. No whitespace
-    control (`-`, `+`) on either tag; `ws` inside the braces follows item 14. An unterminated raw
-    is exit 3 naming the line where it opened; a stray `endraw` is exit 3. `raw` is a block
-    statement allowed anywhere text is (also inside `if`/`for` bodies) and does not affect their
-    balancing; it is not allowed in a path segment. Because MiniJinja ends a raw at the first
-    `endraw` while Nunjucks nests raw blocks, and Nunjucks and MiniJinja read dashes and exotic
-    whitespace (form feed, NBSP) in the `endraw` tag differently, the gate also rejects, inside a
-    raw body, an inner `raw` tag (any spelling) and any `endraw` spelling other than the strict
-    one; this deviates from "an inner `{% raw %}` is just text" so both renderers stay identical.
-    Versioning: a template using raw needs a splice with raw support, so it sets `min_splice` to
-    that version (0.1.0, the first release, already has it); there is no `format` bump.
