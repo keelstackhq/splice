@@ -23,6 +23,9 @@ Windows) and check it against `SHA256SUMS`. Targets: `x86_64-unknown-linux-musl`
 
 ## Quick start
 
+New to splice? Follow [`docs/getting-started.md`](docs/getting-started.md), a step-by-step guide
+for a new repository.
+
 ```bash
 splice new gh:keelstackhq/hull//template my-app
 cd my-app

@@ -4,8 +4,8 @@
 use std::collections::BTreeSet;
 use std::process::Command;
 
-/// Flags of other tools that the docs show (git, gh, npm, pnpm). Keep this short.
-const OTHER_TOOLS: &[&str] = &[];
+/// Flags of other tools that the docs show (git, gh, npm, pnpm, cargo). Keep this short.
+const OTHER_TOOLS: &[&str] = &["--release"];
 
 fn help(args: &[&str]) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_splice"))
@@ -76,7 +76,11 @@ fn docs_mention_only_real_flags() {
     }
     let known = flags_in(&all_help);
     assert!(known.contains("--offline") && known.contains("--allow-dirty"));
-    for file in ["README.md", "skills/splice/SKILL.md"] {
+    for file in [
+        "README.md",
+        "skills/splice/SKILL.md",
+        "docs/getting-started.md",
+    ] {
         let text = std::fs::read_to_string(format!("{root}/{file}"))
             .unwrap_or_else(|e| panic!("{file}: {e}"));
         check_prefixed(file, &text);
