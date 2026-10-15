@@ -31,6 +31,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 03/4 · 2020d0e, 5017a25 · actionlint+shellcheck clean, node 47/47 (7 stub-gh/git publish tests), nextest 263/263; fixtures are real splice output (GitHub selftest: see Blocked)
 2026-10-14 · 03/5 · b33b163, 6f439b5 · fmt+clippy clean (linux + windows-gnu), nextest 264/264 (incl. docs flag drift test), node 47/47
 2026-10-14 · Milestone 3 reviewed · ad123cd, 5abc9be, 562408b · release tag filter, same-repo bot PRs, token fallback; relative local sources resolved from the repo root (found in a manual end-to-end run); nextest 273/273, node 48/48, actionlint+shellcheck clean
+2026-10-15 · follow-up · ad0e0f3, 93d02da, 8f518de · org/scope → keelstackhq; docs/getting-started.md (checked against a real run); nextest 273/273, node 48/48
 
 ## Notes for later tasks
 
@@ -38,37 +39,26 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Blocked
 
-<!-- Task, what is missing, exact action a human must take. -->
+<!-- Task, what is missing, exact action a human must take. Decisions from 2026-10-15. -->
 
-- (resolved) GitHub org and npm scope are `keelstackhq` (repo `keelstackhq/splice`, packages
-  `@keelstackhq/splice*`, Action `keelstackhq/splice/action@v1`); `docs/template-format.md` still says
-  `keelstack/hull` and is changed through the hull discussion.
-- Repo visibility: `npm publish --provenance` needs a public repo. Make it public before pushing
-  the `v0.1.0` tag.
-- CI pin check: on the first CI run, confirm the `taiki-e/install-action` step installs both
-  `nextest` and `actionlint` (it is pinned to the `nextest` tag's sha with `tool: nextest,actionlint`).
-- Contract sign-off (does not block the build): hull must agree to spec §10 items 10–27 (post
-  `when` required, manifest defaults, subset rules, symlinks, empty files, path-segment rules,
-  piece names, unsafe-path writes), the §8.1 usage rules for `new`, and the §5 rule that template
-  vars may not use `pieces`/`piece`/`template`. Then add them to `docs/template-format.md` §9 in
-  both repos together.
-- plan 03 Task 1 (CI on GitHub): the workflow is written and linted locally but has never run on
-  GitHub. Action: open a PR from `claude/awesome-galileo-cunc0r` (with a personal token or the web
-  UI, not `GITHUB_TOKEN`, which does not trigger CI), confirm both matrix legs (ubuntu, windows) and
-  `ci-ok` pass, then make `ci-ok` a required check in branch protection for `main`.
-- plan 03 Task 2 (release dry run): run `.github/workflows/release.yml` via "Run workflow"
-  (workflow_dispatch) on the branch; confirm all five builds and smoke tests pass (macOS x64 runs
-  under Rosetta). No release or npm publish happens on a dispatch.
-- plan 03 Task 3 (npm publish): create the npm org `keelstackhq`, add repo secret `NPM_TOKEN`
-  (automation token with publish rights), then push tag `v0.1.0` (Cargo.toml is 0.1.0). The release
-  workflow builds, creates the GitHub release and publishes with provenance; afterwards verify
-  `pnpm dlx @keelstackhq/splice --version` on a clean machine.
-- plan 03 Task 4 (update bot on GitHub): after the npm publish, run `.github/workflows/action-selftest.yml`
-  (Run workflow) and confirm `result=current`. Then, in a sandbox consumer repo made with
-  `splice new` from an older template tag, add a workflow using `keelstackhq/splice/action@<sha or v1>`
-  with a GitHub App or fine-grained PAT (contents, pull-requests, workflows: write) as `token`,
-  and check that it opens one PR on `splice/update`, refreshes it on rerun, prefixes `[conflicts]`
-  on a conflicting edit, and closes it once the repo is current. Tag `v1` for the action after that.
+- Resolved: GitHub org and npm scope are `keelstackhq` (repo `keelstackhq/splice`, packages
+  `@keelstackhq/splice*`, Action `keelstackhq/splice/action@v1`). Applied in ad0e0f3, except
+  `docs/template-format.md`, which still says `keelstack/hull` (see the next item).
+- Contract sign-off with hull: in discussion in the shared doc "splice ⇄ hull: contract
+  proposals" (https://claude.ai/code/artifact/a9bbd638-4900-45ed-8660-0f6ccd43da21): the org rename
+  of 4 contract lines, and spec §10 items 10–18 and 22 plus the §5 reserved-name rule as rules for
+  template authors (items 19–21, 23–28 for information). When every row is agreed: one PR per
+  repo, merged together, editing `docs/template-format.md` identically.
+- CI on GitHub (plan 03 Task 1): runs with the first PR, merged by the owner; then make `ci-ok`
+  a required check for `main`. On that run, confirm the `taiki-e/install-action` step installs both
+  `nextest` and `actionlint`.
+- Postponed by the owner: making the repo public (needed for `npm publish --provenance`) and the
+  release dry run (plan 03 Task 2 Step 4, `workflow_dispatch` of release.yml).
+- npm publish (plan 03 Task 3): npm org `keelstackhq`; add repo secret `NPM_TOKEN`, then push tag
+  `v0.1.0`; verify `pnpm dlx @keelstackhq/splice --version` on a clean machine. Needs the repo
+  public first.
+- Update bot on GitHub (plan 03 Task 4): after the npm publish, run action-selftest.yml, then try
+  the bot in a sandbox repo following `docs/getting-started.md` §7; tag `v1` for the action.
 
 ## Status
 
@@ -117,6 +107,4 @@ splice update --json                 # exit 1: ci.yml conflict markers (the fixt
 The test suite: `cargo nextest run`; `node --test 'scripts/**/*.test.mjs'
 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'`.
 
-**Blocked items for you:** see "Blocked" above, in this order: org/repo name → contract sign-off
-with hull (independent) → make the repo public → open a PR to run CI and require `ci-ok` →
-release dry run → npm org + `NPM_TOKEN` + tag `v0.1.0` → bot selftest and sandbox run → tag `v1`.
+**Blocked items for you:** see "Blocked" above. Using splice in a new repo: `docs/getting-started.md`.
