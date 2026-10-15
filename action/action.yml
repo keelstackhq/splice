@@ -40,7 +40,7 @@ runs:
           exit 0
         fi
         prefix="$RUNNER_TEMP/splice-npm"
-        npm install -g --prefix "$prefix" "@keelstack/splice@${SPLICE_VERSION}"
+        npm install -g --prefix "$prefix" "@keelstackhq/splice@${SPLICE_VERSION}"
         # Unix puts npm bins in $prefix/bin, Windows in $prefix itself.
         echo "$prefix/bin" >> "$GITHUB_PATH"
         echo "$prefix" >> "$GITHUB_PATH"

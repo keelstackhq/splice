@@ -6,7 +6,7 @@ description: Use when a repo has .splice/lock.toml or the user asks to create, u
 # splice
 
 splice builds a repo from versioned template pieces and keeps it current with 3-way merges.
-Run it as `splice`, or `pnpm dlx @keelstack/splice` if it is not installed.
+Run it as `splice`, or `pnpm dlx @keelstackhq/splice` if it is not installed.
 
 ## Rules
 

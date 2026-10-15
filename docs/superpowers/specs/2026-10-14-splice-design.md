@@ -2,16 +2,16 @@
 
 Date: 2026-10-14 · Status: draft for implementation · Contract: `docs/template-format.md` (format 1)
 
-Names: GitHub org `keelstack` (tools for bootstrapping projects), repo `keelstack/splice`, binary
+Names: GitHub org and npm scope `keelstackhq` (tools for bootstrapping projects), repo `keelstackhq/splice`, binary
 `splice`, Cargo package `keel-splice` (lib name `splice`; the crate `splice` is taken), npm launcher
-`@keelstack/splice` with platform packages `@keelstack/splice-{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}`,
-update bot `uses: keelstack/splice/action@v1`.
+`@keelstackhq/splice` with platform packages `@keelstackhq/splice-{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}`,
+update bot `uses: keelstackhq/splice/action@v1`.
 
 ## 1. Goal
 
 Bootstrap a repo from versioned template **pieces** (`splice new`, `splice add`) and keep it
 current (`splice update`, `splice check`, `splice diff`), with a single static binary that runs
-anywhere `git` runs. `pnpm dlx @keelstack/splice new gh:keelstack/hull//template` must work with no
+anywhere `git` runs. `pnpm dlx @keelstackhq/splice new gh:keelstackhq/hull//template` must work with no
 Python and no Rust toolchain.
 
 Why: no Rust tool does Copier-style 3-way update (cargo-generate and kickstart have no update;
@@ -19,7 +19,7 @@ baker is 2-way only; ffizer is unclear). Copier (9.19.1) is mature but needs Pyt
 old template versions under a new Copier, which breaks when the template language moves. splice
 fixes that with a frozen, tiny rendering subset and a `min_splice` pin.
 
-First consumer: `keelstack/hull` (opinionated monorepo template, built in parallel against the
+First consumer: `keelstackhq/hull` (opinionated monorepo template, built in parallel against the
 same contract; it uses a Nunjucks dev renderer until splice ships).
 
 ### Non-goals (v1)
@@ -79,7 +79,7 @@ holds the summary line (`0 changes`); the message goes to stderr.
 Source spec grammar: `gh:<owner>/<repo>[//<subdir>]` → `https://github.com/<owner>/<repo>.git`;
 any `https://`, `ssh://`, `git@…` or `file://` URL with optional `//<subdir>` after the repo part;
 or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lock stores the
-spec as given (`gh:keelstack/hull//template`), except that `new` rewrites a relative local path to
+spec as given (`gh:keelstackhq/hull//template`), except that `new` rewrites a relative local path to
 be relative to the new repo's root (§10 item 28); a relative local path in a lock always resolves
 from the repo root (the `-C` dir), never from the process cwd.
 
@@ -108,7 +108,7 @@ Loaded with `toml` + serde (`deny_unknown_fields` off: unknown keys warn, so new
 readable). Validation errors exit 3 and name the file and key.
 
 - `format` must be `1`. `min_splice` must be ≤ the running version, else exit 3 with
-  "template needs splice ≥ X; run `pnpm dlx @keelstack/splice@latest …`".
+  "template needs splice ≥ X; run `pnpm dlx @keelstackhq/splice@latest …`".
 - `base` must name an existing piece with `multiple = false`.
 - Piece `id` equals its directory name. `requires` ids must exist. No cycles needed (requires is
   a presence check, not an order).
@@ -468,15 +468,15 @@ into the contract at its next `format` bump.
   crates at all (git does the fetching), so no OpenSSL anywhere.
 - GitHub release per tag `v<semver>`: archives `splice-<target>.tar.gz` (`.zip` for Windows) and
   `SHA256SUMS`.
-- npm: `@keelstack/splice` = a tiny JS launcher (`bin/splice.js`) with the five platform
+- npm: `@keelstackhq/splice` = a tiny JS launcher (`bin/splice.js`) with the five platform
   packages as exact-version `optionalDependencies`; each platform package declares `os`/`cpu`
   and ships the binary in `bin/`. No install scripts (pnpm 10 blocks them by default); the
-  launcher resolves `@keelstack/splice-<platform>-<arch>/package.json`, spawns the binary with
+  launcher resolves `@keelstackhq/splice-<platform>-<arch>/package.json`, spawns the binary with
   inherited stdio and forwards the exit code. Not cargo-dist's npm installer.
 
 ## 13. Update bot
 
-Composite action `action/action.yml` (`uses: keelstack/splice/action@v1`). Inputs: `version`
+Composite action `action/action.yml` (`uses: keelstackhq/splice/action@v1`). Inputs: `version`
 (splice npm version, default `latest`), `to` (template version, default latest), `token`
 (default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
 `working-directory` (default `.`). Outputs: `result` (`updated|conflicts|current`) and `pr-url`.
@@ -487,7 +487,7 @@ uses it). The push and the `gh` calls use `token`: the push passes it as a one-c
 so consumers pass a GitHub App or fine-grained PAT (contents, pull-requests, workflows write).
 Open/refresh/close logic lives in `action/publish.sh` (tested with stub `gh`/`git`). Owned drift
 (exit 1 with no conflicted file, nothing written) and exit 2/3 fail the job with splice's
-messages; no PR is opened (decision 27 in §10). Steps: install via `npm i -g @keelstack/splice@<version>`, run `splice update --json --yes`,
+messages; no PR is opened (decision 27 in §10). Steps: install via `npm i -g @keelstackhq/splice@<version>`, run `splice update --json --yes`,
 and if anything changed commit to `branch`, `git push --force-with-lease`, then open or edit the
 single PR with the `gh` CLI (body = summary table from the JSON; title gets `[conflicts]` on
 exit 1). If the repo is already current and a bot PR is open, close it.

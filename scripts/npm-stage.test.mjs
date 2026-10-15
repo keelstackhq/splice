@@ -36,13 +36,13 @@ test("stage writes no install scripts", () => {
 test("platform packages declare os/cpu, files and the binary", () => {
   const out = setup();
   const pkg = readPkg(out, "splice-win32-x64");
-  assert.equal(pkg.name, "@keelstack/splice-win32-x64");
+  assert.equal(pkg.name, "@keelstackhq/splice-win32-x64");
   assert.equal(pkg.version, "1.2.3");
   assert.deepEqual(pkg.os, ["win32"]);
   assert.deepEqual(pkg.cpu, ["x64"]);
   assert.equal(pkg.preferUnplugged, true);
   assert.deepEqual(pkg.files, ["bin"]);
-  assert.ok(pkg.repository.url.includes("keelstack/splice"));
+  assert.ok(pkg.repository.url.includes("keelstackhq/splice"));
   assert.ok(existsSync(join(out, "splice-win32-x64", "bin", "splice.exe")));
   if (process.platform !== "win32") {
     const mode = statSync(join(out, "splice-linux-x64", "bin", "splice")).mode & 0o777;
@@ -53,7 +53,7 @@ test("platform packages declare os/cpu, files and the binary", () => {
 test("launcher pins optionalDependencies and ships platforms.json", () => {
   const out = setup();
   const pkg = readPkg(out, "splice");
-  assert.equal(pkg.name, "@keelstack/splice");
+  assert.equal(pkg.name, "@keelstackhq/splice");
   assert.equal(pkg.version, "1.2.3");
   assert.deepEqual(pkg.bin, { splice: "bin/splice.js" });
   assert.deepEqual(
@@ -83,7 +83,7 @@ test("a missing binary fails loudly", () => {
 test("repository comes from GITHUB_REPOSITORY, with a default", () => {
   const dflt = setup();
   const custom = setup(platforms, { GITHUB_REPOSITORY: "acme/widgets" });
-  for (const [out, repo] of [[dflt, "keelstack/splice"], [custom, "acme/widgets"]]) {
+  for (const [out, repo] of [[dflt, "keelstackhq/splice"], [custom, "acme/widgets"]]) {
     for (const d of readdirSync(out)) {
       assert.equal(readPkg(out, d).repository.url, `git+https://github.com/${repo}.git`, d);
     }

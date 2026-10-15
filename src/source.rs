@@ -231,11 +231,11 @@ mod tests {
 
     #[test]
     fn parses_sources() {
-        let s = TemplateSource::parse("gh:keelstack/hull//template").unwrap();
+        let s = TemplateSource::parse("gh:keelstackhq/hull//template").unwrap();
         assert_eq!(
             s.kind,
             SourceKind::Git {
-                url: "https://github.com/keelstack/hull.git".into()
+                url: "https://github.com/keelstackhq/hull.git".into()
             }
         );
         assert_eq!(s.subdir.as_deref(), Some("template"));

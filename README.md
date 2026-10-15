@@ -1,7 +1,7 @@
 # splice
 
 Start a repo from versioned template pieces and keep it up to date. A Copier alternative in one
-static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstack):
+static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
 ## Install
@@ -9,11 +9,11 @@ tools for bootstrapping projects.
 With pnpm (Node 20+) you can run splice without installing it:
 
 ```bash
-pnpm dlx @keelstack/splice --version
+pnpm dlx @keelstackhq/splice --version
 ```
 
-`@keelstack/splice` is a small launcher. The binary comes from a per-platform package
-(`@keelstack/splice-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`).
+`@keelstackhq/splice` is a small launcher. The binary comes from a per-platform package
+(`@keelstackhq/splice-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`).
 There are no install scripts.
 
 Or download a binary from the GitHub release for your target (`splice-<target>.tar.gz`, `.zip` on
@@ -24,14 +24,14 @@ Windows) and check it against `SHA256SUMS`. Targets: `x86_64-unknown-linux-musl`
 ## Quick start
 
 ```bash
-splice new gh:keelstack/hull//template my-app
+splice new gh:keelstackhq/hull//template my-app
 cd my-app
 splice add preact-app --name web
 splice update        # 3-way merge to the latest template version
 splice check         # exit 1 on drift, conflicts or an available update
 ```
 
-Prefix each command with `pnpm dlx @keelstack/` if splice is not installed. `update` and `add`
+Prefix each command with `pnpm dlx @keelstackhq/` if splice is not installed. `update` and `add`
 need a clean git tree: commit first.
 
 ## Commands
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: keelstack/splice/action@v1
+      - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}
 ```

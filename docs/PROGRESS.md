@@ -40,11 +40,9 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 <!-- Task, what is missing, exact action a human must take. -->
 
-- GitHub org / repo name (decide first; blocks the items below): the spec, README, action README
-  and npm defaults say `keelstack/splice` (Action `keelstack/splice/action@v1`), but this repo is
-  `keelstackhq/splice`. Either move the repo to `keelstack/splice`, or change the docs and spec
-  §12–§13 (and the fallback in `scripts/npm-stage.mjs` / `npm/splice/package.json`) to
-  `keelstackhq`. npm provenance already follows `GITHUB_REPOSITORY`.
+- (resolved) GitHub org and npm scope are `keelstackhq` (repo `keelstackhq/splice`, packages
+  `@keelstackhq/splice*`, Action `keelstackhq/splice/action@v1`); `docs/template-format.md` still says
+  `keelstack/hull` and is changed through the hull discussion.
 - Repo visibility: `npm publish --provenance` needs a public repo. Make it public before pushing
   the `v0.1.0` tag.
 - CI pin check: on the first CI run, confirm the `taiki-e/install-action` step installs both
@@ -61,12 +59,10 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - plan 03 Task 2 (release dry run): run `.github/workflows/release.yml` via "Run workflow"
   (workflow_dispatch) on the branch; confirm all five builds and smoke tests pass (macOS x64 runs
   under Rosetta). No release or npm publish happens on a dispatch.
-- plan 03 Task 3 (npm publish): create the npm org `keelstack` (or adjust the six package names in
-  `npm/platforms.json` / `npm/splice/package.json` if the org differs), add repo secret `NPM_TOKEN`
+- plan 03 Task 3 (npm publish): create the npm org `keelstackhq`, add repo secret `NPM_TOKEN`
   (automation token with publish rights), then push tag `v0.1.0` (Cargo.toml is 0.1.0). The release
   workflow builds, creates the GitHub release and publishes with provenance; afterwards verify
-  `pnpm dlx @keelstack/splice --version` on a clean machine. Note: the plan names the GitHub org
-  `keelstack` while this repo is `keelstackhq/splice`; provenance now follows GITHUB_REPOSITORY.
+  `pnpm dlx @keelstackhq/splice --version` on a clean machine.
 - plan 03 Task 4 (update bot on GitHub): after the npm publish, run `.github/workflows/action-selftest.yml`
   (Run workflow) and confirm `result=current`. Then, in a sandbox consumer repo made with
   `splice new` from an older template tag, add a workflow using `keelstackhq/splice/action@<sha or v1>`

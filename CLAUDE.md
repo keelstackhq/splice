@@ -2,7 +2,7 @@
 
 Bootstrap a repo from versioned template pieces (`splice new`, `splice add`) and keep it current
 (`splice update`, `splice check`, `splice diff`). A Copier alternative in one static Rust binary;
-no Python. First consumer: `keelstack/hull` (`gh:keelstack/hull//template`).
+no Python. First consumer: `keelstackhq/hull` (`gh:keelstackhq/hull//template`).
 
 - Contract: `docs/template-format.md` — binding, shared with hull. **Never edit it here alone.**
 - Spec: `docs/superpowers/specs/2026-10-14-splice-design.md` — source of truth. Read only the

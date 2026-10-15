@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: keelstack/splice/action@v1
+      - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}   # optional, see below
 ```

@@ -423,7 +423,7 @@ impl Template {
         let need = &self.manifest.min_splice;
         if need > running {
             return Err(SpliceError::Template(format!(
-                "template needs splice >= {need} (running {running}); run `pnpm dlx @keelstack/splice@latest ...`"
+                "template needs splice >= {need} (running {running}); run `pnpm dlx @keelstackhq/splice@latest ...`"
             )));
         }
         Ok(())

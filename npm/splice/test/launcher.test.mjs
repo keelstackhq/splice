@@ -29,9 +29,9 @@ function fakeInstall(script) {
 }
 
 test("maps platforms", () => {
-  assert.deepEqual(packageFor("win32", "x64"), { npm: "@keelstack/splice-win32-x64", bin: "splice.exe" });
-  assert.deepEqual(packageFor("linux", "arm64"), { npm: "@keelstack/splice-linux-arm64", bin: "splice" });
-  assert.deepEqual(packageFor("darwin", "arm64"), { npm: "@keelstack/splice-darwin-arm64", bin: "splice" });
+  assert.deepEqual(packageFor("win32", "x64"), { npm: "@keelstackhq/splice-win32-x64", bin: "splice.exe" });
+  assert.deepEqual(packageFor("linux", "arm64"), { npm: "@keelstackhq/splice-linux-arm64", bin: "splice" });
+  assert.deepEqual(packageFor("darwin", "arm64"), { npm: "@keelstackhq/splice-darwin-arm64", bin: "splice" });
   assert.equal(packageFor("linux", "ia32"), null);
 });
 
@@ -46,14 +46,14 @@ test("unsupported platform message lists supported pairs", () => {
 test("windows resolves splice.exe", () => {
   const seen = [];
   const p = binaryPath((id) => { seen.push(id); return join("/pkg", "package.json"); }, "win32", "x64");
-  assert.deepEqual(seen, ["@keelstack/splice-win32-x64/package.json"]);
+  assert.deepEqual(seen, ["@keelstackhq/splice-win32-x64/package.json"]);
   assert.equal(p, join("/pkg", "bin", "splice.exe"));
 });
 
 test("missing platform package gives a helpful message", () => {
   assert.throws(
     () => binaryPath(() => { throw new Error("nf"); }, "linux", "x64"),
-    /@keelstack\/splice-linux-x64/,
+    /@keelstackhq\/splice-linux-x64/,
   );
 });
 

@@ -9,7 +9,7 @@ function loadPlatforms() {
     const file = path.join(__dirname, ...rel);
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf8"));
   }
-  throw new Error("platforms.json is missing from the @keelstack/splice package");
+  throw new Error("platforms.json is missing from the @keelstackhq/splice package");
 }
 
 function packageFor(platform = process.platform, arch = process.arch) {
@@ -35,7 +35,7 @@ function binaryPath(resolve = require.resolve, platform = process.platform, arch
   } catch {
     throw new Error(
       `The platform package ${pkg.npm} is not installed.\n` +
-        `It is an optional dependency of @keelstack/splice; reinstall without --no-optional ` +
+        `It is an optional dependency of @keelstackhq/splice; reinstall without --no-optional ` +
         `(or --omit=optional / --ignore-optional).\n` +
         `Supported platforms: ${supportedPairs().join(", ")}.`,
     );

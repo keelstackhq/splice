@@ -6,7 +6,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_REPO = "keelstack/splice";
+const DEFAULT_REPO = "keelstackhq/splice";
 // Provenance must match the repo that publishes, so CI's GITHUB_REPOSITORY wins.
 const repositoryFor = (env) => ({
   type: "git",

@@ -397,7 +397,7 @@ mod tests {
 
     fn resolved() -> ResolvedTemplate {
         ResolvedTemplate {
-            source: TemplateSource::parse("gh:keelstack/hull//template").unwrap(),
+            source: TemplateSource::parse("gh:keelstackhq/hull//template").unwrap(),
             version: semver::Version::new(1, 2, 0),
             commit: COMMIT.into(),
             root: "/unused".into(),
@@ -513,14 +513,17 @@ mod tests {
         let good = valid_text();
         let cases = [
             (
-                "source = \"gh:keelstack/hull//template\"",
+                "source = \"gh:keelstackhq/hull//template\"",
                 "source = \"--upload-pack=evil\"",
             ),
             (
-                "source = \"gh:keelstack/hull//template\"",
+                "source = \"gh:keelstackhq/hull//template\"",
                 "source = \"ext::sh -c evil\"",
             ),
-            ("source = \"gh:keelstack/hull//template\"", "source = \"\""),
+            (
+                "source = \"gh:keelstackhq/hull//template\"",
+                "source = \"\"",
+            ),
             (COMMIT, "--output=x"),
             (COMMIT, "abc"),
             ("\"apps/web/vite.config.ts\"", "\"../../etc/passwd\""),

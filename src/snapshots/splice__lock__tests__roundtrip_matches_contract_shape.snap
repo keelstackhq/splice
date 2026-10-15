@@ -6,7 +6,7 @@ format = 1
 splice = "0.1.0"
 
 [template]
-source = "gh:keelstack/hull//template"
+source = "gh:keelstackhq/hull//template"
 version = "1.2.0"
 commit = "3f2c0a1b3f2c0a1b3f2c0a1b3f2c0a1b3f2c0a1b"
 
