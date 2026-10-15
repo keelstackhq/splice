@@ -2,8 +2,9 @@
 
 This guide takes you from nothing to a repository that is generated from the `hull` template
 and kept current by a weekly pull request. Output blocks were captured from the real binary run
-against a local copy of the test template (`tests/fixtures/template`, versions 1.0.0 and 2.0.0);
-hull's own file names will differ.
+against a local copy of the test template (`tests/fixtures/template`, versions 1.0.0 and 2.0.0).
+They are abridged (`...` marks cut lines, and `explain` detail lines and some `N changes`
+summaries are left out), and hull's own file names will differ.
 
 > Until the first release, neither the npm package `@keelstackhq/splice` nor the update Action
 > `keelstackhq/splice/action@v1` is published. Use a release binary, or build one with
@@ -36,7 +37,8 @@ directory under `pieces/` is a piece, with its `piece.toml` (id, description, `r
 `[vars]` and the base piece. Browse them at `github.com/keelstackhq/hull/tree/main/template`, or
 clone it. If you give an unknown piece, splice stops with `unknown piece `nope`` (exit 2).
 
-**Vars.** Every var has a prompt and may have a default. Values come from, in order, `--data
+**Vars.** Run once without `--yes` to see the prompts and their defaults before you script it.
+Every var has a prompt and may have a default. Values come from, in order, `--data
 KEY=VALUE` (repeatable), a prompt on a terminal, or the default. With `--yes`, or without a
 terminal, or with `--json`, splice never prompts. A var that has no default and no `--data`
 is then an error:
@@ -47,7 +49,7 @@ missing value for var `project`; pass --data project=…
 exit 2
 ```
 
-A complete non-interactive run (local fixture):
+A complete non-interactive run (local fixture, abridged):
 
 ```
 $ splice new ./tpl//template my-app --piece app:web --piece lib --data project=demo --yes
@@ -75,6 +77,9 @@ files and keeps seeds.
 - The template's post commands run after `new` (and `update`), for example installing
   dependencies. Their output goes to stderr. `--no-post` skips them. If an update stops on
   conflicts, post commands are skipped and splice prints the command to run by hand.
+- Files that post commands write (in the fixture `.post-ran`; for hull, things like installed
+  dependencies) are not tracked by splice. Commit the ones you want and put the rest in
+  `.gitignore`.
 - A git repository, if `dest` was not already inside one (`git init`). splice does not commit.
   Make the first commit yourself, so later updates start from a clean tree:
 
@@ -119,7 +124,8 @@ pnpm dlx @keelstackhq/splice add <piece-id> --name docs      # a second instance
 ```
 
 `add` renders the piece at the template version in your lock (it does not upgrade you), merges
-into shared files, and updates the lock. `--data KEY=VALUE` sets the piece's vars. Example:
+into shared files, and updates the lock. `--data KEY=VALUE` sets the piece's vars. Example, for a
+project that was created without the `app` piece:
 
 ```
 $ splice add app --yes
@@ -130,7 +136,7 @@ create   apps/web/tsconfig.json  owned
 create   only-with-app.txt  owned
 update   package.json  shared
 6 changes
-$ splice add app --name docs --data name=docs --yes
+$ splice add app --name docs --yes
 create   apps/docs/package.json  shared
 ...
 $ splice add app --name docs --yes
@@ -195,7 +201,8 @@ line 2 from template v2
 want, delete all four marker lines, then run `splice check`. It exits 0 when no markers or
 drift remain. Run the post commands that were skipped by hand, then commit.
 
-**Owned drift.** If you edited an owned file, `update` refuses and writes nothing:
+**Owned drift.** If you edited an owned file and committed the edit, `update` refuses and
+writes nothing (an uncommitted edit stops earlier, at the dirty-tree check, exit 2):
 
 ```
 $ splice update
@@ -204,9 +211,18 @@ nothing was written
 exit 1
 ```
 
-Either revert your edit (`git checkout -- apps/web/tsconfig.json`), or run
-`splice update --force`, which replaces owned files with the template's version. Shared files
-still merge and seeds are never touched.
+Either put the file back to what splice wrote and commit that, or replace it with the
+template's version. To revert, check the file out from the commit before your edit and commit:
+
+```bash
+git checkout <commit-before-the-edit> -- apps/web/tsconfig.json
+git commit -m "revert tsconfig edit"     # or: git revert <the edit commit>
+splice update
+```
+
+Or run `splice update --force`, which replaces owned files with the template's version (your edit
+is gone from the working tree, though still in git history). Shared files still merge and seeds
+are never touched. Both paths were run against the real binary.
 
 **Restoring.** git is the undo button. If an update did something you do not want and the tree
 was clean before, run this in the project directory:
