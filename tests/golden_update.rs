@@ -79,6 +79,19 @@ fn lock_version(repo: &TempDir) -> String {
 /// Replace values that differ between runs (shas, temp paths) with stable placeholders.
 fn redact(text: &str, repo: &Path, tpl: &Path) -> String {
     let out = text.replace(s(repo), "<repo>").replace(s(tpl), "<tpl>");
+    // the lock writer picks a quote style by content (literal string when it has backslashes)
+    let out = out
+        .lines()
+        .map(|l| {
+            if l.starts_with("source = ") {
+                "source = \"<tpl>\"".to_string()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if out.ends_with('\n') { "\n" } else { "" };
     // 40-hex commit ids
     let mut res = String::new();
     let b: Vec<char> = out.chars().collect();

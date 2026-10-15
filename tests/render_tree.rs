@@ -114,40 +114,44 @@ fn same_path_twice_is_error() {
     assert!(e.to_string().contains("apps/web/package.json"), "{e}");
 }
 
+/// Write template files whose names collide only once `{{ a }}`/`{{ b }}` are rendered, so the
+/// template itself is buildable on case-insensitive filesystems.
+fn collide(files: &[(&str, &str)], vars: &[(&str, &str)]) -> String {
+    let d = temp_template();
+    let dir = d.path().join("pieces/base/files");
+    for (rel, body) in files {
+        let p = dir.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, body).unwrap();
+    }
+    let mut all = vec![("project", "demo")];
+    all.extend_from_slice(vars);
+    let e = render_at(d.path(), &["base"], &all);
+    assert_eq!(e.exit_code(), 3);
+    e.to_string()
+}
+
 #[test]
 fn case_insensitive_path_collision_is_error() {
-    let d = temp_template();
-    std::fs::write(d.path().join("pieces/base/files/readme.md"), "x\n").unwrap();
-    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
-    assert_eq!(e.exit_code(), 3);
-    let m = e.to_string();
+    let m = collide(&[("{{ a }}.md", "x\n")], &[("a", "readme")]);
     assert!(m.contains("README.md") && m.contains("readme.md"), "{m}");
 }
 
 #[test]
 fn case_insensitive_directory_prefix_collision_is_error() {
-    let d = temp_template();
-    let files = d.path().join("pieces/base/files");
-    std::fs::create_dir_all(files.join("Docs")).unwrap();
-    std::fs::create_dir_all(files.join("docs")).unwrap();
-    std::fs::write(files.join("Docs/a.txt"), "a\n").unwrap();
-    std::fs::write(files.join("docs/b.txt"), "b\n").unwrap();
-    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
-    assert_eq!(e.exit_code(), 3);
-    let m = e.to_string();
+    let m = collide(
+        &[("{{ a }}/x.txt", "a\n"), ("{{ b }}/y.txt", "b\n")],
+        &[("a", "Docs"), ("b", "docs")],
+    );
     assert!(m.contains("Docs") && m.contains("docs"), "{m}");
 }
 
 #[test]
 fn file_and_directory_names_equal_ignoring_case_is_error() {
-    let d = temp_template();
-    let files = d.path().join("pieces/base/files");
-    std::fs::create_dir_all(files.join("ZZ")).unwrap();
-    std::fs::write(files.join("ZZ/x"), "x\n").unwrap();
-    std::fs::write(files.join("zz"), "z\n").unwrap();
-    let e = render_at(d.path(), &["base"], &[("project", "demo")]);
-    assert_eq!(e.exit_code(), 3);
-    let m = e.to_string();
+    let m = collide(
+        &[("{{ a }}", "z\n"), ("{{ b }}/y.txt", "y\n")],
+        &[("a", "zz"), ("b", "ZZ")],
+    );
     assert!(m.contains("ZZ") && m.contains("zz"), "{m}");
 }
 

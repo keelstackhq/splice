@@ -152,8 +152,9 @@ impl TemplateSource {
     pub fn cache_key(&self) -> String {
         let id = match &self.kind {
             SourceKind::Git { url } => url.clone(),
-            SourceKind::Local { path } => std::fs::canonicalize(path)
-                .unwrap_or_else(|_| path.clone())
+            // lenient: the key must not change when the source is later deleted
+            SourceKind::Local { path } => lenient_canonical(path)
+                .unwrap_or_else(|| path.clone())
                 .to_string_lossy()
                 .into_owned(),
         };
@@ -349,6 +350,30 @@ mod tests {
             lenient_canonical(&root.join("link/../nope/x")).unwrap(),
             root.join("real/nope/x")
         );
+    }
+
+    #[test]
+    fn local_cache_key_is_stable_after_deletion_and_for_equivalent_paths() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("a/tpl")).unwrap();
+        let key = |p: &Path| {
+            TemplateSource::parse_from(&p.to_string_lossy(), &root)
+                .unwrap()
+                .cache_key()
+        };
+        let before = key(&root.join("a/tpl"));
+        assert_eq!(key(&root.join("a/../a/./tpl")), before);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("a"), root.join("link")).unwrap();
+            assert_eq!(key(&root.join("link/tpl")), before);
+        }
+        std::fs::remove_dir_all(root.join("a/tpl")).unwrap();
+        assert_eq!(key(&root.join("a/tpl")), before);
+        #[cfg(unix)]
+        assert_eq!(key(&root.join("link/tpl")), before);
+        assert_eq!(key(&root.join("a/x/../tpl")), before);
     }
 
     #[test]
