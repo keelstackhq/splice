@@ -32,6 +32,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · 03/5 · b33b163, 6f439b5 · fmt+clippy clean (linux + windows-gnu), nextest 264/264 (incl. docs flag drift test), node 47/47
 2026-10-14 · Milestone 3 reviewed · ad123cd, 5abc9be, 562408b · release tag filter, same-repo bot PRs, token fallback; relative local sources resolved from the repo root (found in a manual end-to-end run); nextest 273/273, node 48/48, actionlint+shellcheck clean
 2026-10-15 · follow-up · ad0e0f3, 93d02da, 8f518de · org/scope → keelstackhq; docs/getting-started.md (checked against a real run); nextest 273/273, node 48/48
+2026-10-15 · raw blocks · 18a315d, abddcce · `{% raw %}` in the subset (spec §10 item 29), stray `#}` rejected (item 30); corpus 18 cases; nextest 274/274
 
 ## Notes for later tasks
 
@@ -47,7 +48,10 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Contract sign-off with hull: in discussion in the shared doc "splice ⇄ hull: contract
   proposals" (https://claude.ai/code/artifact/a9bbd638-4900-45ed-8660-0f6ccd43da21): the org rename
   of 4 contract lines, and spec §10 items 10–18 and 22 plus the §5 reserved-name rule as rules for
-  template authors (items 19–21, 23–28 for information). When every row is agreed: one PR per
+  template authors (items 19–21, 23–28 for information); all 11 agreed by hull on 2026-10-15.
+  Also agreed: raw blocks (item 29); new since: stray `#}` rejected (item 30). Until the contract
+  PR merges, a template using raw blocks is valid for splice but not yet per the written contract.
+  hoard is `keelstackhq/hoard` as well. When every row is agreed: one PR per
   repo, merged together, editing `docs/template-format.md` identically.
 - CI on GitHub (plan 03 Task 1): runs with the first PR, merged by the owner; then make `ci-ok`
   a required check for `main`. On that run, confirm the `taiki-e/install-action` step installs both
