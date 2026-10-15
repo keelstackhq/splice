@@ -33,6 +33,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 2026-10-14 · Milestone 3 reviewed · ad123cd, 5abc9be, 562408b · release tag filter, same-repo bot PRs, token fallback; relative local sources resolved from the repo root (found in a manual end-to-end run); nextest 273/273, node 48/48, actionlint+shellcheck clean
 2026-10-15 · follow-up · ad0e0f3, 93d02da, 8f518de · org/scope → keelstackhq; docs/getting-started.md (checked against a real run); nextest 273/273, node 48/48
 2026-10-15 · raw blocks · 18a315d, abddcce · `{% raw %}` in the subset (spec §10 item 29), stray `#}` rejected (item 30); corpus 18 cases; nextest 274/274
+2026-10-15 · first GitHub CI · 171b5c2, 2a8afe8, 27eaa54, 570fce1 · keelstackhq/splice#1 green on ubuntu + windows (ci-ok success): actionlint from its release, POSIX sh for template commands on Windows (spec §10 item 31), stable local cache keys, Windows-portable tests
 
 ## Notes for later tasks
 
@@ -53,9 +54,8 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   PR merges, a template using raw blocks is valid for splice but not yet per the written contract.
   hoard is `keelstackhq/hoard` as well. When every row is agreed: one PR per
   repo, merged together, editing `docs/template-format.md` identically.
-- CI on GitHub (plan 03 Task 1): runs with the first PR, merged by the owner; then make `ci-ok`
-  a required check for `main`. On that run, confirm the `taiki-e/install-action` step installs both
-  `nextest` and `actionlint`.
+- CI on GitHub (plan 03 Task 1): green on keelstackhq/splice#1 (ubuntu + windows). Remaining: merge
+  the PR, then make `ci-ok` a required check for `main`.
 - Postponed by the owner: making the repo public (needed for `npm publish --provenance`) and the
   release dry run (plan 03 Task 2 Step 4, `workflow_dispatch` of release.yml).
 - npm publish (plan 03 Task 3): npm org `keelstackhq`; add repo secret `NPM_TOKEN`, then push tag
