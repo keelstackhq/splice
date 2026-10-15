@@ -80,6 +80,84 @@ fn clear_worktree(dir: &Path) {
     }
 }
 
+/// Stage the whole work tree, rebuilding the index from file contents.
+///
+/// A plain `git add -A` trusts the cached stat data (size + mtime). A same-size edit made within
+/// the filesystem's timestamp granularity (seen on Windows CI: `indent_size = 2` -> `4`) can then
+/// be missed and the commit silently keeps the old bytes. Dropping the index entries first forces
+/// every file to be re-hashed.
+fn stage_all(dir: &Path) {
+    git(
+        dir,
+        &["rm", "-r", "-q", "--cached", "--ignore-unmatch", "."],
+    );
+    git(dir, &["add", "-A"]);
+}
+
+fn git_stdout(dir: &Path, args: &[&str], stdin: Option<&str>) -> String {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut c = Proc::new("git");
+    set_git_env(&mut c);
+    let mut child = c
+        .current_dir(dir)
+        .args(["-c", "core.autocrlf=false", "-c", "core.eol=lf"])
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut si = child.stdin.take().unwrap();
+    if let Some(t) = stdin {
+        si.write_all(t.as_bytes()).unwrap();
+    }
+    drop(si);
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// Assert HEAD's tree is byte-for-byte the fixture directory (blob ids, no filters).
+fn assert_head_matches(repo: &Path, fixture: &Path) {
+    let mut files = Vec::new();
+    walk(fixture, fixture, &mut files);
+    let mut rels: Vec<String> = files
+        .iter()
+        .map(|f| f.to_string_lossy().replace('\\', "/"))
+        .collect();
+    rels.sort();
+    let mut stdin = String::new();
+    for r in &rels {
+        stdin.push_str(&format!("{}\n", fixture.join(r).display()));
+    }
+    let hashes = git_stdout(
+        repo,
+        &["hash-object", "--no-filters", "--stdin-paths"],
+        Some(&stdin),
+    );
+    let want: Vec<String> = rels
+        .iter()
+        .zip(hashes.lines())
+        .map(|(r, h)| format!("{r} {h}"))
+        .collect();
+    let tree = git_stdout(repo, &["ls-tree", "-r", "HEAD"], None);
+    let mut got: Vec<String> = tree
+        .lines()
+        .map(|l| {
+            let (meta, path) = l.split_once('\t').unwrap();
+            let id = meta.split(' ').nth(2).unwrap();
+            format!("{path} {id}")
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, want, "commit tree differs from fixture {fixture:?}");
+}
+
 /// Create a git repo containing each fixture version in order, one commit and tag `v<N>.0.0` each
 /// (fixture `v2` -> tag `v2.0.0`).
 pub fn template_repo(versions: &[&str]) -> TempDir {
@@ -88,8 +166,9 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
     for v in versions {
         clear_worktree(dir.path());
         copy_dir(&fixtures().join(v), dir.path());
-        git(dir.path(), &["add", "-A"]);
+        stage_all(dir.path());
         git(dir.path(), &["commit", "-q", "-m", v]);
+        assert_head_matches(dir.path(), &fixtures().join(v));
         let n = v.trim_start_matches('v');
         git(dir.path(), &["tag", &format!("v{n}.0.0")]);
     }
@@ -175,7 +254,7 @@ pub fn tree_snapshot(dir: &Path) -> String {
 
 /// Stage and commit everything in `dir`.
 pub fn git_commit_all(dir: &Path, msg: &str) {
-    git(dir, &["add", "-A"]);
+    stage_all(dir);
     git(dir, &["commit", "-q", "-m", msg]);
 }
 
