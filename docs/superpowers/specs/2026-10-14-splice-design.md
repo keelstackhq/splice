@@ -468,6 +468,15 @@ into the contract at its next `format` bump.
     (pending contract): Nunjucks' lexer throws "unexpected end of comment" on it while MiniJinja
     prints it, so the gate rejects it. Inside a raw body it stays allowed. It also applies to path
     segments.
+31. Template commands (`[[step]].run`, `[[post]].run`) always run with POSIX `sh -c <cmd>`, on
+    every OS, so a template behaves the same everywhere (pending contract). On Windows splice
+    looks for `sh`/`sh.exe` on `PATH`, then derives it from `git --exec-path` (Git for Windows:
+    `<prefix>\mingw64\libexec\git-core` gives `<prefix>\bin\sh.exe`, else
+    `<prefix>\usr\bin\sh.exe`; `/` and `\` both accepted, `mingw32` and `clangarm64` by walking
+    up to the directory that has `bin\sh.exe`). None found is exit 3: `template commands need a
+    POSIX sh; install Git for Windows or put sh on PATH`. There is no `cmd /C` path. The restore
+    command in error messages is for the user's own terminal and stays `cd /d <dir> && git
+    checkout -- . && git clean -fd` on Windows (cmd syntax).
 
 ## 11. Testing
 
@@ -541,12 +550,3 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
-31. Template commands (`[[step]].run`, `[[post]].run`) always run with POSIX `sh -c <cmd>`, on
-    every OS, so a template behaves the same everywhere (pending contract). On Windows splice
-    looks for `sh`/`sh.exe` on `PATH`, then derives it from `git --exec-path` (Git for Windows:
-    `<prefix>\mingw64\libexec\git-core` gives `<prefix>\bin\sh.exe`, else
-    `<prefix>\usr\bin\sh.exe`; `/` and `\` both accepted, `mingw32` and `clangarm64` by walking
-    up to the directory that has `bin\sh.exe`). None found is exit 3: `template commands need a
-    POSIX sh; install Git for Windows or put sh on PATH`. There is no `cmd /C` path. The restore
-    command in error messages is for the user's own terminal and stays `cd /d <dir> && git
-    checkout -- . && git clean -fd` on Windows (cmd syntax).
