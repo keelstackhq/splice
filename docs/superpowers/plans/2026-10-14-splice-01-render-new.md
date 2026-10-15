@@ -407,7 +407,7 @@ The gate rejects the path roots `loop`, `self`, `range` and `namespace`; unknown
   - `struct VarSource<'a> { data: &'a IndexMap<String, String>, interactive: bool }`; `fn resolve_vars(specs: &IndexMap<String, VarSpec>, known: &IndexMap<String,String>, src: &VarSource) -> Result<IndexMap<String, String>>` — order: `known` → `--data` → prompt (dialoguer `Input` with default, re-asks on pattern miss) → default → `Usage("missing value for var `x`; pass --data x=…")`. `--data` values failing `pattern` → Usage.
   - `fn interactive(global: &GlobalArgs) -> bool` = `!json && !yes && stdin().is_terminal()`
   - `fn instance_name(piece: &PieceManifest, explicit: Option<&str>, vars: &IndexMap<String,String>) -> String` (spec §8.1)
-  - `fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result<()>` — `sh -c` / `cmd /C`, stdout+stderr to our stderr when `json`, dedupe identical `run` strings, piece order; non-zero → Env error naming the command.
+  - `fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result<()>` — `sh -c` on every OS (spec §10 item 31), stdout+stderr to our stderr when `json`, dedupe identical `run` strings, piece order; non-zero → Env error naming the command.
   - `fn ops::new::run(g: &GlobalArgs, a: &NewArgs) -> Result<Report>`
 
 - [x] **Step 1: Write failing tests**

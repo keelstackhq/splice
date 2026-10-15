@@ -243,7 +243,8 @@ Details of `add` on the full planner (§8.4), each path in base or theirs:
 7. **Apply:** write files, delete removals, run migration `[[step]]`s for versions A < v ≤ B in
    semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), write the lock atomically
    (§8.6), then run `[[post]]` with `when` ∋ `update`. A failing step exits 3 **before** the lock
-   is written; a failing post command exits 3 **after** it (the files and lock agree).
+   is written; a failing post command exits 3 **after** it (the files and lock agree). Steps and
+   post commands run as `sh -c <cmd>` on every OS (§10 item 31).
 8. Conflicts: files carry diff3 markers, the lock still records the target, `[[post]]` is skipped (a message lists the commands),
    exit 1.
 
@@ -540,3 +541,12 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
+31. Template commands (`[[step]].run`, `[[post]].run`) always run with POSIX `sh -c <cmd>`, on
+    every OS, so a template behaves the same everywhere (pending contract). On Windows splice
+    looks for `sh`/`sh.exe` on `PATH`, then derives it from `git --exec-path` (Git for Windows:
+    `<prefix>\mingw64\libexec\git-core` gives `<prefix>\bin\sh.exe`, else
+    `<prefix>\usr\bin\sh.exe`; `/` and `\` both accepted, `mingw32` and `clangarm64` by walking
+    up to the directory that has `bin\sh.exe`). None found is exit 3: `template commands need a
+    POSIX sh; install Git for Windows or put sh on PATH`. There is no `cmd /C` path. The restore
+    command in error messages is for the user's own terminal and stays `cd /d <dir> && git
+    checkout -- . && git clean -fd` on Windows (cmd syntax).

@@ -31,7 +31,7 @@ jobs:
           tool: nextest,shellcheck
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo nextest run --locked
+      - run: cargo nextest run --locked --no-fail-fast
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: runner.os == 'Linux'
         with:

@@ -59,20 +59,71 @@ pub fn restore_cmd(repo: &Path) -> String {
     }
 }
 
+/// Where Git for Windows keeps its `sh.exe`, derived from `git --exec-path` (spec §10 item 31).
+/// Walks up from the exec path (`<prefix>\mingw64\libexec\git-core`, also `mingw32` and
+/// `clangarm64`) to the first directory with `bin\sh.exe`, else `usr\bin\sh.exe`. Pure: `exists`
+/// answers whether a candidate file is there. Accepts `\` and `/`.
+pub fn sh_from_exec_path(exec_path: &str, exists: impl Fn(&str) -> bool) -> Option<String> {
+    let sep = if exec_path.contains('\\') { '\\' } else { '/' };
+    let parts: Vec<&str> = exec_path
+        .trim()
+        .split(['\\', '/'])
+        .filter(|p| !p.is_empty())
+        .collect();
+    // Leading separator (`/c/Git/...`, `\\server\...`) is kept only for the first piece.
+    let lead = if exec_path.trim().starts_with(['\\', '/']) {
+        sep.to_string()
+    } else {
+        String::new()
+    };
+    for n in (1..parts.len()).rev() {
+        let prefix = format!("{lead}{}", parts[..n].join(&sep.to_string()));
+        for tail in [format!("bin{sep}sh.exe"), format!("usr{sep}bin{sep}sh.exe")] {
+            let cand = format!("{prefix}{sep}{tail}");
+            if exists(&cand) {
+                return Some(cand);
+            }
+        }
+    }
+    None
+}
+
 #[cfg(windows)]
-fn shell(run: &str) -> Command {
-    use std::os::windows::process::CommandExt;
-    let mut c = Command::new("cmd");
-    // raw_arg: no re-quoting, so quotes inside the command reach cmd.exe as written.
-    c.arg("/C").raw_arg(run);
-    c
+fn find_sh() -> Result<std::path::PathBuf, SpliceError> {
+    let exists = |p: &str| Path::new(p).is_file();
+    let on_path = std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .flat_map(|d| [d.join("sh.exe"), d.join("sh")])
+            .find(|c| c.is_file())
+    });
+    if let Some(p) = on_path {
+        return Ok(p);
+    }
+    let derived = Command::new("git")
+        .args(["--exec-path"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| sh_from_exec_path(String::from_utf8_lossy(&o.stdout).trim(), exists));
+    derived.map(std::path::PathBuf::from).ok_or_else(|| {
+        SpliceError::Env(
+            "template commands need a POSIX sh; install Git for Windows or put sh on PATH".into(),
+        )
+    })
+}
+
+#[cfg(windows)]
+fn shell(run: &str) -> Result<Command, SpliceError> {
+    let mut c = Command::new(find_sh()?);
+    c.args(["-c", run]);
+    Ok(c)
 }
 
 #[cfg(not(windows))]
-fn shell(run: &str) -> Command {
+fn shell(run: &str) -> Result<Command, SpliceError> {
     let mut c = Command::new("sh");
     c.args(["-c", run]);
-    c
+    Ok(c)
 }
 
 /// The `run` strings that would execute for `when`, in order, without repeats.
@@ -91,7 +142,7 @@ pub fn post_runs(cmds: &[PostCmd], when: When) -> Vec<&str> {
 /// exactly one object (spec §3).
 pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When) -> Result<(), SpliceError> {
     for run in post_runs(cmds, when) {
-        let mut cmd = shell(run);
+        let mut cmd = shell(run)?;
         let out = cmd
             .current_dir(repo)
             .stdin(Stdio::null())
@@ -124,7 +175,7 @@ pub fn run_steps(
 ) -> Result<(), SpliceError> {
     let advice = undo.advice(repo);
     for (version, step) in steps {
-        let status = shell(&step.run)
+        let status = shell(&step.run)?
             .current_dir(repo)
             .env("SPLICE_FROM_VERSION", from.to_string())
             .env("SPLICE_TO_VERSION", to.to_string())
@@ -158,6 +209,41 @@ mod tests {
         assert!(c.ends_with(" && git checkout -- . && git clean -fd"));
         assert!(c.starts_with("cd "));
         assert!(c.contains("proj"));
+    }
+
+    fn has<'a>(files: &'a [&'a str]) -> impl Fn(&str) -> bool + 'a {
+        move |p| files.contains(&p)
+    }
+
+    #[test]
+    fn sh_found_next_to_git_for_windows() {
+        let ep = r"C:\Program Files\Git\mingw64\libexec\git-core";
+        let f = [r"C:\Program Files\Git\bin\sh.exe"];
+        assert_eq!(sh_from_exec_path(ep, has(&f)).as_deref(), Some(f[0]));
+    }
+
+    #[test]
+    fn sh_falls_back_to_usr_bin_and_forward_slashes() {
+        let ep = "C:/Program Files/Git/mingw64/libexec/git-core";
+        let f = ["C:/Program Files/Git/usr/bin/sh.exe"];
+        assert_eq!(sh_from_exec_path(ep, has(&f)).as_deref(), Some(f[0]));
+    }
+
+    #[test]
+    fn sh_prefers_bin_and_handles_variants() {
+        for v in ["mingw32", "clangarm64"] {
+            let ep = format!(r"D:\G\{v}\libexec\git-core");
+            let f = [r"D:\G\usr\bin\sh.exe", r"D:\G\bin\sh.exe"];
+            assert_eq!(sh_from_exec_path(&ep, has(&f)).as_deref(), Some(f[1]));
+        }
+    }
+
+    #[test]
+    fn sh_none_when_absent() {
+        assert_eq!(
+            sh_from_exec_path(r"C:\Git\mingw64\libexec\git-core", |_| false),
+            None
+        );
     }
 
     #[cfg(unix)]
