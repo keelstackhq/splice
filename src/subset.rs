@@ -57,6 +57,41 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         };
         let inner = &rest[2..2 + end];
         pos = start + 2 + end + 2;
+        if kind == 'b'
+            && blocks
+            && let Some((name, strict, _)) = lax_tag(&rest[2..])
+        {
+            {
+                if name == "endraw" {
+                    return Err(err(
+                        origin,
+                        line,
+                        "`{% endraw %}` without a matching `{% raw %}`",
+                    ));
+                }
+                if !strict {
+                    return Err(err(
+                        origin,
+                        line,
+                        "`raw` allows no whitespace control (`-`, `+`) and only space, tab, CR or LF inside the tag",
+                    ));
+                }
+                match raw_end(text, pos) {
+                    Ok(after) => {
+                        pos = after;
+                        continue;
+                    }
+                    Err((at, m)) => {
+                        let l = if let Some(at) = at {
+                            1 + text[..at].matches('\n').count()
+                        } else {
+                            line
+                        };
+                        return Err(err(origin, l, m));
+                    }
+                }
+            }
+        }
         match kind {
             'c' if blocks => {
                 if inner.starts_with(['-', '+']) || inner.ends_with(['-', '+']) {
@@ -93,6 +128,63 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Whitespace as either engine's lexer may read it inside a tag (MiniJinja: ASCII whitespace,
+/// Nunjucks: JS `\s`). Only space, tab, CR and LF are allowed; the rest is detected to reject it.
+fn lax_ws(c: char) -> bool {
+    c.is_whitespace() || c == '\u{feff}'
+}
+
+/// Recognise `raw` / `endraw` as either engine would, on the text right after `{%`: optional
+/// whitespace control and any whitespace around the name, then `%}`. Returns the name, whether
+/// the spelling is the strict one (only space/tab/CR/LF, no `-`/`+`), and the length consumed.
+fn lax_tag(after: &str) -> Option<(&'static str, bool, usize)> {
+    let skip = |c: char| lax_ws(c) || c == '-' || c == '+';
+    let a = after.trim_start_matches(skip);
+    let (name, rest) = if let Some(r) = a.strip_prefix("endraw") {
+        ("endraw", r)
+    } else {
+        ("raw", a.strip_prefix("raw")?)
+    };
+    let b = rest.trim_start_matches(skip);
+    let tail = b.strip_prefix("%}")?;
+    let consumed = after.len() - tail.len();
+    let head = &after[..consumed - 2];
+    let strict = head.trim_matches([' ', '\t', '\n', '\r']) == name;
+    Some((name, strict, consumed))
+}
+
+type RawErr = (Option<usize>, String);
+
+/// Find the `{% endraw %}` closing a raw block whose body starts at `from`; returns the offset
+/// just after it. Mirrors MiniJinja (every `{%` is tried in turn). Spellings on which MiniJinja
+/// and Nunjucks disagree are rejected: dashes, odd whitespace, and an inner `{% raw %}` (Nunjucks
+/// nests raw blocks, MiniJinja does not).
+fn raw_end(text: &str, from: usize) -> std::result::Result<usize, RawErr> {
+    let mut p = from;
+    while let Some(off) = text[p..].find("{%") {
+        let q = p + off + 2;
+        if let Some((name, strict, len)) = lax_tag(&text[q..]) {
+            if name == "raw" {
+                return Err((
+                    Some(q - 2),
+                    "a `raw` tag inside a raw block is not allowed (engines disagree on nesting)"
+                        .into(),
+                ));
+            }
+            if !strict {
+                return Err((
+                    Some(q - 2),
+                    "this `endraw` spelling is ambiguous inside a raw block (no `-`/`+`, only space, tab, CR or LF)"
+                        .into(),
+                ));
+            }
+            return Ok(q + len);
+        }
+        p = q;
+    }
+    Err((None, "`{% raw %}` is never closed".into()))
 }
 
 fn ws(s: &str) -> &str {
@@ -231,6 +323,7 @@ fn block(
             }
             stack.push((Frame::For, line));
         }
+        "raw" | "endraw" => return Err(format!("`{kw}` takes no arguments")),
         "" => return Err("empty tag (whitespace control `-` is not allowed)".into()),
         other => return Err(format!("tag `{other}` is not in the portable subset")),
     }
@@ -250,6 +343,18 @@ mod tests {
             "{% if a %}x{% elif \"app\" in pieces %}y{% else %}z{% endif %}",
             "{% for p in pieces %}{{ p }}{% endfor %}",
             "{# any } thing #}",
+            "{% raw %}{% endraw %}",
+            "{%raw%}{{ x }}{%endraw%}",
+            "{%\n\traw\r\n%}x{% \tendraw\n%}",
+            "{% raw %}{{ x }}{% endraw %}",
+            "{% raw %}{% if %}{% endraw %}",
+            "{% raw %}{# #}{% endraw %}",
+            "{% raw %}{{ ~ }} {% set %} {# open {{ open{% endraw %}",
+            "{% raw %}{% endraw x %}{% endrawx %}{%- endraw{% endraw %}",
+            "{% if a %}{% raw %}{% endif %}{% endraw %}{% endif %}",
+            "{% for p in pieces %}{% raw %}{% for %}{% endraw %}{% endfor %}",
+            "{% raw %}a{% endraw %}{% raw %}b{% endraw %}",
+            "{# {% raw %} #}",
         ] {
             assert!(validate(t, "t").is_ok(), "{t}");
         }
@@ -268,7 +373,6 @@ mod tests {
             "{% if not a %}{% endif %}",
             "{% if pieces %}{% endif %}",
             "{% for x in items %}{% endfor %}",
-            "{% raw %}{% endraw %}",
             "{{ \"lit\" }}",
             "{% if a %}",
             "{% endif %}",
@@ -293,6 +397,25 @@ mod tests {
             "{% if \"a\" inpieces %}{% endif %}",
             "{% for loop in pieces %}{% endfor %}",
             "{% if a %}{% endif %}{% endif %}",
+            "{% raw %}x",
+            "{% raw %}{% endraw",
+            "{% endraw %}",
+            "{%- raw %}x{% endraw %}",
+            "{% raw -%}x{% endraw %}",
+            "{%+ raw %}x{% endraw %}",
+            "{% raw +%}x{% endraw %}",
+            "{% raw %}x{%- endraw %}",
+            "{% raw %}x{% endraw -%}",
+            "{% raw %}x{%+ endraw %}",
+            "{% raw x %}x{% endraw %}",
+            "{% raw %}x{% endraw %}{% endraw %}",
+            "{%\u{a0}raw %}x{% endraw %}",
+            "{% raw %}x{%\u{a0}endraw %}",
+            "{% raw %}x{%\u{c}endraw %}",
+            "{% raw %}{% raw %}{% endraw %}{% endraw %}",
+            "{% raw %}{%- raw %}{% endraw %}",
+            "{% RAW %}x{% ENDRAW %}",
+            "{% if a %}{% raw %}{% endraw %}",
         ] {
             let e = validate(t, "f.jinja").unwrap_err();
             assert_eq!(e.exit_code(), 3, "{t}");
@@ -324,5 +447,20 @@ mod tests {
         assert!(validate_path_segment("plain", "p").is_ok());
         assert!(validate_path_segment("{% if a %}x{% endif %}", "p").is_err());
         assert!(validate_path_segment("{# c #}", "p").is_err());
+        assert!(validate_path_segment("{% raw %}x{% endraw %}", "p").is_err());
+        assert!(validate_path_segment("{% raw %}", "p").is_err());
+    }
+
+    #[test]
+    fn raw_errors_name_the_line() {
+        let e = validate("a\nb\n{% raw %}\nx\ny", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
+        let e = validate("a\n{% raw %}\nx\n{%- endraw %}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:4"), "{e}");
+        let e = validate("{% raw %}a\n{% endraw %}\n{{ x ~ y }}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
+        // lines inside a raw body are counted
+        let e = validate("{% raw %}\n\n{% endraw %}{% set %}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
     }
 }
