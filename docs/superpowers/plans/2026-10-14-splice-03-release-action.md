@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship splice: a fast CI, a release workflow for five targets with checksums, `pnpm dlx @keelstack/splice` via platform packages, the `keelstack/splice/action@v1` update bot, the Claude Code skill file and the product README.
+**Goal:** Ship splice: a fast CI, a release workflow for five targets with checksums, `pnpm dlx @keelstackhq/splice` via platform packages, the `keelstackhq/splice/action@v1` update bot, the Claude Code skill file and the product README.
 
 **Architecture:** GitHub Actions on GitHub's own runners. CI is one job plus an aggregate `ci-ok` check. Release builds each target natively (musl on Linux via `musl-tools`, both macOS targets on one arm64 runner), uploads archives + `SHA256SUMS` to a GitHub release, then publishes the five platform npm packages and the launcher. The update bot is a composite action that installs splice from npm and drives `gh`.
 
@@ -13,8 +13,8 @@
 ## Global Constraints
 
 - Release targets exactly: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`.
-- npm names exactly: `@keelstack/splice`; `@keelstack/splice-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`. Platform packages are exact-version `optionalDependencies` of the launcher. No `preinstall`/`postinstall` scripts anywhere (pnpm 10 blocks them). Not cargo-dist's npm installer.
-- `pnpm dlx @keelstack/splice new …` works with no Python and no Rust.
+- npm names exactly: `@keelstackhq/splice`; `@keelstackhq/splice-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`. Platform packages are exact-version `optionalDependencies` of the launcher. No `preinstall`/`postinstall` scripts anywhere (pnpm 10 blocks them). Not cargo-dist's npm installer.
+- `pnpm dlx @keelstackhq/splice new …` works with no Python and no Rust.
 - CI: one job + `ci-ok`; triggers `pull_request`, `merge_group`, `push` to `main`; `concurrency` with `cancel-in-progress` for PRs; no workflow-level `paths`/`paths-ignore`.
 - No OpenSSL, no TLS crates (`cargo tree -i openssl` and `cargo tree -i rustls` both empty).
 - Update bot uses the `gh` CLI (spec §13), one PR per repo on branch `splice/update`.
@@ -22,7 +22,7 @@
 
 ## Review Focus
 
-1. **A consumer runs `pnpm dlx @keelstack/splice` on linux-arm64 or Windows** → the right platform package is installed and the launcher finds `splice.exe` on Windows; on an unsupported platform the launcher prints the platform pair and the list of supported ones and exits 1. Test in Task 3.
+1. **A consumer runs `pnpm dlx @keelstackhq/splice` on linux-arm64 or Windows** → the right platform package is installed and the launcher finds `splice.exe` on Windows; on an unsupported platform the launcher prints the platform pair and the list of supported ones and exits 1. Test in Task 3.
 2. **The launcher receives Ctrl-C or the binary exits with code 1 or 3** → exit code passes through unchanged (agents rely on 1 vs 3); a signal kill exits with `128 + n` or re-raises it. Test in Task 3.
 3. **The bot runs when the repo is already current but an old bot PR is open** → the PR is closed with a comment; when nothing changed and no PR exists → no branch push, no PR. Test in Task 4.
 4. **The bot's update hits conflicts (exit 1)** → the PR is still opened/refreshed, title prefixed `[conflicts]`, body lists the conflicted paths; exit 3 fails the workflow with splice's messages. Test in Task 4.
@@ -97,11 +97,11 @@ jobs:
 - Produces: release assets `splice-<target>.tar.gz` (Windows `.zip`) each holding `splice[.exe]`, `LICENSE`, `README.md`; `SHA256SUMS`; `npm/platforms.json`:
 
 ```json
-[{"target":"x86_64-unknown-linux-musl","npm":"@keelstack/splice-linux-x64","os":"linux","cpu":"x64","bin":"splice"},
- {"target":"aarch64-unknown-linux-musl","npm":"@keelstack/splice-linux-arm64","os":"linux","cpu":"arm64","bin":"splice"},
- {"target":"x86_64-apple-darwin","npm":"@keelstack/splice-darwin-x64","os":"darwin","cpu":"x64","bin":"splice"},
- {"target":"aarch64-apple-darwin","npm":"@keelstack/splice-darwin-arm64","os":"darwin","cpu":"arm64","bin":"splice"},
- {"target":"x86_64-pc-windows-msvc","npm":"@keelstack/splice-win32-x64","os":"win32","cpu":"x64","bin":"splice.exe"}]
+[{"target":"x86_64-unknown-linux-musl","npm":"@keelstackhq/splice-linux-x64","os":"linux","cpu":"x64","bin":"splice"},
+ {"target":"aarch64-unknown-linux-musl","npm":"@keelstackhq/splice-linux-arm64","os":"linux","cpu":"arm64","bin":"splice"},
+ {"target":"x86_64-apple-darwin","npm":"@keelstackhq/splice-darwin-x64","os":"darwin","cpu":"x64","bin":"splice"},
+ {"target":"aarch64-apple-darwin","npm":"@keelstackhq/splice-darwin-arm64","os":"darwin","cpu":"arm64","bin":"splice"},
+ {"target":"x86_64-pc-windows-msvc","npm":"@keelstackhq/splice-win32-x64","os":"win32","cpu":"x64","bin":"splice.exe"}]
 ```
 
 - [ ] **Step 1: Write failing test** — `checkVersion({tag:"v0.2.0", cargoToml:'version = "0.1.0"'})` throws `tag v0.2.0 does not match Cargo.toml 0.1.0`; matching inputs return `"0.2.0"`.
@@ -128,7 +128,7 @@ jobs:
 
 ```js
 test("maps platforms", () => {
-  assert.deepEqual(packageFor("win32", "x64"), { npm: "@keelstack/splice-win32-x64", bin: "splice.exe" });
+  assert.deepEqual(packageFor("win32", "x64"), { npm: "@keelstackhq/splice-win32-x64", bin: "splice.exe" });
   assert.equal(packageFor("linux", "ia32"), null);
 });
 test("unsupported platform message lists supported pairs", () => {
@@ -175,7 +175,7 @@ test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("
 ```
 
 - [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstack/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
+- [ ] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstackhq/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
   - `current`: `gh pr list --head <branch> --state open --json number` → if found, `gh pr close --comment "Already up to date." --delete-branch`.
   - `updated`/`conflicts`: `git switch -C <branch>`, `git add -A`, commit with the title, `git push --force-with-lease origin <branch>`, then `gh pr edit` the open PR (title/body) or `gh pr create --base <default branch> --head <branch> --label …`.
   - exit 3: print messages, `exit 1`.
@@ -204,10 +204,10 @@ test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("
 
 ## Blocked (expected, human-only — copy into docs/PROGRESS.md when reached)
 
-- Create GitHub org `keelstack` (if missing) and repo `keelstack/splice`; push; make `ci-ok` a required check; enable merge queue (optional).
-- Create npm org `keelstack`; add repo secret `NPM_TOKEN` (granular token with publish rights on `@keelstack/*`; consider moving to npm trusted publishing after the first publish — packages must exist first).
-- Push tag `v0.1.0` to run the release; check the five assets, `SHA256SUMS` and the six npm packages; run `pnpm dlx @keelstack/splice --version` on a clean machine.
-- Tag `v1` for the Action (`git tag -f v1 && git push -f origin v1` — the human does this; agents never force-push) and add the workflow to `keelstack/hull` (or another consumer) with the token secret.
+- Create GitHub org `keelstackhq` (if missing) and repo `keelstackhq/splice`; push; make `ci-ok` a required check; enable merge queue (optional).
+- Create npm org `keelstackhq`; add repo secret `NPM_TOKEN` (granular token with publish rights on `@keelstackhq/*`; consider moving to npm trusted publishing after the first publish — packages must exist first).
+- Push tag `v0.1.0` to run the release; check the five assets, `SHA256SUMS` and the six npm packages; run `pnpm dlx @keelstackhq/splice --version` on a clean machine.
+- Tag `v1` for the Action (`git tag -f v1 && git push -f origin v1` — the human does this; agents never force-push) and add the workflow to `keelstackhq/hull` (or another consumer) with the token secret.
 
 ## Self-review notes
 

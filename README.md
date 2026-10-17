@@ -1,17 +1,17 @@
 # splice
 
 Start a repo from versioned template pieces and keep it up to date. A Copier alternative in one
-static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstack):
+static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
 > Status: under construction. See `docs/superpowers/specs/2026-10-14-splice-design.md`.
 
 ```bash
-pnpm dlx @keelstack/splice new gh:keelstack/hull//template my-app
+pnpm dlx @keelstackhq/splice new gh:keelstackhq/hull//template my-app
 cd my-app
-pnpm dlx @keelstack/splice add preact-app --name web
-pnpm dlx @keelstack/splice update        # 3-way merge to the latest template version
-pnpm dlx @keelstack/splice check         # exit 1 on drift, conflicts or an available update
+pnpm dlx @keelstackhq/splice add preact-app --name web
+pnpm dlx @keelstackhq/splice update        # 3-way merge to the latest template version
+pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an available update
 ```
 
 | Command | What it does |
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: keelstack/splice/action@v1
+      - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI
 ```
