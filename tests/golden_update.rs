@@ -195,3 +195,71 @@ fn resolve_conflict_then_check_passes() {
         .assert()
         .code(0);
 }
+
+/// Shared-file edits that merge cleanly with v2 (no conflict, so `[[post]]` runs).
+fn apply_clean_edits(repo: &TempDir) {
+    edit(repo, "package.json", |t| {
+        t.replace(
+            "  \"private\": true,\n",
+            "  \"private\": true,\n  \"dependencies\": {\n    \"left-pad\": \"1.3.0\"\n  },\n",
+        )
+    });
+    edit(repo, "config/settings.toml", |t| {
+        format!("# local note\n{t}\n[local]\nx = 1\n")
+    });
+    edit(repo, "notes.txt", |t| {
+        t.replace("line five", "line 5, mine")
+    });
+    std::fs::write(repo.path().join("README.md"), USER_README).unwrap();
+    commit_all(repo.path());
+}
+
+#[test]
+fn rerun_after_failed_post_without_restore_converges() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_at(&tpl, "1.0.0");
+    apply_clean_edits(&repo);
+    let lock_v1 = std::fs::read(repo.path().join(".splice/lock.toml")).unwrap();
+
+    // `echo post> .post-ran` fails while `.post-ran` is a directory (empty: git ignores it).
+    std::fs::remove_file(repo.path().join(".post-ran")).unwrap();
+    commit_all(repo.path());
+    std::fs::create_dir(repo.path().join(".post-ran")).unwrap();
+    let out = update_cmd(&repo)
+        .assert()
+        .code(3)
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(v["ok"], false);
+    let changes = v["changes"].as_array().unwrap();
+    assert!(
+        changes.iter().any(|c| c["path"] == "package.json"),
+        "the applied changes are listed: {v}"
+    );
+    assert!(v.to_string().contains("post command"), "{v}");
+    assert_eq!(
+        std::fs::read(repo.path().join(".splice/lock.toml")).unwrap(),
+        lock_v1
+    );
+
+    // Fix the cause, re-run on the dirty tree without restoring.
+    std::fs::remove_dir(repo.path().join(".post-ran")).unwrap();
+    update_cmd(&repo).arg("--allow-dirty").assert().success();
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(lock.template.version.to_string(), "2.0.0");
+
+    // Same result as an update that never failed: no lost edits, no markers.
+    let reference = new_at(&tpl, "1.0.0");
+    apply_clean_edits(&reference);
+    std::fs::remove_file(reference.path().join(".post-ran")).unwrap();
+    commit_all(reference.path());
+    update_cmd(&reference).assert().success();
+    let snap = redact(&tree_snapshot(repo.path()));
+    assert_eq!(snap, redact(&tree_snapshot(reference.path())));
+    assert!(!snap.contains("<<<<<<<"), "{snap}");
+    assert!(read(&repo, "package.json").contains("left-pad"));
+    assert!(read(&repo, "notes.txt").contains("line 5, mine"));
+    assert_eq!(read(&repo, "README.md"), USER_README);
+}

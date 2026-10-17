@@ -52,6 +52,7 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     };
     let Ok(merged) = structured else {
         let m = merge_text(base, ours, theirs);
+        let m = toml_still_parses(strategy, base, ours, theirs, m);
         return no_new_duplicates(strategy, base, ours, theirs, m);
     };
     if merged.conflicts.is_empty() {
@@ -94,6 +95,30 @@ fn no_new_duplicates(
     Merged {
         text: wrap_whole(base, ours, theirs),
         conflicts: introduced,
+    }
+}
+
+/// A clean TOML text merge (the fallback when a side does not parse) must still parse when ours
+/// does: TOML rejects a duplicate key, so a merge-introduced one becomes one conflict block. An
+/// ours that does not parse is the user's content and its clean merge stays as is.
+fn toml_still_parses(
+    strategy: MergeStrategy,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    merged: Merged,
+) -> Merged {
+    let parses = |s: &str| s.parse::<toml_edit::DocumentMut>().is_ok();
+    if strategy != MergeStrategy::Toml
+        || !merged.conflicts.is_empty()
+        || parses(&merged.text)
+        || !parses(ours)
+    {
+        return merged;
+    }
+    Merged {
+        text: wrap_whole(base, ours, theirs),
+        conflicts: vec!["line 1".to_string()],
     }
 }
 
@@ -234,6 +259,21 @@ mod tests {
             merge3(MergeStrategy::Toml, b, o, t).text,
             "# mine\n[build]\ntarget = \"es2024\"\n\n[local]\nx = 1\n"
         );
+    }
+
+    #[test]
+    fn toml_text_fallback_must_still_parse() {
+        // base does not parse, so the text merge runs; it merges cleanly into a duplicate key.
+        let (b, o, t) = ("bad\nz = 0\n", "k = 1\nz = 0\n", "bad\nz = 0\nk = 2\n");
+        assert_eq!(merge_text(b, o, t).text, "k = 1\nz = 0\nk = 2\n");
+        let m = merge3(MergeStrategy::Toml, b, o, t);
+        assert_eq!(m.text, wrap_whole(b, o, t));
+        assert_eq!(m.conflicts, ["line 1"]);
+        // ours that does not parse is the user's content: the clean text merge is kept.
+        let o = "bad\nz = 0\nk = 1\n";
+        let m = merge3(MergeStrategy::Toml, b, o, "bad!\nz = 0\n");
+        assert_eq!(m.text, "bad!\nz = 0\nk = 1\n");
+        assert!(m.conflicts.is_empty());
     }
 
     #[test]

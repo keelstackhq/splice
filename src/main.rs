@@ -39,7 +39,9 @@ fn main() -> ExitCode {
         Err(e) => {
             let code = e.exit_code();
             let report = match e {
-                SpliceError::Conflict(mut r) | SpliceError::Drift(mut r) => {
+                SpliceError::Conflict(mut r)
+                | SpliceError::Drift(mut r)
+                | SpliceError::Applied(mut r) => {
                     r.ok = false;
                     r
                 }

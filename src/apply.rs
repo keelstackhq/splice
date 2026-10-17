@@ -34,7 +34,10 @@ pub struct ApplyCtx<'a> {
 /// A plan with drift is refused (`Err(Drift)`) before anything is written: the caller decides
 /// about `--force` when planning.
 pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
-    let mut report = Report::new("update");
+    let mut report = Report::new(match ctx.when {
+        When::Add => "add",
+        _ => "update",
+    });
     let plan = ctx.plan;
 
     if !plan.drift.is_empty() {
@@ -50,44 +53,48 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         fsio::check_target(ctx.repo, &c.path)?;
     }
 
-    // From here on a failure may leave files written: say how to restore (only then).
+    // From here on a failure may leave files written: say how to restore (only then), and list
+    // the changes already applied (spec §9). `wrote` is set before each write attempt: a write
+    // that fails midway may still have changed the file.
     let mut wrote = false;
-    for c in &plan.changes {
-        if let (Some(bytes), true) = (&c.bytes, c.action != Action::Delete) {
-            fsio::write_file(ctx.repo, &c.path, bytes)
-                .map_err(|e| after_write(e, wrote, &ctx.from))?;
+    for c in plan.changes.iter().filter(|c| c.action != Action::Delete) {
+        if let Some(bytes) = &c.bytes {
             wrote = true;
+            if let Err(e) = fsio::write_file(ctx.repo, &c.path, bytes) {
+                return Err(applied(report, after_write(e, wrote, &ctx.from)));
+            }
         }
+        push(&mut report, c);
     }
     for c in plan.changes.iter().filter(|c| c.action == Action::Delete) {
         match fsio::remove_file(ctx.repo, &c.path) {
             Err(SpliceError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(after_write(e, wrote, &ctx.from)),
+            Err(e) => return Err(applied(report, after_write(e, wrote, &ctx.from))),
             Ok(()) => wrote = true,
         }
-    }
-    for c in &plan.changes {
-        report.push(c.path.clone(), c.action, c.class);
-        if let Some(n) = &c.note {
-            report.msg(n.clone());
-        }
+        push(&mut report, c);
     }
 
-    run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json)?;
+    if let Err(e) = run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json) {
+        return Err(applied(report, e));
+    }
     wrote |= !ctx.steps.is_empty();
     if plan.conflicts.is_empty() && !ctx.no_post {
-        run_post(ctx.repo, &ctx.post, ctx.when, ctx.json).map_err(|e| match e {
-            SpliceError::Env(m) => SpliceError::Env(format!(
-                "{m}; the lock still records {}; `git checkout -- . && git clean -fd` restores the previous state",
-                ctx.from
-            )),
-            other => other,
-        })?;
+        if let Err(e) = run_post(ctx.repo, &ctx.post, ctx.when, ctx.json) {
+            let e = match e {
+                SpliceError::Env(m) => SpliceError::Env(format!(
+                    "{m}; the lock still records {}; `git checkout -- . && git clean -fd` restores the previous state",
+                    ctx.from
+                )),
+                other => other,
+            };
+            return Err(applied(report, e));
+        }
         wrote |= ctx.post.iter().any(|p| p.when.contains(&ctx.when));
     }
-    ctx.lock
-        .write_atomic(ctx.repo)
-        .map_err(|e| after_write(e, wrote, &ctx.from))?;
+    if let Err(e) = ctx.lock.write_atomic(ctx.repo) {
+        return Err(applied(report, after_write(e, wrote, &ctx.from)));
+    }
 
     if plan.conflicts.is_empty() {
         Ok(report)
@@ -99,6 +106,24 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         ));
         Err(SpliceError::Conflict(report))
     }
+}
+
+fn push(report: &mut Report, c: &crate::planner::Planned) {
+    report.push(c.path.clone(), c.action, c.class);
+    if let Some(n) = &c.note {
+        report.msg(n.clone());
+    }
+}
+
+/// `e` with the changes applied so far: `Applied` (exit 3, `--json` lists them) once there are
+/// any, else `e` itself.
+fn applied(mut report: Report, e: SpliceError) -> SpliceError {
+    if report.changes.is_empty() {
+        return e;
+    }
+    report.ok = false;
+    report.msg(e.to_string());
+    SpliceError::Applied(report)
 }
 
 /// An error after the write phase began: it says the lock still records `from`, and, when
@@ -307,6 +332,48 @@ mod tests {
     }
 
     #[test]
+    fn failed_first_write_has_the_restore_hint() {
+        // `adir` is a directory, so writing it fails after the target check passed.
+        let dir = repo_v1();
+        std::fs::create_dir(dir.path().join("adir")).unwrap();
+        let plan = plan_of(vec![planned("adir", Action::Create, Some("x\n"))]);
+        let e = go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        let msg = e.to_string();
+        assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
+        assert!(msg.contains("the lock still records 1.0.0"), "{msg}");
+    }
+
+    #[test]
+    fn failed_step_lists_the_applied_changes() {
+        let dir = repo_v1();
+        let plan = plan_of(vec![planned("new.txt", Action::Create, Some("new\n"))]);
+        let e = go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[step("exit 7")],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap_err();
+        let SpliceError::Applied(r) = &e else {
+            panic!("{e:?}");
+        };
+        assert_eq!(e.exit_code(), 3);
+        assert!(!r.ok);
+        assert_eq!(r.changes.len(), 1);
+        assert_eq!(r.changes[0].path, "new.txt");
+        assert!(r.messages.last().unwrap().contains("exit 7"));
+    }
+
+    #[test]
     fn removal_of_an_already_gone_file_is_tolerated() {
         let dir = repo_v1();
         let plan = plan_of(vec![planned("gone.txt", Action::Delete, None)]);
@@ -323,6 +390,7 @@ mod tests {
     #[test]
     fn drift_in_the_plan_is_refused_before_any_write() {
         let dir = repo_v1();
+        let lock_before = std::fs::read(dir.path().join(LOCK_PATH)).unwrap();
         let mut plan = plan_of(vec![planned("a.txt", Action::Create, Some("a\n"))]);
         plan.drift = vec!["old.txt".into()];
         let e = go(Run {
@@ -335,6 +403,10 @@ mod tests {
         .unwrap_err();
         assert_eq!(e.exit_code(), 1);
         assert!(!dir.path().join("a.txt").exists());
+        assert_eq!(
+            std::fs::read(dir.path().join(LOCK_PATH)).unwrap(),
+            lock_before
+        );
     }
 
     #[test]

@@ -78,15 +78,22 @@ pub fn prepare(
     if let Some(v) = to.filter(|v| *v < &from) {
         return Err(downgrade(v));
     }
-    let mut target = match to {
-        Some(v) => fetcher.resolve_version(&src, v)?,
-        None => fetcher.resolve(&src, None, false)?,
+    // Without `--to`: the latest stable tag. A template with prerelease tags only has none, so
+    // there is nothing newer than the lock either.
+    let latest = match to {
+        Some(v) => Some(fetcher.resolve_version(&src, v)?),
+        None => match fetcher.resolve(&src, None, false) {
+            Ok(t) => Some(t),
+            Err(_) if fetcher.available_versions(&src, false)?.is_empty() => None,
+            Err(e) => return Err(e),
+        },
     };
     // No newer stable tag (e.g. a prerelease lock): nothing to do, stay on the lock's commit.
-    let no_newer = to.is_none() && target.version < from;
-    if no_newer {
-        target = fetcher.checkout(&src, &lock.template.commit, from.clone())?;
-    }
+    let no_newer = to.is_none() && latest.as_ref().is_none_or(|t| t.version < from);
+    let target = match latest {
+        Some(t) if !no_newer => t,
+        _ => fetcher.checkout(&src, &lock.template.commit, from.clone())?,
+    };
     if target.version < from {
         return Err(downgrade(&target.version));
     }
@@ -207,7 +214,7 @@ pub fn prepare(
     // 6. Plan (pure) over a disk snapshot of every path involved.
     let migrations = select(&template.migrations, &from, &target.version);
     let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
-    let removes = render_removes(&template, &removes, &instances, &vars)?;
+    let removes = render_removes(&template, &target.version, &removes, &instances, &vars)?;
     let disk = Disk::snapshot(
         repo,
         base.keys()
@@ -332,6 +339,7 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         Ok(r) => Ok(prepend(r)),
         Err(SpliceError::Conflict(r)) => Err(SpliceError::Conflict(prepend(r))),
         Err(SpliceError::Drift(r)) => Err(SpliceError::Drift(prepend(r))),
+        Err(SpliceError::Applied(r)) => Err(SpliceError::Applied(prepend(r))),
         Err(e) => Err(e),
     }
 }

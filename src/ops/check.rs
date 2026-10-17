@@ -3,7 +3,7 @@
 use crate::cli::{CheckArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
-use crate::fsio::{read_opt, sha256_hex};
+use crate::fsio::{check_target, read_opt, sha256_hex};
 use crate::lock::{LOCK_PATH, Lock};
 use crate::markers::find_markers;
 use crate::output::{Action, Class, Report};
@@ -32,6 +32,11 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
     };
     let mut report = Report::new("check");
 
+    // Every lock path is checked before any is read: no `..`, no absolute path, no symlink.
+    for path in lock.files.keys() {
+        check_target(repo, path)
+            .map_err(|e| SpliceError::Template(format!("{LOCK_PATH} lists an unsafe path: {e}")))?;
+    }
     for (path, file) in &lock.files {
         let bytes = read_opt(repo, path)?;
         if file.class == Class::Owned
@@ -42,7 +47,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
         if let Some(bytes) = bytes {
             let lines = find_markers(&String::from_utf8_lossy(&bytes));
             if !lines.is_empty() {
-                report.push(path, Action::Conflict, Class::Shared);
+                report.push(path, Action::Conflict, file.class);
                 report.msg(format!(
                     "`{path}` has unresolved conflict markers (line {})",
                     lines[0]

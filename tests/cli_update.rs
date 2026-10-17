@@ -300,6 +300,23 @@ fn prerelease_lock_without_newer_stable_is_up_to_date() {
 }
 
 #[test]
+fn prerelease_only_template_is_up_to_date() {
+    let tpl = template_repo_tagged(&[("v1", "v1.0.0-rc.1"), ("v2", "v2.0.0-rc.1")]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0-rc.1"]);
+    let before = lock_bytes(&repo);
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert!(
+        messages(&json(&out)).contains(
+            "up to date (no newer stable than 1.0.0-rc.1; use --to <tag> for a prerelease)"
+        ),
+        "{}",
+        messages(&json(&out))
+    );
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(porcelain(&repo), "");
+}
+
+#[test]
 fn removed_piece_is_template_error() {
     let tpl = template_repo_tagged(&[("v1", "v1.0.0"), ("v2-nolib", "v2.0.0")]);
     let repo = new_repo(
@@ -326,4 +343,29 @@ fn remove_paths_reach_the_planner() {
     let out = update(&repo, &[]).success().get_output().stdout.clone();
     assert!(messages(&json(&out)).contains("still renders it"));
     assert!(repo.path().join("notes.txt").exists());
+}
+
+#[test]
+fn remove_paths_see_the_template_object() {
+    // `template.name` renders in a [[remove]] path (strict undefined would exit 3 otherwise).
+    let tpl = template_repo(&["v1", "v2"]);
+    let mig = tpl.path().join("migrations/2.0.0.toml");
+    let text = std::fs::read_to_string(&mig).unwrap();
+    std::fs::write(
+        &mig,
+        format!("{text}\n[[remove]]\npath = \"{{{{ template.name }}}}-{{{{ template.version }}}}.cfg\"\n"),
+    )
+    .unwrap();
+    amend_tip(tpl.path(), "v2.0.0");
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    std::fs::write(repo.path().join("fixture-2.0.0.cfg"), "mine\n").unwrap();
+    commit_all(repo.path());
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert!(
+        messages(&json(&out)).contains("`fixture-2.0.0.cfg` is listed in a [[remove]]"),
+        "{}",
+        messages(&json(&out))
+    );
+    assert_eq!(read(&repo, "fixture-2.0.0.cfg"), "mine\n");
+    assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
 }

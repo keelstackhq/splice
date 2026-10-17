@@ -188,3 +188,40 @@ fn no_lock_is_usage_error() {
         .assert()
         .code(2);
 }
+
+#[test]
+fn unsafe_lock_path_is_refused_not_read() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, None);
+    let lock = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&lock).unwrap();
+    let text = text.replacen(
+        "[files]\n",
+        "[files]\n\"../outside.txt\" = { class = \"owned\", sha256 = \"00\" }\n",
+        1,
+    );
+    assert!(text.contains("../outside.txt"));
+    std::fs::write(&lock, text).unwrap();
+    let (code, v) = check(&repo, &["--offline"]);
+    assert_eq!(code, 3, "{v}");
+    assert!(messages(&v).contains("../outside.txt"), "{v}");
+}
+
+#[test]
+fn markers_report_the_lock_class() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, None);
+    let p = repo.path().join(".editorconfig");
+    let mut t = std::fs::read_to_string(&p).unwrap();
+    t.push_str("<<<<<<< ours\na\n||||||| base\nb\n=======\nc\n>>>>>>> template\n");
+    std::fs::write(&p, t).unwrap();
+    let (code, v) = check(&repo, &["--offline"]);
+    assert_eq!(code, 1);
+    assert_eq!(
+        v["changes"],
+        serde_json::json!([
+            {"path":".editorconfig","action":"update","class":"owned"},
+            {"path":".editorconfig","action":"conflict","class":"owned"}
+        ])
+    );
+}

@@ -19,6 +19,10 @@ pub enum SpliceError {
     /// Drift, markers or an available update: exit 1.
     #[error("drift detected")]
     Drift(Report),
+    /// A write, migration step, post command or the lock write failed after files were written:
+    /// exit 3. The report lists the changes already applied; its last message is the error.
+    #[error("{}", .0.messages.last().map_or("", String::as_str))]
+    Applied(Report),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -27,7 +31,10 @@ impl SpliceError {
     pub fn exit_code(&self) -> i32 {
         match self {
             SpliceError::Usage(_) => 2,
-            SpliceError::Template(_) | SpliceError::Env(_) | SpliceError::Io(_) => 3,
+            SpliceError::Template(_)
+            | SpliceError::Env(_)
+            | SpliceError::Applied(_)
+            | SpliceError::Io(_) => 3,
             SpliceError::Conflict(_) | SpliceError::Drift(_) => 1,
         }
     }

@@ -216,7 +216,7 @@ the same `add` is safe because a file that already equals the new render is skip
    recovery story: every failure can be undone with `git checkout -- . && git clean -fd`, and
    every error message after files were written says so.
 2. Target = `--to` or latest stable tag. `--to` < lock version → exit 2. No `--to` and no stable
-   tag newer than the lock (e.g. a prerelease lock) → exit 0, "up to date (no newer stable than
+   tag newer than the lock (e.g. a prerelease lock, or a template with prerelease tags only) → exit 0, "up to date (no newer stable than
    X; use --to <tag> for a prerelease)", nothing written. Target = lock version → nothing to do
    (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
 3. Fetch both trees. Load the target manifest; check `format` and `min_splice` (exit 3).
@@ -233,7 +233,8 @@ the same `add` is safe because a file that already equals the new render is skip
    semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
    `when` ∋ `update`, then write the lock atomically (§8.6) as the last step (as in §8.1 and §8.6).
    A failing step or post command exits 3 **before** the lock is written: the files are updated
-   but the lock still records the old state, and re-running `update` is safe. The restore hint
+   but the lock still records the old state, and re-running `update` is safe (after restoring,
+   or at once with `--allow-dirty`: the re-run converges on the same result). The restore hint
    appears only once something was written (a refused target before the first write has none);
    a failed lock write says the lock still records the old version.
 8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
@@ -251,8 +252,11 @@ L. `sha(O) == L.sha256` means "unedited".
 | B, T, O absent (user deleted) | drift (recreated with `--force`) | skip; keep deleted, lock records T | skip |
 | B only (gone from target) or `[[remove]]` | delete if unedited, else keep + message | delete if O = B, else keep + message | never deleted |
 
+"skip" for seeds means no change entry at all (nothing is reported for an existing seed).
+
 `[[remove]]` paths are rendered with each instance of `piece` (template vars only when `piece` is
-absent) and are repo-root relative. A `[[remove]]` path that the target still renders is ignored
+absent), and in both cases with `template` (name, target version) and `pieces`, as files are; they
+are repo-root relative. A `[[remove]]` path that the target still renders is ignored
 with a warning. Renames are a removal plus an addition; a migration step may move user content
 between them (it runs after both).
 
@@ -280,8 +284,11 @@ between them (it runs after both).
   multi-document one, is a parse error and falls back to text.
 - A parse error in any side falls back to text.
 - **Structured conflict → markers:** run the text merge; if it yields markers, use them; if it
-  merges cleanly anyway, wrap the whole file in one diff3 block (ours / base / theirs). Every
-  conflict therefore leaves markers that `check` finds.
+  merges cleanly anyway, wrap the whole file in one diff3 block (ours / base / theirs), with the
+  text merge's CRLF rule. Every conflict therefore leaves markers that `check` finds.
+- **Text fallback guards:** a clean JSON text merge that introduces a duplicate key ours did not
+  have, and a clean TOML text merge (a side did not parse) that no longer parses while ours does
+  (e.g. a merge-introduced duplicate key), become one whole-file conflict block.
 
 ### 8.6 Lock writing (contract §6)
 
@@ -297,7 +304,8 @@ Exit 1 if any of: an owned file in the lock whose disk sha differs (or is missin
 file containing a line that starts with `<<<<<<< ours`, `||||||| base`, `=======` inside such a
 block, or `>>>>>>> template`; a newer stable tag than the lock version (skipped with `--offline`,
 and a fetch failure is a message, not an error). Changes: drift → `update/owned`, markers →
-`conflict/shared`. Messages: `update available: 1.2.0 → 1.3.0`.
+`conflict/<the file's lock class>`. Every lock path is checked like a write target (relative, no
+`..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
 
 ### 8.8 `diff`
 
@@ -306,14 +314,15 @@ unified diff (`diffy::create_patch`, labels `a/<path>` and `b/<path>`, `/dev/nul
 file) from the disk to the planned bytes per written file (a conflict shows its markers), plus
 `delete <path>` per removal and `Binary file <path> differs` for non-UTF-8 content. Notes and
 owned drift go to stderr as messages. `--json` returns the planned `changes` (equal to
-`update --json`'s on the same repo) and the messages. Drift and conflicts are reported, not
+`update --json`'s on the same repo when `update` would not refuse) and the messages. Drift and conflicts are reported, not
 failures: exit 0; a downgrade `--to` is exit 2 as on `update`.
 
 ### 8.9 `explain`
 
 Re-renders the lock state from the cached tree (offline after the first fetch) and prints
-`<path>  <class>  <piece-id>/<instance-name>  glob=<glob|default>  merge=<strategy>`; `--json`:
-one change `{path, action: "skip", class}` and messages `piece=…`, `glob=…`, `merge=…`. An
+`<path>  <class>  <piece-id>/<instance-name>  glob=<glob|default>  merge=<strategy>` on stdout
+(nothing on stderr); `--json`: one change `{path, action: "skip", class}` and messages
+`piece=…`, `glob=…`, `merge=…`. An
 unmanaged path → ok, no changes, message `unmanaged`. `merge=` is the `[merge]` strategy for
 shared files and `none` for owned and seed files. Paths are normalised first (`./` prefix, `\`
 separators); absolute paths and `..` are a usage error.
@@ -322,7 +331,9 @@ separators); absolute paths and `..` are a usage error.
 
 `Report { ok, command, changes: [Change { path, action, class }], messages }`, serialised with
 exactly those keys. `ok` is false for exit codes ≠ 0. Changes are sorted by path; unchanged files
-are omitted.
+are omitted. An exit 3 after files were written (a failed write, migration step, post command or
+lock write in `update` or `add`) still lists the changes applied so far; the last message is the
+error with the restore hint.
 
 ## 10. Decisions on gaps in the contract
 

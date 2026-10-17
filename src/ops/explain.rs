@@ -77,8 +77,11 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
         },
     )?;
 
+    // Human mode prints the line on stdout only; the messages carry the same facts for --json.
     let Some(file) = tree.get(&path) else {
-        report.msg("unmanaged");
+        if g.json {
+            report.msg("unmanaged");
+        }
         report.lines.push(format!("{path}  unmanaged"));
         return Ok(report);
     };
@@ -91,9 +94,11 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
         "none"
     };
     report.push(&path, Action::Skip, file.class);
-    report.msg(format!("piece={piece}"));
-    report.msg(format!("glob={glob}"));
-    report.msg(format!("merge={merge}"));
+    if g.json {
+        report.msg(format!("piece={piece}"));
+        report.msg(format!("glob={glob}"));
+        report.msg(format!("merge={merge}"));
+    }
     report.lines.push(format!(
         "{path}  {}  {piece}  glob={glob}  merge={merge}",
         file.class.as_str()

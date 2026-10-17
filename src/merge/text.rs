@@ -37,9 +37,12 @@ pub fn merge_text(base: &str, ours: &str, theirs: &str) -> Merged {
 }
 
 /// The whole file as one diff3 conflict block, for files that cannot be merged line by line.
+/// Line endings follow [`merge_text`]: CRLF throughout if `ours` has any CRLF, else LF.
 pub fn wrap_whole(base: &str, ours: &str, theirs: &str) -> String {
+    let crlf = ours.contains("\r\n");
+    let (b, o, t) = (lf(base), lf(ours), lf(theirs));
     let mut out = String::from("<<<<<<< ours\n");
-    for (part, sep) in [(ours, "||||||| base\n"), (base, "=======\n"), (theirs, "")] {
+    for (part, sep) in [(&o, "||||||| base\n"), (&b, "=======\n"), (&t, "")] {
         out.push_str(part);
         if !part.is_empty() && !part.ends_with('\n') {
             out.push('\n');
@@ -47,7 +50,7 @@ pub fn wrap_whole(base: &str, ours: &str, theirs: &str) -> String {
         out.push_str(sep);
     }
     out.push_str(">>>>>>> template\n");
-    out
+    if crlf { out.replace('\n', "\r\n") } else { out }
 }
 
 fn lf(s: &str) -> String {
@@ -190,6 +193,18 @@ mod tests {
             "<<<<<<< ours\nours\n||||||| base\nx\n=======\n>>>>>>> theirs\nmore\n>>>>>>> template\n"
         );
         assert_eq!(m.conflicts, vec!["line 1"]);
+    }
+
+    #[test]
+    fn wrap_whole_follows_the_crlf_rule() {
+        assert_eq!(
+            wrap_whole("b\n", "o\r\n", "t\n"),
+            "<<<<<<< ours\r\no\r\n||||||| base\r\nb\r\n=======\r\nt\r\n>>>>>>> template\r\n"
+        );
+        assert_eq!(
+            wrap_whole("b\r\n", "o\n", "t\r\n"),
+            "<<<<<<< ours\no\n||||||| base\nb\n=======\nt\n>>>>>>> template\n"
+        );
     }
 
     #[test]

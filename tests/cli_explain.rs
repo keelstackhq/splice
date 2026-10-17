@@ -105,3 +105,18 @@ fn works_offline_after_new() {
     let v = explain_json(&repo, "apps/web/tsconfig.json");
     assert_eq!(v["changes"][0]["class"], "owned");
 }
+
+#[test]
+fn human_mode_prints_each_line_once() {
+    let (_tpl, repo) = new_repo(&["--piece", "app:web"]);
+    std::fs::write(repo.path().join("notes.md"), "mine\n").unwrap();
+    for p in ["apps/web/package.json", "notes.md"] {
+        let out = splice_cmd()
+            .current_dir(repo.path())
+            .args(["explain", p])
+            .assert()
+            .success();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+        assert_eq!(stderr, "", "{p}: the stdout line is not repeated on stderr");
+    }
+}

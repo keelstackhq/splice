@@ -223,13 +223,26 @@ fn existing_seed_is_kept() {
         .unwrap()
         .iter()
         .find(|c| c["path"] == "apps/admin/src/main.ts");
-    assert!(c.is_none_or(|c| c["action"] == "skip"), "{r}");
+    assert!(c.is_none(), "{r}");
 }
 
 #[test]
 fn add_without_lock_is_usage() {
+    // A clean git work tree (so the dirty-tree check passes) without a lock.
     let dir = tempfile::tempdir().unwrap();
-    add(&dir, &["app"]).code(2);
+    git(dir.path(), "2026-03-01T00:00:00+00:00", &["init", "-q"]);
+    let out = add(&dir, &["app"]).code(2).get_output().stdout.clone();
+    let msg = json(out)["messages"].to_string();
+    assert!(msg.contains("splice new"), "{msg}");
+    // Not a git repo, but --allow-dirty: the missing lock is still the reason.
+    let dir = tempfile::tempdir().unwrap();
+    let out = add(&dir, &["app", "--allow-dirty"])
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let msg = json(out)["messages"].to_string();
+    assert!(msg.contains("splice new"), "{msg}");
 }
 
 #[test]

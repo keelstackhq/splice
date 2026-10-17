@@ -345,10 +345,12 @@ fn gone(input: &PlanInput, path: &str, base: Option<&RenderedFile>, ours: Option
 }
 
 /// Render `[[remove]]` paths (spec §8.4): with each instance of `piece`, or with the template
-/// `vars` only when `piece` is absent. Repo-root relative, deduplicated, in order. An unknown
+/// `vars` only when `piece` is absent. Both contexts also hold `template` (name and the target
+/// `version`) and `pieces`, as file renders do. Repo-root relative, deduplicated, in order. An unknown
 /// `piece`, an unsafe path or `.splice/lock.toml` is a template error.
 pub fn render_removes(
     t: &Template,
+    version: &semver::Version,
     removes: &[&Remove],
     instances: &[PieceInstance],
     vars: &IndexMap<String, String>,
@@ -360,11 +362,15 @@ pub fn render_removes(
             pieces.push(&inst.id);
         }
     }
+    let template = minijinja::context! {
+        name => t.manifest.name.as_str(),
+        version => version.to_string(),
+    };
     let mut out: Vec<String> = Vec::new();
     for r in removes {
         let origin = format!("[[remove]] `{}`", r.path);
         let contexts: Vec<minijinja::Value> = match &r.piece {
-            None => vec![minijinja::Value::from_serialize(vars)],
+            None => vec![template_context(vars, &pieces, &template)],
             Some(id) => {
                 if !t.pieces.contains_key(id) {
                     return Err(SpliceError::Template(format!(
@@ -374,7 +380,7 @@ pub fn render_removes(
                 instances
                     .iter()
                     .filter(|i| i.id == *id)
-                    .map(|i| instance_context(vars, i, &pieces))
+                    .map(|i| instance_context(vars, i, &pieces, &template))
                     .collect()
             }
         };
@@ -393,12 +399,28 @@ pub fn render_removes(
     Ok(out)
 }
 
+/// The context of a `[[remove]]` without `piece`: template vars, `pieces` and `template`.
+fn template_context(
+    vars: &IndexMap<String, String>,
+    pieces: &[&str],
+    template: &minijinja::Value,
+) -> minijinja::Value {
+    let mut ctx: IndexMap<&str, minijinja::Value> = IndexMap::new();
+    for (k, v) in vars {
+        ctx.insert(k, minijinja::Value::from(v.as_str()));
+    }
+    ctx.insert("pieces", minijinja::Value::from_serialize(pieces));
+    ctx.insert("template", template.clone());
+    minijinja::Value::from_serialize(&ctx)
+}
+
 /// The variables of one instance, as for its files: template vars, instance vars, `name`,
-/// `pieces` and `piece`.
+/// `pieces`, `piece` and `template`.
 fn instance_context(
     vars: &IndexMap<String, String>,
     inst: &PieceInstance,
     pieces: &[&str],
+    template: &minijinja::Value,
 ) -> minijinja::Value {
     let mut ctx: IndexMap<&str, minijinja::Value> = IndexMap::new();
     for (k, v) in vars.iter().chain(inst.vars.iter()) {
@@ -410,6 +432,7 @@ fn instance_context(
         "piece",
         minijinja::context! { id => inst.id.as_str(), name => inst.name.as_str() },
     );
+    ctx.insert("template", template.clone());
     minijinja::Value::from_serialize(&ctx)
 }
 
@@ -957,13 +980,30 @@ mod tests {
         ];
         let refs: Vec<&Remove> = rs.iter().collect();
         assert_eq!(
-            render_removes(&t, &refs, &instances, &vars).unwrap(),
+            render_removes(&t, &semver::Version::new(2, 0, 0), &refs, &instances, &vars).unwrap(),
             vec![
                 "apps/web/.eslintrc.json",
                 "apps/admin/.eslintrc.json",
                 "demo.old",
                 "tool.config.mts",
             ]
+        );
+    }
+
+    #[test]
+    fn render_removes_see_template_and_pieces() {
+        let t = v2();
+        let instances = [inst("base", "base"), inst("app", "web")];
+        let vars = IndexMap::new();
+        let rs = [
+            remove("{{ template.name }}.cfg", None),
+            remove("{{ template.version }}.txt", None),
+            remove("{{ template.name }}/{{ name }}.cfg", Some("app")),
+        ];
+        let refs: Vec<&Remove> = rs.iter().collect();
+        assert_eq!(
+            render_removes(&t, &semver::Version::new(2, 0, 0), &refs, &instances, &vars).unwrap(),
+            vec!["fixture.cfg", "2.0.0.txt", "fixture/web.cfg"]
         );
     }
 
@@ -980,7 +1020,8 @@ mod tests {
             remove("{{ name }}", None), // only template vars without `piece`
             remove("x", Some("nope")),
         ] {
-            let e = render_removes(&t, &[&r], &instances, &vars).unwrap_err();
+            let e = render_removes(&t, &semver::Version::new(2, 0, 0), &[&r], &instances, &vars)
+                .unwrap_err();
             assert_eq!(e.exit_code(), 3, "{}", r.path);
         }
     }
