@@ -131,4 +131,71 @@ mod tests {
             vec!["filter `nope/**` matches nothing".to_string()]
         );
     }
+
+    fn file(path: &str, body: &str) -> crate::render::RenderedFile {
+        crate::render::RenderedFile {
+            path: path.into(),
+            bytes: body.as_bytes().to_vec(),
+            class: crate::output::Class::Owned,
+            strategy: crate::manifest::MergeStrategy::Text,
+            piece_id: "p".into(),
+            piece_name: "p".into(),
+            glob: None,
+        }
+    }
+
+    #[test]
+    fn apply_tree_drops_excluded_and_keeps_rest_unchanged() {
+        let mut tree = RenderedTree::new();
+        for (p, b) in [
+            (".claude/a/x.md", "x\n"),
+            (".claude/skills/caveman/S.md", "s\n"),
+        ] {
+            tree.insert(p.into(), file(p, b));
+        }
+        let f = Filter::new(&[], &s(&[".claude/skills/**"])).unwrap();
+        let out = f.apply_tree(tree.clone());
+        assert_eq!(out.keys().collect::<Vec<_>>(), [".claude/a/x.md"]);
+        assert_eq!(out[".claude/a/x.md"].bytes, tree[".claude/a/x.md"].bytes);
+        assert_eq!(out[".claude/a/x.md"].path, ".claude/a/x.md");
+    }
+
+    #[test]
+    fn from_meta_applies_only_and_exclude() {
+        let m = ChannelMeta {
+            name: "rig".into(),
+            only: s(&[".claude/**"]),
+            exclude: s(&[".claude/skills/caveman/**"]),
+            ..Default::default()
+        };
+        let f = Filter::from_meta(&m, ".splice/channels/rig.toml").unwrap();
+        assert!(f.keeps(".claude/agents/x.md"));
+        assert!(!f.keeps(".claude/skills/caveman/S.md"));
+        assert!(!f.keeps("AGENTS.md"));
+    }
+
+    #[test]
+    fn bad_stored_only_glob_names_only_and_lock() {
+        let m = ChannelMeta {
+            name: "rig".into(),
+            only: s(&["a/[b"]),
+            ..Default::default()
+        };
+        let e = Filter::from_meta(&m, ".splice/channels/rig.toml").unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        let msg = e.to_string();
+        assert!(
+            msg.contains("`only`") && msg.contains(".splice/channels/rig.toml"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn double_star_crosses_slash_and_globs_anchor_at_root() {
+        let f = Filter::new(&s(&[".claude/**"]), &[]).unwrap();
+        assert!(f.keeps(".claude/a/b/c.md"));
+        let f = Filter::new(&[], &s(&["a.md"])).unwrap();
+        assert!(!f.keeps("a.md"));
+        assert!(f.keeps("x/a.md"));
+    }
 }
