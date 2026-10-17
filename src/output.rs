@@ -92,23 +92,22 @@ impl Report {
         serde_json::to_string(&sorted).expect("a Report always serializes")
     }
 
-    /// `--json`: the object on stdout. Otherwise one line per change on stdout and the
-    /// messages on stderr.
+    /// `--json`: the object on stdout. Otherwise one line per change (or `lines`, when set) on
+    /// stdout and the messages on stderr.
     pub fn print(&self, json: bool) {
         if json {
             println!("{}", self.to_json());
             return;
         }
-        if !self.lines.is_empty() {
-            for l in &self.lines {
-                println!("{l}");
+        if self.lines.is_empty() {
+            let mut changes: Vec<&Change> = self.changes.iter().collect();
+            changes.sort_by(|a, b| a.path.cmp(&b.path));
+            for c in changes {
+                println!("{}  {}  {}", c.action.as_str(), c.path, c.class.as_str());
             }
-            return;
         }
-        let mut changes: Vec<&Change> = self.changes.iter().collect();
-        changes.sort_by(|a, b| a.path.cmp(&b.path));
-        for c in changes {
-            println!("{}  {}  {}", c.action.as_str(), c.path, c.class.as_str());
+        for l in &self.lines {
+            println!("{l}");
         }
         for m in &self.messages {
             eprintln!("{m}");

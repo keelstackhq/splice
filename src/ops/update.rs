@@ -1,5 +1,7 @@
 //! `splice update` (spec §8.3): move the repo to a newer template version.
 
+use std::path::Path;
+
 use indexmap::IndexMap;
 use semver::Version;
 
@@ -234,37 +236,42 @@ pub fn prepare(
     })
 }
 
+/// Spec §8.3 step 1: refuse (exit 2) outside a git work tree or with uncommitted changes.
+/// `command` names the splice command in the message.
+pub fn require_clean(repo: &Path, command: &str) -> Result<()> {
+    match Git::is_clean(repo)? {
+        None => usage(format!(
+            "{} is not inside a git work tree; splice {command} needs git to undo a bad \
+             {command} (pass --allow-dirty to {command} anyway)",
+            repo.display()
+        )),
+        Some(false) => usage(
+            "the working tree has uncommitted changes; commit or stash them first \
+             (or pass --allow-dirty)"
+                .into(),
+        ),
+        Some(true) => Ok(()),
+    }
+}
+
+/// Parse `--to` (a leading `v` is allowed).
+pub fn parse_to(to: Option<&str>) -> Result<Option<Version>> {
+    to.map(|v| {
+        Version::parse(v.strip_prefix('v').unwrap_or(v))
+            .map_err(|e| SpliceError::Usage(format!("--to `{v}` is not a version: {e}")))
+    })
+    .transpose()
+}
+
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     let repo = g.dir.as_path();
 
     // 1. A clean work tree is the undo button.
     if !a.allow_dirty {
-        match Git::is_clean(repo)? {
-            None => {
-                return usage(format!(
-                    "{} is not inside a git work tree; splice update needs git to undo a bad \
-                     update (pass --allow-dirty to update anyway)",
-                    repo.display()
-                ));
-            }
-            Some(false) => {
-                return usage(
-                    "the working tree has uncommitted changes; commit or stash them first \
-                     (or pass --allow-dirty)"
-                        .into(),
-                );
-            }
-            Some(true) => {}
-        }
+        require_clean(repo, "update")?;
     }
 
-    let to = match &a.to {
-        Some(v) => Some(
-            Version::parse(v.strip_prefix('v').unwrap_or(v))
-                .map_err(|e| SpliceError::Usage(format!("--to `{v}` is not a version: {e}")))?,
-        ),
-        None => None,
-    };
+    let to = parse_to(a.to.as_deref())?;
     let data = super::new::parse_data(&a.data)?;
     let prep = prepare(g, to.as_ref(), &data, a.force)?;
 

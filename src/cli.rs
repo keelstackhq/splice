@@ -95,10 +95,13 @@ pub struct AddArgs {
     /// Template or piece variable, `K=V`.
     #[arg(long = "data", value_name = "K=V")]
     pub data: Vec<String>,
+    /// Add even when the working tree is dirty.
+    #[arg(long)]
+    pub allow_dirty: bool,
     /// Skip post commands.
     #[arg(long)]
     pub no_post: bool,
-    /// Overwrite existing files.
+    /// Replace owned files that drifted; keep conflicting shared files as they are.
     #[arg(long)]
     pub force: bool,
 }

@@ -51,18 +51,18 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
         }
     }
 
+    let mut update_available = false;
     if !a.offline {
         match newer_stable(&lock) {
-            Ok(Some(v)) => report.msg(format!("update available: {} → {v}", lock.template.version)),
+            Ok(Some(v)) => {
+                update_available = true;
+                report.msg(format!("update available: {} → {v}", lock.template.version));
+            }
             Ok(None) => {}
             Err(e) => report.msg(format!("could not look for updates: {e}")),
         }
     }
 
-    let update_available = report
-        .messages
-        .iter()
-        .any(|m| m.starts_with("update available"));
     if !report.changes.is_empty() || update_available {
         report.ok = false;
         return Err(SpliceError::Drift(report));

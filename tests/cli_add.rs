@@ -2,9 +2,25 @@
 
 mod common;
 
-use common::{splice_cmd, template_repo, tree_snapshot};
+use common::{git, splice_cmd, template_repo, tree_snapshot};
 use splice::lock::Lock;
+use std::path::Path;
 use tempfile::TempDir;
+
+const DATE: &str = "2026-03-01T00:00:00+00:00";
+
+/// Commit everything (also when nothing changed), so `add` sees a clean tree.
+fn commit_all(repo: &Path) {
+    if !repo.join(".git").exists() {
+        git(repo, DATE, &["init", "-q", "-b", "main"]);
+    }
+    git(repo, DATE, &["add", "-A"]);
+    git(
+        repo,
+        DATE,
+        &["commit", "-q", "--allow-empty", "-m", "state"],
+    );
+}
 
 /// A repo made by `splice new` from the v1 fixture; the template dir is returned to keep it alive.
 fn new_repo(extra: &[&str]) -> (TempDir, TempDir) {
@@ -23,7 +39,11 @@ fn new_repo(extra: &[&str]) -> (TempDir, TempDir) {
     (tpl, repo)
 }
 
+/// `splice add` after committing the tree (user edits included), as a user would.
 fn add(repo: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
+    if repo.path().join(".splice").exists() {
+        commit_all(repo.path());
+    }
     splice_cmd()
         .current_dir(repo.path())
         .arg("add")
@@ -196,15 +216,14 @@ fn existing_seed_is_kept() {
         .stdout
         .clone();
     assert_eq!(read(&repo, "apps/admin/src/main.ts"), "mine\n");
+    // The full planner leaves an existing seed alone and reports no write for it (spec §8.4).
     let r = json(out);
     let c = r["changes"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["path"] == "apps/admin/src/main.ts")
-        .unwrap()
-        .clone();
-    assert_eq!(c["action"], "skip");
+        .find(|c| c["path"] == "apps/admin/src/main.ts");
+    assert!(c.is_none_or(|c| c["action"] == "skip"), "{r}");
 }
 
 #[test]
@@ -321,11 +340,18 @@ fn deleted_seed_stays_deleted_and_force_keeps_edited_base_only_files() {
     assert!(!repo.path().join("README.md").exists());
     assert_eq!(read(&repo, "only-without-app.txt"), "mine\n");
     assert_eq!(change(&r, "only-without-app.txt")["action"], "skip");
-    assert!(r["messages"].as_array().unwrap().iter().any(|m| {
-        m.as_str()
-            .unwrap()
-            .contains("the lock records the template's version")
-    }));
+    // The file is no longer rendered: kept, and not in the lock, so the message never claims it.
+    let msg = r["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .find(|m| m.contains("only-without-app.txt"))
+        .unwrap_or_else(|| panic!("no message: {r}"));
+    assert!(msg.contains("kept"), "{msg}");
+    assert!(!msg.contains("lock records"), "{msg}");
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert!(!lock.files.contains_key("only-without-app.txt"));
 }
 
 #[test]
@@ -351,7 +377,15 @@ fn relative_local_source_is_locked_as_an_absolute_path() {
     // `add` from inside the repo, and `-C` from elsewhere, both find the template.
     splice_cmd()
         .current_dir(&repo)
-        .args(["add", "app", "--name", "admin", "--yes", "--json"])
+        .args([
+            "add",
+            "app",
+            "--name",
+            "admin",
+            "--allow-dirty",
+            "--yes",
+            "--json",
+        ])
         .assert()
         .success();
     assert!(repo.join("apps/admin/package.json").exists());
@@ -363,6 +397,90 @@ fn relative_local_source_is_locked_as_an_absolute_path() {
             repo.to_str().unwrap(),
             "explain",
             "apps.txt",
+            "--json",
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+fn add_merges_edited_shared_file() {
+    let (_tpl, repo) = new_repo(&[]);
+    let path = repo.path().join("package.json");
+    let text = read(&repo, "package.json");
+    assert!(text.contains("\"base\","), "{text}");
+    let edited = text.replace(
+        "  \"private\": true,\n",
+        "  \"private\": true,\n  \"license\": \"MIT\",\n",
+    );
+    assert_ne!(edited, text);
+    std::fs::write(&path, &edited).unwrap();
+    let out = add(&repo, &["app", "--name", "admin"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert_eq!(change(&r, "package.json")["action"], "merge");
+    let merged = read(&repo, "package.json");
+    assert!(merged.contains("\"license\": \"MIT\""), "{merged}");
+    assert!(merged.contains("\"app\","), "{merged}");
+    assert!(merged.contains("\"base\","), "{merged}");
+}
+
+#[test]
+fn dirty_tree_refused_unless_allow_dirty() {
+    let (_tpl, repo) = new_repo(&[]);
+    commit_all(repo.path());
+    std::fs::write(repo.path().join("notes.txt"), "uncommitted\n").unwrap();
+    let tree = tree_snapshot(repo.path());
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "admin", "--yes", "--json"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert!(
+        r["messages"][0].as_str().unwrap().contains("--allow-dirty"),
+        "{r}"
+    );
+    assert_eq!(tree_snapshot(repo.path()), tree);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args([
+            "add",
+            "app",
+            "--name",
+            "admin",
+            "--allow-dirty",
+            "--yes",
+            "--json",
+        ])
+        .assert()
+        .success();
+    assert!(repo.path().join("apps/admin/package.json").exists());
+}
+
+#[test]
+fn outside_work_tree_refused_unless_allow_dirty() {
+    let (_tpl, repo) = new_repo(&[]); // never committed: no git work tree
+    splice_cmd()
+        .current_dir(repo.path())
+        .args(["add", "app", "--name", "admin", "--yes", "--json"])
+        .assert()
+        .code(2);
+    splice_cmd()
+        .current_dir(repo.path())
+        .args([
+            "add",
+            "app",
+            "--name",
+            "admin",
+            "--allow-dirty",
+            "--yes",
             "--json",
         ])
         .assert()

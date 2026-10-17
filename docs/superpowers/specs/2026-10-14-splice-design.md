@@ -46,7 +46,7 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | Command | Purpose |
 |---|---|
 | `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
-| `splice add <piece-id> [--name N] [--data K=V]… [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
+| `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
 | `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post]` | Move to a newer template version (default: latest stable tag). |
 | `splice check [--offline]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
 | `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
@@ -195,16 +195,19 @@ var if it declares one, else the piece id; a non-`multiple` piece's name is its 
 
 ### 8.2 `add`
 
-Uses the lock's template source and commit (no version change). Validates `multiple`, unique
-name, `requires`. Because `pieces` changes, every instance is re-rendered: base = render of the
-lock state, theirs = render with the new instance. The result goes through the same planner as
-`update` (§8.3), so other pieces' `{% if "x" in pieces %}` blocks update with full merge rules.
-Milestone 1 ships a reduced planner (replace only unedited files, report the rest); milestone 2
-switches `add` to the full planner. The reduced planner follows §8.4 for deleted and no-longer
-rendered files, and on any conflict (without `--force`) it writes nothing, not even the lock, and
-exits 1 listing the conflicts. Post commands run before the lock is written: a failing one leaves
-the written files without a lock update (exit 3), and re-running the same `add` is safe because a
-file that already equals the new render is skipped.
+Uses the lock's template source and commit (no version change). Refuses a dirty tree or a
+directory outside a git work tree (exit 2) unless `--allow-dirty`, as `update` (§8.3 step 1).
+Validates `multiple`, unique name, `requires`. Because `pieces` changes, every instance is
+re-rendered: base = render of the lock state, theirs = render with the new instance. The result
+goes through the same planner as `update` (§8.4, no `[[remove]]` and no migration steps), so other
+pieces' `{% if "x" in pieces %}` blocks update with full merge rules (an edited shared file is
+merged). Unlike `update`, `add` never writes conflict markers: on owned drift or any conflict
+(without `--force`) it writes nothing, not even the lock, and exits 1 listing the files as
+`conflict` changes. With `--force`, owned drift is replaced and a conflicting file is kept as it
+is (`skip`, "kept, merge by hand; the lock records the template's version"). Post commands
+(`when` ∋ `add`, of every piece present after the add) run before the lock is written: a failing
+one leaves the written files without a lock update (exit 3, with the restore hint), and re-running
+the same `add` is safe because a file that already equals the new render is skipped.
 
 ### 8.3 `update`
 
@@ -298,8 +301,13 @@ and a fetch failure is a message, not an error). Changes: drift → `update/owne
 
 ### 8.8 `diff`
 
-Runs steps 2–6 of `update` without writing, and prints a unified diff (`diffy::create_patch`)
-per changed file plus one line per removal. `--json` returns the planned `changes` only.
+Runs steps 2–6 of `update` without writing (no dirty-tree check, no `--data`), and prints a
+unified diff (`diffy::create_patch`, labels `a/<path>` and `b/<path>`, `/dev/null` for a new
+file) from the disk to the planned bytes per written file (a conflict shows its markers), plus
+`delete <path>` per removal and `Binary file <path> differs` for non-UTF-8 content. Notes and
+owned drift go to stderr as messages. `--json` returns the planned `changes` (equal to
+`update --json`'s on the same repo) and the messages. Drift and conflicts are reported, not
+failures: exit 0; a downgrade `--to` is exit 2 as on `update`.
 
 ### 8.9 `explain`
 
@@ -359,8 +367,11 @@ into the contract at its next `format` bump.
     date" (exit 0), not a downgrade; an explicit older `--to` stays exit 2. Errors carry the
     `git checkout -- . && git clean -fd` hint only after a write.
 
-Gap (milestone 2): `add` on the full planner gets the same dirty-tree refusal (exit 2) and
-`--allow-dirty` as `update` (§8.3 step 1); the milestone 1 reduced planner has neither.
+14. `add` on the full planner (plan 02 task 9): the same dirty-tree refusal (exit 2) and
+    `--allow-dirty` as `update`; owned drift or a conflict writes nothing (exit 1, never markers);
+    `--force` replaces owned drift and keeps conflicting files as they are. A file no longer
+    rendered after the add follows §8.4 (deleted when unedited, else kept with a message that
+    does not mention the lock, which no longer lists it). `diff` exits 0 on drift and conflicts.
 
 ## 11. Testing
 

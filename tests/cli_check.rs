@@ -115,6 +115,20 @@ fn markers_fail_and_stray_separator_does_not() {
     }
     let (code, v) = check(&repo, &["--offline"]);
     assert_eq!((code, v["changes"].clone()), (0, serde_json::json!([])));
+
+    // CRLF line endings: markers are still found.
+    std::fs::write(
+        &ci,
+        "name: ci\r\n<<<<<<< ours\r\na\r\n||||||| base\r\nb\r\n=======\r\nc\r\n>>>>>>> template\r\n",
+    )
+    .unwrap();
+    let (code, v) = check(&repo, &["--offline"]);
+    assert_eq!(code, 1);
+    assert_eq!(
+        v["changes"],
+        serde_json::json!([{"path":".github/workflows/ci.yml","action":"conflict","class":"shared"}])
+    );
+    assert!(messages(&v).contains("line 2"), "{v}");
 }
 
 #[test]
