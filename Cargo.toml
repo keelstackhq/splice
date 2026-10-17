@@ -19,6 +19,7 @@ clap = { version = "4.6", features = ["derive"] }
 dirs = "7"
 globset = "0.4"
 indexmap = { version = "2", features = ["serde"] }
+minijinja = "2.24"
 regex = "1.13"
 semver = "1"
 serde = { version = "1", features = ["derive"] }

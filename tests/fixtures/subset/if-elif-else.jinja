@@ -1,0 +1,6 @@
+{% if a %}A{% elif b %}B{% else %}C{% endif %}
+{% if a %}A{% elif c %}C{% else %}D{% endif %}
+{% if a %}A{% else %}not-a{% endif %}
+{% if b %}
+nested {% if a %}a{% else %}no-a{% endif %}
+{% endif %}
