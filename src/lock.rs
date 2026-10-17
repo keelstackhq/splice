@@ -305,7 +305,7 @@ impl Lock {
         doc
     }
 
-    /// Write `.splice/lock.toml` via `.splice/lock.toml.tmp`, fsync and rename. The destination is
+    /// Write `.splice/lock.toml` via a temp file in `.splice/`, fsync and rename. The destination is
     /// checked like every write (no `..`, no symlinks); a failure leaves any old lock in place.
     pub fn write_atomic(&self, repo: &Path) -> Result<()> {
         fsio::write_atomic(repo, LOCK_PATH, self.to_toml().as_bytes())
@@ -320,6 +320,16 @@ impl Lock {
                 vars: p.vars.clone(),
             })
             .collect()
+    }
+}
+
+fn check_name(name: &str) -> Result<()> {
+    if valid_channel_name(name) {
+        Ok(())
+    } else {
+        Err(SpliceError::Template(format!(
+            "invalid channel name `{name}`: expected `^[a-z][a-z0-9-]*$`"
+        )))
     }
 }
 
@@ -373,6 +383,7 @@ impl ChannelLock {
     /// `None` when the channel has no lock file. Corruption (bad TOML, missing `[channel]`, a name
     /// that differs from the file name, a bad commit) is exit 3 and names the file.
     pub fn read(repo: &Path, name: &str) -> Result<Option<ChannelLock>> {
+        check_name(name)?;
         let path = channel_lock_path(name);
         let Some(bytes) = fsio::read_opt(repo, &path)? else {
             return Ok(None);
@@ -474,6 +485,7 @@ impl ChannelLock {
 
     /// Atomic write of `.splice/channels/<name>.toml` (same guarantees as `Lock::write_atomic`).
     pub fn write_atomic(&self, repo: &Path) -> Result<()> {
+        check_name(&self.meta.name)?;
         fsio::write_atomic(repo, &self.path(), self.to_toml().as_bytes())
     }
 }
@@ -826,6 +838,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(ChannelLock::read_all(dir.path()).unwrap().is_empty());
         assert_eq!(ChannelLock::read(dir.path(), "a").unwrap(), None);
+    }
+
+    #[test]
+    fn invalid_channel_name_is_rejected_on_read_and_write() {
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["../x", "A", ""] {
+            let e = ChannelLock::read(dir.path(), bad).unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{bad}");
+            let mut cl = sample_channel_lock();
+            cl.meta.name = bad.into();
+            let e = cl.write_atomic(dir.path()).unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{bad}");
+        }
+        assert!(!dir.path().join(".splice").exists());
     }
 
     #[test]

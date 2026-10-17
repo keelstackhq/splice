@@ -5,6 +5,7 @@ pub mod classify;
 pub mod cli;
 pub mod error;
 pub mod fetch;
+pub mod filter;
 pub mod fsio;
 pub mod git;
 pub mod lock;
