@@ -1,7 +1,16 @@
 # splice channels ("rigging") — Design Spec
 
-Date: 2026-10-17 · Status: draft for review · Builds on: `2026-10-14-splice-design.md` (the main
-spec) and `docs/template-format.md` (format 1, unchanged by this spec)
+Date: 2026-10-17 · Status: approved · Builds on: `2026-10-14-splice-design.md` (the main
+spec) and `docs/template-format.md` (format 1, unchanged by this spec) · Plan:
+`docs/superpowers/plans/2026-10-17-splice-04-channels.md`
+
+Change note (2026-10-17, plan pre-flight rulings): §8 `update --all` now writes all sources'
+files, then runs the deduplicated post once, then writes every lock (main + channels) last, so a
+failure leaves every old lock (main spec §8.3/§8.6 lock-last rule; was: each source's lock after
+its own files). Also: only `.splice/lock.toml` and `.splice/channels/**` are reserved paths (§4);
+only `--only`/`--exclude` need `--channel` (§3); tracked channels run no migrations (§3); main
+`update`/`add` check claims when channels exist (§5); the `rigging` `claude` piece has no
+`CLAUDE.md` section (§7); berth joins the decisions migration (§10).
 
 ## 1. Goal
 
@@ -53,13 +62,15 @@ New and extended commands (global flags `--json`, `--yes`, `-C` as in main spec 
 | `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only G]… [--exclude G]… [--allow-dirty] [--force] [--no-post]` | Render the channel's base + listed pieces into the current repo, write `.splice/channels/NAME.toml`. |
 | `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited owned/shared files, strip its sections, delete its lock. |
 | `splice add <piece-id> --channel NAME [--name N] [--data K=V]…` | Add a piece instance to a channel (e.g. a second harness). |
-| `splice update --channel NAME [--to V] [--only G]… [--exclude G]…` | Update one channel. Filter flags, when given, replace the stored filter. |
-| `splice update --all [--allow-dirty] [--force] [--no-post]` | Update the main template (if any) to its latest version, then every channel. |
+| `splice update --channel NAME [--to V] [--only G]… [--exclude G]…` | Update one channel. Any `--only`/`--exclude` given replaces **both** stored lists (`--only '**'` alone keeps everything). |
+| `splice update --all [--allow-dirty] [--force] [--no-post]` | Update the main template (if any) to its latest version and every channel (§8). |
 | `splice check [--channel NAME] [--offline]` | Without `--channel`: main template **and** every channel. |
 | `splice diff --channel NAME [--to V]` · `splice explain <path>` | As in the main spec; `explain` searches every source. |
 
 Unchanged: `splice update` without `--channel`/`--all` updates only the main template, exactly as
-today (contract §9.14 keeps its meaning). In a channel-only repo it exits 2 with
+today (contract §9.14 keeps its meaning; `--to V` works alone for the main template).
+`--only`/`--exclude` on `update` require `--channel`; `--all` conflicts with `--channel`, `--to`,
+`--data`, `--only` and `--exclude` (exit 2). In a channel-only repo it exits 2 with
 `no .splice/lock.toml; use --channel NAME or --all`.
 
 `channel add` behaves like `update` with an empty base: it refuses a dirty tree (exit 2) unless
@@ -72,6 +83,9 @@ with base = empty; seed → skip if present.
 `[channel].track` makes `update` resolve the target from the branch instead of needing `--to`).
 This is for sources whose `main` is the release, like `keelstackhq/decisions` (D-002: only
 owner-merged, settled decisions land there). `--ref` and `--track` are mutually exclusive (exit 2).
+A tracked channel targets the branch head only (tags ignored; `--to` → exit 2), never compares
+`0.0.0+g…` versions (no downgrade check; up to date = same subtree), and runs **no** migrations
+(`[[remove]]`, steps): files the head no longer renders are removed by the "B only" rule.
 
 **Bot.** The update Action (main spec §13) gains input `scope` (`main` | `all`, default `all` when
 `.splice/channels/` exists, else `main`) and runs `splice update --all --json --yes`; one PR.
@@ -81,8 +95,8 @@ owner-merged, settled decisions land there). `--ref` and `--track` are mutually 
 **Contract (`docs/template-format.md`): no change.** Contract §6 defines `.splice/lock.toml`;
 splice keeps writing it byte-for-byte as today. Channel locks are a splice-only file that hull never
 reads or writes, so D-003's joint-PR rule is not triggered. The decision is recorded as main spec
-§10 item 10 ("channels are splice-only; contract §6 governs only `.splice/lock.toml`") and offered
-to hull for the next `format` bump, not required by it.
+§10 item 15 ("channels are splice-only; contract §6 governs only `.splice/lock.toml`"; offered to
+hull at the next `format` bump, not required).
 
 Channel lock `.splice/channels/<name>.toml` = the contract §6 shape plus two optional tables:
 
@@ -118,7 +132,10 @@ vars = {}
 "docs/agents/project.md" = { sha256 = "…", created = false }   # sha of the region body
 ```
 
-A main lock with a `[channel]` table, or a channel lock without one, is exit 3 ("corrupt lock").
+A main lock with a `[channel]` or `[sections]` table, a channel lock without `[channel]` or whose
+`name` differs from the file stem, or a file in `.splice/channels/` that is not `<valid-name>.toml`
+is exit 3 ("corrupt lock", names the file). Names starting with `.` (atomic-write temp files left
+by a crash) are ignored.
 Each lock is written atomically (main spec §8.6) and only by its own source's operation.
 
 **Template side.** A channel template is a format-1 template. The one addition is an optional
@@ -128,8 +145,9 @@ the normal message. `splice new`/`add` on the main template with a piece that de
 `[sections]` exits 3 ("sections are only applied by `splice channel add`"), so hull's template
 can never depend on them.
 
-**Path safety** (main spec §6): no rendered path may lie under `.splice/` (was: never
-`.splice/lock.toml`).
+**Path safety** (main spec §6): no source may render `.splice/lock.toml` (as today) or any path
+under `.splice/channels/`. Other `.splice/` paths stay allowed (contract §7 ships
+`.splice/migrations/*` as owned files).
 
 ## 5. Ownership and filters
 
@@ -148,7 +166,10 @@ source while another source's lock lists it in `[files]` is a **claim conflict**
 written, exit 2, message `path X is owned by <main|channel NAME>; exclude it with
 --exclude X or remove it from one source`. All sources are planned first (in memory) and checked
 together, then applied. Seed vs seed: the first writer wins (seeds are written only if absent);
-no error. A section host must not be in any lock's `[files]` (exit 2, same message).
+no error. A section host must not be in any lock's `[files]` (exit 2, same message). Main
+`update` and `add` run the same check when `.splice/channels/` has locks (no channels: M2
+behaviour). In `update --all`, a section host that an earlier source creates as a seed is planned
+against that seed's bytes (`created = false`).
 
 **Filters.** `--only`/`--exclude` globs (globset, `literal_separator`, as main spec §7) match
 **repo-root paths after `target`**, and section host paths. A path is kept if it matches some
@@ -159,7 +180,8 @@ reported, main spec §8.4 last row) and newly included ones as creates.
 
 **Selection by harness and topic uses pieces; fine-grained opt-out uses filters.** Pieces are the
 template author's units (`claude`, `codex`, `skills`); filters are the repo owner's escape hatch
-("everything except this skill"). `[[remove]]` in channel migrations works per channel.
+("everything except this skill"). `[[remove]]` in channel migrations works per channel (tagged
+channels; tracked ones run no migrations, §3).
 
 ## 6. Sections (Markdown only)
 
@@ -209,8 +231,8 @@ Rendering is main spec §6 unchanged, per source. A channel's context is its own
 rigging/ (example channel template)
   splice.toml        name = "rigging", base = "core", min_splice = "0.2.0"
   pieces/core/       harness-neutral: [sections] "AGENTS.md" = rules fragment
-  pieces/claude/     .claude/agents/{explorer,implementer,reviewer,ci-fixer}.md;
-                     [sections] "CLAUDE.md" = short pointer fragment
+  pieces/claude/     .claude/agents/{explorer,implementer,reviewer,ci-fixer}.md
+                     (no CLAUDE.md section: hull owns CLAUDE.md, which imports AGENTS.md)
   pieces/skills/     multiple = true; target = ".{{ dir }}/skills";
                      vars: dir = { pattern = "^(claude|agents)$" }; files/<skill>/SKILL.md
 ```
@@ -230,11 +252,15 @@ when the channel template is written (they move; a channel release fixes them fo
   across all sources and the section planner (§6). Target: `--to`, else latest stable tag, else
   the tracked branch head.
 - `update --all`: plan main + every channel (sorted by name) in memory; run the claim check on the
-  combined result; if any source has owned drift without `--force`, write nothing (exit 1). Then
-  apply per source in that order: files, removals, migration steps, that source's lock. Post
-  commands of all sources run after the last lock, deduplicated by exact `run` string. A failure
-  in source k leaves sources < k applied with matching locks; the message names k and the
-  `git checkout -- . && git clean -fd` recovery (main spec §8.3).
+  combined result; if any source has owned drift or broken markers without `--force`, write
+  nothing (exit 1). Then, in that order: (1) every source's files, sections, removals and
+  migration steps (main first, then channels by name); (2) the `[[post]]` commands of all sources
+  **once**, deduplicated by exact `run` string, skipped if any source conflicted or `--no-post`;
+  (3) every lock (main + channels), each written atomically, **last**. Post therefore sees the old
+  locks, as in a single-source update. A failure in (1) or (2) writes no lock: every lock still
+  records its old version; the message names the source (or the post command) and the
+  `git checkout -- . && git clean -fd` recovery (main spec §8.3, §8.6). Conflicts: locks are
+  still written (they record the targets), exit 1.
 - `check`: union over sources of main spec §8.7 (owned drift, markers, update available) plus
   section drift. "Update available" for a channel: newer stable tag, or tracked head differs —
   and in both cases only if the channel's subdirectory tree differs
@@ -272,11 +298,14 @@ Every message says how to fix it (e.g. the `--exclude` flag, the lock path, `--f
 - Freshness moves from the SessionStart hook to `--track main` + the update bot + `check`. The
   hook `sync-decisions.sh` is retired; `[[remove]]` cannot delete it (it was never locked), so the
   migration below deletes it by hand.
-- Per adopted repo (hull, splice, hoard, example-app, keelstack; one PR each): delete
+- Per adopted repo (hull, splice, hoard, example-app, keelstack, berth; one PR each; hoist only
+  if the owner asks): delete
   `.claude/hooks/session-start.d/sync-decisions.sh` (or `.claude/hooks/sync-decisions.sh` and its
   `settings.json` entry), delete the hand-written "## Org decisions" block, then
   `splice channel add gh:keelstackhq/decisions//channel --track main --piece import-project`
   (or `import-claude`). The existing snapshot equals the render, so it adopts without `--force`.
+  This needs splice 0.2.0 on npm (plan 03's release path) and is recorded as decision D-004 in
+  keelstackhq/decisions.
 - `adopt.sh` then prints a deprecation line pointing at `splice channel add`; it is deleted once
   every org repo has the channel.
 
@@ -285,7 +314,9 @@ they depend on hull's `pieces` (`CLAUDE.md` lists pieces; `session-start.sh` bra
 skills `verify`, `add-piece`, `docs-lookup` run hull's commands; `settings.json` allows `pnpm`,
 `turbo`). The org-generic files move to the channel: `.claude/agents/{explorer,implementer,
 reviewer,ci-fixer}.md` (all four keelstackhq repos already use these names) plus harness-neutral
-rules as an `AGENTS.md` section. Hull-side changes (inside the contract, hull's own PR):
+rules as an `AGENTS.md` section. Hull-side changes (inside the contract, hull's own PR, starting
+with a hull spec change the hull owner signs off; whether hull publishing `[sections]` needs a
+contract note is the owner's D-003 call):
 
 1. hull adds `rigging/` (a second template) and tags it with hull's tags; dogfood renders it with
    splice once splice 0.2 ships (hull's Nunjucks renderer never renders channels).
@@ -300,8 +331,9 @@ rules as an `AGENTS.md` section. Hull-side changes (inside the contract, hull's 
 
 - **Fixtures:** `tests/fixtures/channel/v1`, `v2` (a channel template with `core` + section,
   `claude`, `skills` multiple with `target = ".{{ dir }}/skills"`, a `collide` piece that renders
-  a path the main fixture owns, a v2 migration with `[[remove]]` and a changed fragment).
-  `template_repo` tags them; a `main` branch with two commits tests `--track`.
+  a path the main fixture owns, a v2 migration with `[[remove]]` and a changed fragment), plus
+  `tests/fixtures/channel-b` (disjoint paths, the same post, a v2 step that can fail) for
+  multi-channel tests. `template_repo` tags them; a `main` branch with two commits tests `--track`.
 - **CLI tests** (`tests/cli_channel.rs`, assert_cmd + insta): add into a `new`-rendered repo and
   into a bare git repo; two harness instances from one skill source; `--only`/`--exclude` and a
   filter change on update; claim conflict → exit 2, nothing written; section insert, replace,
