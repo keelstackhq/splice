@@ -16,15 +16,16 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 01/T9 · abd2847..f5cfcf5 · splice add, reduced planner; unit 48, cli_add 10 passing; conflicts write nothing
 - 2026-10-17 · 01/T10 · 5f16bd9 · splice explain; cli_explain 5 passing
 - 2026-10-17 · 01/final · c2c021b..427932f · final-review fixes (add --force keeps shared, absolute local source, files/-less piece, spec §8.3); cargo test 112 passing, fmt and clippy -D warnings clean
-- 2026-10-17 · 02/T1 · this commit · fixture v2/v3/v2-nolib, v1 extended, migrations loader; unit 54, manifest 5 passing
-- 2026-10-17 · 02/T2 · this commit · text 3-way merge (diffy diff3, contract labels, CRLF) and find_markers; unit 65 passing
-- 2026-10-17 · 02/T3 · this commit · json/yaml/toml key-path merges and merge3 (fast paths, text fallback, markers on conflict); unit 101 passing
-- 2026-10-17 · 02/T4 · this commit · pure update planner (Disk snapshot, Plan, render_removes, class changes in spec §10.12); planner 15 passing
-- 2026-10-17 · 02/T5 · this commit · apply (files, removals, steps, post, atomic lock last) and post::run_steps; apply 10 passing
-- 2026-10-17 · 02/T6 · this commit · splice update (prepare + run: dirty/downgrade/min_splice/removed-piece refusals, drift refusal, moved tag, locked --data refused, no newer stable = up to date); cli_update 16 passing
-- 2026-10-17 · 02/T7 · this commit · golden v1→v2 update with edits on every class (2 snapshots) + crash-recovery rerun; resolve-then-check test written but ignored until Task 8 (`splice check`); golden_update 2 passing, 1 ignored
-- 2026-10-17 · 02/T8 · this commit · splice check (owned drift, conflict markers, update available; --offline; fetch failure is a message); un-ignored resolve_conflict_then_check_passes, strengthened rerun_after_restore_succeeds; cli_check 7 passing, golden_update 3 passing
-- 2026-10-17 · 02/T9 · this commit · splice diff (update plan as unified diff or --json changes, writes nothing, exit 0 on drift/conflict); add on the full planner (merges shared files, --allow-dirty, C3 writes nothing on drift/conflict, reduced planner deleted); check uses a local update-available flag, CRLF marker case; cli_diff 3, cli_add 16 passing
+- 2026-10-17 · 02/T1 · ce6b4f0 · fixture v2/v3/v2-nolib, v1 extended, migrations loader; unit 54, manifest 5 passing
+- 2026-10-17 · 02/T2 · 4e1d84f..ad185de · text 3-way merge (diffy diff3, contract labels, CRLF) and find_markers; unit 65 passing
+- 2026-10-17 · 02/T3 · 31e3c33..cd2c4e7 · json/yaml/toml key-path merges and merge3 (fast paths, text fallback, markers on conflict); unit 101 passing
+- 2026-10-17 · 02/T4 · 069a53c · pure update planner (Disk snapshot, Plan, render_removes, class changes in spec §10.12); planner 15 passing
+- 2026-10-17 · 02/T5 · f8474b6..aa6b546 · apply (files, removals, steps, post, atomic lock last) and post::run_steps; apply 10 passing
+- 2026-10-17 · 02/T6 · e087055..9d3ce8f · splice update (prepare + run: dirty/downgrade/min_splice/removed-piece refusals, drift refusal, moved tag, locked --data refused, no newer stable = up to date); cli_update 16 passing
+- 2026-10-17 · 02/T7 · b0d87e8 · golden v1→v2 update with edits on every class (2 snapshots) + crash-recovery rerun; resolve-then-check test written but ignored until Task 8 (`splice check`); golden_update 2 passing, 1 ignored
+- 2026-10-17 · 02/T8 · 7662b3a · splice check (owned drift, conflict markers, update available; --offline; fetch failure is a message); un-ignored resolve_conflict_then_check_passes, strengthened rerun_after_restore_succeeds; cli_check 7 passing, golden_update 3 passing
+- 2026-10-17 · 02/T9 · 7e9d0d5 · splice diff (update plan as unified diff or --json changes, writes nothing, exit 0 on drift/conflict); add on the full planner (merges shared files, --allow-dirty, C3 writes nothing on drift/conflict, reduced planner deleted); check uses a local update-available flag, CRLF marker case; cli_diff 3, cli_add 16 passing
+- 2026-10-17 · 02/final · 7288d7f · final-review fixes ([[remove]] paths see `template`, check preflights lock paths and reports the lock class, wrap_whole CRLF, TOML fallback guard, exit 3 after writes lists applied changes, prerelease-only template is up to date, explain human mode quiet on stderr, failed-post rerun converges); cargo test 243 passing, fmt and clippy -D warnings clean
 
 ## Blocked
 
@@ -38,4 +39,4 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Status
 
-Milestone 1 done; milestone 2 next.
+Milestone 2 done.
