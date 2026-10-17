@@ -4,7 +4,7 @@
 
 **Goal:** Keep a generated repo current: 3-way `update` with per-class rules and json/yaml/toml/text merges, migrations, post commands and an atomic lock; `check` for drift, markers and new versions; `diff` as a dry run; `add` moved onto the full planner.
 
-**Architecture:** `update` renders base (lock commit) and theirs (target) into memory, a pure `planner` turns base/theirs/disk/lock into a list of `Planned` changes, and `apply` executes it in a fixed order (files → removals → migration steps → lock → post). Merges live in `src/merge/`, one module per strategy behind `merge3`. `diff` and `check` reuse the planner without writing.
+**Architecture:** `update` renders base (lock commit) and theirs (target) into memory, a pure `planner` turns base/theirs/disk/lock into a list of `Planned` changes, and `apply` executes it in a fixed order (files → removals → migration steps → post → lock). Merges live in `src/merge/`, one module per strategy behind `merge3`. `diff` and `check` reuse the planner without writing.
 
 **Tech Stack:** as plan 01, plus diffy 0.5 (text 3-way, `ConflictStyle::Diff3`, `create_patch`), yaml_serde 0.10 (maintained fork of the archived serde_yaml, by the YAML organisation; `Mapping` keeps insertion order), toml_edit 0.25 (format-preserving edits).
 
@@ -16,7 +16,7 @@
 - Diff3 markers exactly `<<<<<<< ours`, `||||||| base`, `=======`, `>>>>>>> template` (diffy's `||||||| original`/`>>>>>>> theirs` relabelled inside conflict hunks only).
 - Planner is pure (no I/O); disk reads go through a `Disk` snapshot built before planning.
 - Owned drift without `--force` → nothing written, exit 1.
-- Apply order: write files → removals → migration `[[step]]`s (A < v ≤ B, semver order) → lock (atomic) → `[[post]]`. A failed step exits 3 before the lock; a failed post exits 3 after it.
+- Apply order: write files → removals → migration `[[step]]`s (A < v ≤ B, semver order) → `[[post]]` → lock (atomic, last; spec §8.3 step 7, §8.6). A failed step or post exits 3 before the lock is written, with the restore hint.
 - Dirty git tree or no work tree → exit 2 unless `--allow-dirty`. Messages after a partial write say `git checkout -- . && git clean -fd` restores the previous state.
 - Structured merge rules exactly contract §5; any structured conflict ends as diff3 markers in the file (spec §8.5).
 - Downgrade (`--to` < lock version) → exit 2. Target `min_splice` > running → exit 3 before any write.
@@ -264,9 +264,9 @@ v3 = v2 with `min_splice = "99.0.0"`.
 - [ ] **Step 1: Write failing tests**
 
 ```rust
-#[test] fn order_is_files_removals_steps_lock_post() {
+#[test] fn order_is_files_removals_steps_post_lock() {
     // step: `test -f new.txt && test ! -f old.txt && grep -q 'version = "1.0.0"' .splice/lock.toml && echo step >> order.log`
-    // post: `grep -q 'version = "2.0.0"' .splice/lock.toml && echo post >> order.log`
+    // post: `grep -q 'version = "1.0.0"' .splice/lock.toml && echo post >> order.log` (lock still old)
     apply(ctx_for(plan_creating("new.txt").deleting("old.txt"), step, post)).unwrap();
     assert_eq!(read(&repo, "order.log"), "step\npost\n");
 }
@@ -276,7 +276,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
     assert!(e.to_string().contains("git checkout -- . && git clean -fd"));
     assert_eq!(read_lock(&repo).template.version, Version::parse("1.0.0").unwrap());
 }
-#[test] fn failing_post_keeps_new_lock() { /* post "exit 1" → exit 3, lock version is the target */ }
+#[test] fn failing_post_leaves_old_lock() { /* post "exit 1" → exit 3, lock version is still the old one, message has the restore hint */ }
 #[test] fn conflicts_still_write_lock_and_exit_1() { /* plan with one conflict → Err(Conflict), lock = target, file has markers */ }
 ```
 
