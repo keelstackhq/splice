@@ -1,0 +1,120 @@
+---
+source: tests/cli_new.rs
+expression: redact(&tree_snapshot(dest.path()))
+---
+.editorconfig c1414e8789b6ac04cd08fce873cc7047349115484c684c22a012da770cfd6be5
+.github/workflows/ci.yml 09180bcec6d5a7ef100bec0590e6f78da4a790a992564dcc9743ca61125bb8f2
+.post-ran 8030404398e6639ff1395dd8e38c782bf6c9e00229adfc54408c967a2e981b51
+.splice/lock.toml [sha]
+README.md 62470ddd3b5ddb252fb5828cae1ba17cf03e6908cb9c0db91e88577cd4068a25
+apps/web/package.json 9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9
+apps/web/src/index.html edfac485a8f3748a30377c861db77d3fe0e2c50f18ce54120dfe0a4811c36efd
+apps/web/src/main.ts 507d4ecd8055c72487c552e0262c085e84f4295c886fdc332c92a9cc9075c217
+apps/web/tsconfig.json 7efa43e0a5829cd7e44d0a575be66de0893fbccc44d8c5c2824085a8cec266e3
+apps.txt 884510c07970579c8a57332902710121c6b27fc1036596110dd7f3759f50e08a
+config/settings.toml 2354bef33f4d2432a5a722dacf8483f5d10386662a9c3c21b657c22778e2c213
+demo.code-workspace 9c132b8bf1b58b509194727e278e132b5a5311e705ba38a7803fd2e9c8e2f392
+logo.png ca012dc90cd9e3f4ccd112f38d23d1b972561806c7eb6ae12ee9c3c0a5dabfd1
+notes.txt 2c6e73d00e6e02d0f753a6379e2b9a021c9defdee69a20ea788fa18631ab0228
+only-with-app.txt 03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c
+package.json 67d83d7d4710759d1b89c5298ee867a2ef9523c402485fd37377abee1738022e
+tool.config.mts 9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0
+== .editorconfig ==
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+== .github/workflows/ci.yml ==
+name: ci
+on: [push]
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo demo
+== .post-ran ==
+post
+== .splice/lock.toml ==
+format = 1
+splice = "[splice]"
+
+[template]
+source = "[source]"
+version = "1.0.0"
+commit = "[commit]"
+
+[vars]
+project = "demo"
+scope = "acme"
+
+[[pieces]]
+id = "base"
+name = "base"
+vars = {}
+
+[[pieces]]
+id = "app"
+name = "web"
+vars = { name = "web" }
+
+[files]
+".editorconfig" = { class = "owned", sha256 = "c1414e8789b6ac04cd08fce873cc7047349115484c684c22a012da770cfd6be5" }
+".github/workflows/ci.yml" = { class = "shared", sha256 = "09180bcec6d5a7ef100bec0590e6f78da4a790a992564dcc9743ca61125bb8f2" }
+"apps.txt" = { class = "owned", sha256 = "884510c07970579c8a57332902710121c6b27fc1036596110dd7f3759f50e08a" }
+"apps/web/package.json" = { class = "shared", sha256 = "9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9" }
+"apps/web/tsconfig.json" = { class = "owned", sha256 = "7efa43e0a5829cd7e44d0a575be66de0893fbccc44d8c5c2824085a8cec266e3" }
+"config/settings.toml" = { class = "shared", sha256 = "2354bef33f4d2432a5a722dacf8483f5d10386662a9c3c21b657c22778e2c213" }
+"demo.code-workspace" = { class = "owned", sha256 = "9c132b8bf1b58b509194727e278e132b5a5311e705ba38a7803fd2e9c8e2f392" }
+"logo.png" = { class = "owned", sha256 = "ca012dc90cd9e3f4ccd112f38d23d1b972561806c7eb6ae12ee9c3c0a5dabfd1" }
+"notes.txt" = { class = "shared", sha256 = "2c6e73d00e6e02d0f753a6379e2b9a021c9defdee69a20ea788fa18631ab0228" }
+"only-with-app.txt" = { class = "owned", sha256 = "03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c" }
+"package.json" = { class = "shared", sha256 = "67d83d7d4710759d1b89c5298ee867a2ef9523c402485fd37377abee1738022e" }
+"tool.config.mts" = { class = "owned", sha256 = "9833b24da052a2de55f0f41d230aaa2cbcc8d7d39c1b1121db799693c56637b0" }
+== README.md ==
+# demo
+
+Scope: acme
+== apps/web/package.json ==
+{
+  "name": "@acme/web",
+  "version": "0.0.0"
+}
+== apps/web/src/index.html ==
+<!doctype html>
+<title>app</title>
+== apps/web/src/main.ts ==
+
+const owner = "acme";
+console.log("WEB web", owner);
+== apps/web/tsconfig.json ==
+{ "compilerOptions": { "strict": true } }
+== apps.txt ==
+pieces:
+- base
+- app
+
+== config/settings.toml ==
+[settings]
+scope = "acme"
+project = "demo"
+== demo.code-workspace ==
+{
+  "folders": []
+}
+== notes.txt ==
+Notes for demo.
+Template fixture.
+== only-with-app.txt ==
+app is present
+
+== package.json ==
+{
+  "name": "@acme/demo",
+  "private": true,
+  "scripts": {
+    "check": "echo check"
+  }
+}
+== tool.config.mts ==
+export default { name: "tool" };

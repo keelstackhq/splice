@@ -1,0 +1,86 @@
+---
+source: tests/cli_new.rs
+expression: r
+---
+{
+  "ok": true,
+  "command": "new",
+  "changes": [
+    {
+      "path": ".editorconfig",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "action": "create",
+      "class": "shared"
+    },
+    {
+      "path": "README.md",
+      "action": "create",
+      "class": "seed"
+    },
+    {
+      "path": "apps.txt",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": "apps/web/package.json",
+      "action": "create",
+      "class": "shared"
+    },
+    {
+      "path": "apps/web/src/index.html",
+      "action": "create",
+      "class": "seed"
+    },
+    {
+      "path": "apps/web/src/main.ts",
+      "action": "create",
+      "class": "seed"
+    },
+    {
+      "path": "apps/web/tsconfig.json",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": "config/settings.toml",
+      "action": "create",
+      "class": "shared"
+    },
+    {
+      "path": "demo.code-workspace",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": "logo.png",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": "notes.txt",
+      "action": "create",
+      "class": "shared"
+    },
+    {
+      "path": "only-with-app.txt",
+      "action": "create",
+      "class": "owned"
+    },
+    {
+      "path": "package.json",
+      "action": "create",
+      "class": "shared"
+    },
+    {
+      "path": "tool.config.mts",
+      "action": "create",
+      "class": "owned"
+    }
+  ],
+  "messages": []
+}

@@ -70,27 +70,46 @@ pub fn write_file(root: &Path, rel: &str, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Like [`write_file`] but atomic: write `<rel>.tmp`, fsync, rename over `rel`. The same checks
-/// apply to both paths.
+/// Like [`write_file`] but atomic: write an exclusively created, randomly named temp file in the
+/// target's directory, fsync it, rename it over `rel` and fsync the directory. A user's own
+/// `<rel>.tmp` is never touched. The same checks as [`write_file`] apply.
 pub fn write_atomic(root: &Path, rel: &str, bytes: &[u8]) -> Result<()> {
-    let tmp_rel = format!("{rel}.tmp");
     check_target(root, rel)?;
-    check_target(root, &tmp_rel)?;
     let path = root.join(rel);
-    let tmp = root.join(&tmp_rel);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let written = (|| -> io::Result<()> {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, &path)
-    })();
-    if let Err(e) = written {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.into());
-    }
+    let parent = path.parent().unwrap_or(root);
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    set_mode(tmp.path(), &path)?;
+    tmp.persist(&path).map_err(|e| e.error)?;
+    sync_dir(parent)?;
+    Ok(())
+}
+
+/// Temp files are created `0600`; give the result the old file's mode, else `0644`.
+#[cfg(unix)]
+fn set_mode(tmp: &Path, target: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = match std::fs::metadata(target) {
+        Ok(m) => m.permissions().mode() & 0o7777,
+        Err(_) => 0o644,
+    };
+    std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(mode))
+}
+
+#[cfg(not(unix))]
+fn set_mode(_tmp: &Path, _target: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    std::fs::File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -172,23 +191,42 @@ mod tests {
         }
 
         #[test]
-        fn atomic_refuses_symlinked_tmp_and_dir() {
+        fn atomic_refuses_symlinked_dir_and_target() {
+            let dir = tempfile::tempdir().unwrap();
+            let outside = tempfile::tempdir().unwrap();
+            symlink(outside.path(), dir.path().join(".splice")).unwrap();
+            let err = write_atomic(dir.path(), ".splice/lock.toml", b"x").unwrap_err();
+            assert_eq!(err.exit_code(), 3);
+            assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+        }
+
+        #[test]
+        fn atomic_does_not_follow_a_user_tmp_symlink() {
+            // The temp name is random: a `<rel>.tmp` symlink is neither used nor touched.
             let dir = tempfile::tempdir().unwrap();
             let outside = tempfile::tempdir().unwrap();
             let victim = outside.path().join("victim.txt");
             std::fs::write(&victim, b"keep").unwrap();
             symlink(&victim, dir.path().join("f.txt.tmp")).unwrap();
-            let err = write_atomic(dir.path(), "f.txt", b"x").unwrap_err();
-            assert_eq!(err.exit_code(), 3);
+            write_atomic(dir.path(), "f.txt", b"x").unwrap();
             assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
-            assert!(!dir.path().join("f.txt").exists());
-
-            symlink(outside.path(), dir.path().join(".splice")).unwrap();
-            let err = write_atomic(dir.path(), ".splice/lock.toml", b"x").unwrap_err();
-            assert_eq!(err.exit_code(), 3);
-            assert!(!outside.path().join("lock.toml").exists());
-            assert!(!outside.path().join("lock.toml.tmp").exists());
+            assert_eq!(std::fs::read(dir.path().join("f.txt")).unwrap(), b"x");
         }
+    }
+
+    #[test]
+    fn atomic_keeps_a_user_tmp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.txt.tmp"), b"mine").unwrap();
+        write_atomic(dir.path(), "f.txt", b"one").unwrap();
+        write_atomic(dir.path(), "f.txt", b"two").unwrap();
+        assert_eq!(
+            std::fs::read(dir.path().join("f.txt.tmp")).unwrap(),
+            b"mine"
+        );
+        assert_eq!(std::fs::read(dir.path().join("f.txt")).unwrap(), b"two");
+        // Nothing else is left behind.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     #[test]

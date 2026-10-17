@@ -65,7 +65,7 @@ object; post-command and git output go to stderr.
 |---|---|
 | 0 | success; `check` found nothing |
 | 1 | `check`: drift, markers or update available · `update`/`add`: conflicts written, or refused because of owned drift |
-| 2 | usage: bad flags, missing var value, dirty tree, downgrade, non-`multiple` piece added twice, duplicate instance name, no lock where one is needed |
+| 2 | usage: bad flags, missing var value or a value failing its `pattern`, dirty tree, non-empty destination or existing lock (`new`), unmet `requires`, downgrade, non-`multiple` piece added twice, duplicate instance name, no lock where one is needed |
 | 3 | template or environment error: bad manifest, unknown `format`, `min_splice` too new, render error, unsafe path, git failure, failed migration step or post command |
 
 clap parse errors still exit 2; when `--json` is in argv they are also reported as the JSON object
@@ -180,8 +180,10 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
 3. Instances: `base` (name = `base`) then each `--piece` in order. Check `requires` against the
    final set, `multiple`, unique names.
 4. Resolve vars (flags → prompt → default), validate `pattern`.
-5. Render, write every file, write the lock (§8.6), `git init` if `dest` is not inside a git work
-   tree, run `[[post]]` with `when` ∋ `new`.
+5. Render, write every file (seeds only when absent), `git init` if `dest` is not inside a git
+   work tree, run `[[post]]` with `when` ∋ `new` (all instantiated pieces, identical commands once),
+   then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
+   leaves the files but no lock; `new --force` redoes it.
 
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
 var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
@@ -258,8 +260,8 @@ between them (it runs after both).
 
 Built from the theirs tree: `[files]` lists every owned and shared path with the sha256 of the
 **rendered** bytes; seeds are not listed. Written with `toml_edit` (stable order: files sorted)
-to `.splice/lock.toml.tmp` in the same directory, fsynced, then renamed over the lock. Always the
-last write of `new`, `add` and `update`. `[[pieces]]` keeps instance order; `vars` is an inline
+to an exclusively created temp file in `.splice/` (never `lock.toml.tmp`), fsynced, then renamed over the lock and the directory fsynced. Always the
+last step of `new`, `add` and `update`, after any post commands. `[[pieces]]` keeps instance order; `vars` is an inline
 table.
 
 ### 8.7 `check`

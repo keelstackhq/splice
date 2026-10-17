@@ -31,7 +31,7 @@ fn apply_git_env(cmd: &mut Proc, date: &str) {
     }
 }
 
-fn git(dir: &Path, date: &str, args: &[&str]) {
+pub fn git(dir: &Path, date: &str, args: &[&str]) {
     let mut cmd = Proc::new("git");
     cmd.current_dir(dir).args(args);
     apply_git_env(&mut cmd, date);
@@ -84,6 +84,23 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
         git(repo.path(), &date, &["tag", &tag]);
     }
     repo
+}
+
+/// Commit the working tree of a `template_repo` as a new commit and tag it `tag`.
+pub fn commit_tag(repo: &Path, msg: &str, tag: &str) {
+    let date = "2026-02-01T00:00:00+00:00";
+    git(repo, date, &["add", "-A"]);
+    git(repo, date, &["commit", "-q", "-m", msg]);
+    git(repo, date, &["tag", tag]);
+}
+
+/// Fold the working tree into the tip commit and move `tag` to it, so the latest version stays
+/// the one tag the test already knows.
+pub fn amend_tip(repo: &Path, tag: &str) {
+    let date = "2026-01-01T00:00:00+00:00";
+    git(repo, date, &["add", "-A"]);
+    git(repo, date, &["commit", "-q", "--amend", "--no-edit"]);
+    git(repo, date, &["tag", "-f", tag]);
 }
 
 /// The `splice` binary under test, with an isolated cache and git identity.
