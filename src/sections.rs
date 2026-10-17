@@ -2,6 +2,193 @@
 
 use crate::error::SpliceError;
 
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::filter::Filter;
+use crate::lock::SectionLock;
+use crate::output::Action;
+use crate::planner::Disk;
+use crate::render::RenderedSections;
+
+pub struct SectionInput<'a> {
+    pub channel: &'a str,
+    pub theirs: &'a RenderedSections,
+    pub disk: &'a Disk,
+    pub locked: &'a BTreeMap<String, SectionLock>,
+    pub filter: &'a Filter,
+    /// `channel remove`: every locked section is planned as gone.
+    pub removing: bool,
+    pub force: bool,
+}
+
+/// One host-file change. `bytes` is the new host; `None` with `Delete` deletes the host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionChange {
+    pub host: String,
+    pub action: Action,
+    pub bytes: Option<Vec<u8>>,
+    pub note: Option<String>,
+}
+
+impl SectionChange {
+    /// `HOST#CHANNEL` (`#` cannot occur in a rendered path).
+    pub fn report_path(&self, channel: &str) -> String {
+        format!("{}#{channel}", self.host)
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SectionPlan {
+    pub changes: Vec<SectionChange>,
+    /// `HOST#CHANNEL` of every section edited or deleted locally.
+    pub drift: Vec<String>,
+    /// Marker problems, with line numbers; `--force` never fixes them.
+    pub broken: Vec<String>,
+    /// The new `[sections]` table.
+    pub locked: BTreeMap<String, SectionLock>,
+}
+
+/// Plan every section of one channel (channels spec §6). Pure: reads only `input`.
+///
+/// Rules: a block whose fragment is unchanged is skipped even if edited (G8); an existing block
+/// whose body equals the fragment is adopted; edited or deleted blocks are drift unless `force`;
+/// broken markers are never fixed, not even by `force` (G9).
+pub fn plan_sections(input: &SectionInput) -> SectionPlan {
+    let mut plan = SectionPlan::default();
+    let hosts = host_paths(input.theirs, input.locked);
+    for host in hosts {
+        let path = format!("{host}#{}", input.channel);
+        let lk = input.locked.get(&host);
+        let want = if input.removing || !input.filter.keeps(&host) {
+            None
+        } else {
+            input.theirs.get(&host)
+        };
+        let keep_lock = |plan: &mut SectionPlan| {
+            if let Some(l) = lk {
+                plan.locked.insert(host.clone(), l.clone());
+            }
+        };
+        let disk_bytes = input.disk.files.get(&host).and_then(|o| o.as_ref());
+        let disk_text = match disk_bytes.map(|b| std::str::from_utf8(b)) {
+            None => None,
+            Some(Ok(t)) => Some(t),
+            Some(Err(_)) => {
+                plan.broken
+                    .push(format!("{host}: not valid UTF-8; fix the file by hand"));
+                keep_lock(&mut plan);
+                continue;
+            }
+        };
+        let block = match disk_text.map_or(Ok(None), |t| find_block(t, input.channel)) {
+            Ok(b) => b,
+            Err(e) => {
+                plan.broken.push(e.message(&host, input.channel));
+                keep_lock(&mut plan);
+                continue;
+            }
+        };
+        let change = |action, bytes: Option<String>, note| SectionChange {
+            host: host.clone(),
+            action,
+            bytes: bytes.map(String::into_bytes),
+            note,
+        };
+        let Some(sec) = want else {
+            // Gone: section removed from the target, filtered out, or `channel remove`.
+            let (Some(lk), Some(block), Some(text)) = (lk, &block, disk_text) else {
+                continue; // nothing locked, or the markers are already gone
+            };
+            if body_sha(&block.body) == lk.sha256 {
+                let rest = remove(text, block);
+                if lk.created && rest.trim().is_empty() {
+                    plan.changes.push(change(Action::Delete, None, None));
+                } else {
+                    plan.changes.push(change(Action::Delete, Some(rest), None));
+                }
+            } else {
+                plan.changes.push(change(
+                    Action::Skip,
+                    None,
+                    Some(format!("{path}: block edited locally; kept")),
+                ));
+            }
+            continue;
+        };
+        let body = match clean_body(input.channel, &sec.body) {
+            Ok(b) => b,
+            Err(e) => {
+                plan.broken.push(format!("{host}: {e}"));
+                keep_lock(&mut plan);
+                continue;
+            }
+        };
+        let sha = body_sha(&body);
+        let new_lock = |created| SectionLock {
+            sha256: sha.clone(),
+            created,
+        };
+        let apply =
+            |plan: &mut SectionPlan, r: Result<String, SpliceError>, action, created| match r {
+                Ok(text) => {
+                    plan.changes.push(change(action, Some(text), None));
+                    plan.locked.insert(host.clone(), new_lock(created));
+                }
+                Err(e) => {
+                    plan.broken.push(format!("{host}: {e}"));
+                    keep_lock(plan);
+                }
+            };
+        let drift = |plan: &mut SectionPlan| {
+            plan.drift.push(path.clone());
+            keep_lock(plan);
+        };
+        match (lk, &block) {
+            (None, None) => {
+                // Insert: host absent -> created with only the block.
+                let r = insert(disk_text, input.channel, &body);
+                apply(&mut plan, r, Action::Create, disk_text.is_none());
+            }
+            (None, Some(b)) => {
+                if body_sha(&b.body) == sha {
+                    plan.locked.insert(host.clone(), new_lock(false)); // adopt
+                } else if input.force {
+                    let r = replace(disk_text.unwrap_or_default(), input.channel, b, &body);
+                    apply(&mut plan, r, Action::Update, false);
+                } else {
+                    plan.drift.push(path.clone());
+                }
+            }
+            (Some(_), None) => {
+                if input.force {
+                    let r = insert(disk_text, input.channel, &body);
+                    apply(&mut plan, r, Action::Create, disk_text.is_none());
+                } else {
+                    drift(&mut plan);
+                }
+            }
+            (Some(l), Some(b)) => {
+                if sha == l.sha256 {
+                    keep_lock(&mut plan); // G8: fragment unchanged
+                } else if input.force || body_sha(&b.body) == l.sha256 {
+                    let r = replace(disk_text.unwrap_or_default(), input.channel, b, &body);
+                    apply(&mut plan, r, Action::Update, l.created);
+                } else {
+                    drift(&mut plan);
+                }
+            }
+        }
+    }
+    plan
+}
+
+pub fn host_paths(
+    theirs: &RenderedSections,
+    locked: &BTreeMap<String, SectionLock>,
+) -> BTreeSet<String> {
+    theirs.keys().chain(locked.keys()).cloned().collect()
+}
+
 /// Opening marker line (without line ending); the dash is U+2014.
 pub fn begin_marker(channel: &str) -> String {
     format!(
@@ -411,5 +598,378 @@ mod tests {
         assert_eq!((b.begin, b.end, b.body.as_str()), (1, 3, "x\n"));
         let rep = replace(&host, "rig", &b, "y\n").unwrap();
         assert_eq!(rep, format!("\u{feff}{B}\ny\n{E}\n"));
+    }
+
+    mod planner {
+        use super::*;
+        use crate::render::RenderedSection;
+
+        fn blk(body: &str) -> String {
+            format!("{B}\n{body}{E}\n")
+        }
+
+        type Case = (
+            &'static str,
+            Option<&'static str>,
+            Option<String>,
+            Option<&'static str>,
+            bool,
+            bool,
+            Option<Action>,
+            Option<String>,
+            Option<bool>,
+        );
+
+        fn run(
+            theirs_body: Option<&str>,
+            disk: Option<&str>,
+            locked: Option<(&str, bool)>,
+            force: bool,
+            filter: &Filter,
+            removing: bool,
+        ) -> SectionPlan {
+            let mut theirs = RenderedSections::new();
+            if let Some(b) = theirs_body {
+                theirs.insert(
+                    "AGENTS.md".into(),
+                    RenderedSection {
+                        host: "AGENTS.md".into(),
+                        body: b.into(),
+                        piece_id: "core".into(),
+                        piece_name: "core".into(),
+                    },
+                );
+            }
+            let mut disk_m = Disk::default();
+            disk_m
+                .files
+                .insert("AGENTS.md".into(), disk.map(|d| d.as_bytes().to_vec()));
+            let mut lk = BTreeMap::new();
+            if let Some((b, created)) = locked {
+                lk.insert(
+                    "AGENTS.md".to_string(),
+                    SectionLock {
+                        sha256: body_sha(b),
+                        created,
+                    },
+                );
+            }
+            plan_sections(&SectionInput {
+                channel: "rig",
+                theirs: &theirs,
+                disk: &disk_m,
+                locked: &lk,
+                filter,
+                removing,
+                force,
+            })
+        }
+
+        #[test]
+        fn table() {
+            use Action::*;
+            let t = |s: &str| format!("# T\n\n{}", blk(s));
+            let cases: Vec<Case> = vec![
+                (
+                    "insert, host absent",
+                    Some("x\n"),
+                    None,
+                    None,
+                    false,
+                    false,
+                    Some(Create),
+                    Some(blk("x\n")),
+                    Some(true),
+                ),
+                (
+                    "insert, host present",
+                    Some("x\n"),
+                    Some("# T\n".into()),
+                    None,
+                    false,
+                    false,
+                    Some(Create),
+                    Some(t("x\n")),
+                    Some(false),
+                ),
+                (
+                    "adopt equal markers",
+                    Some("x\n"),
+                    Some(blk("x\n")),
+                    None,
+                    false,
+                    false,
+                    None,
+                    None,
+                    Some(false),
+                ),
+                (
+                    "adopt differing markers",
+                    Some("x\n"),
+                    Some(blk("u\n")),
+                    None,
+                    false,
+                    false,
+                    None,
+                    None,
+                    None,
+                ),
+                (
+                    "replace unedited",
+                    Some("y\n"),
+                    Some(blk("x\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    Some(Update),
+                    Some(blk("y\n")),
+                    Some(false),
+                ),
+                (
+                    "fragment unchanged",
+                    Some("x\n"),
+                    Some(blk("x\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    None,
+                    None,
+                    Some(false),
+                ),
+                (
+                    "unchanged, body edited",
+                    Some("x\n"),
+                    Some(blk("u\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    None,
+                    None,
+                    Some(false),
+                ),
+                (
+                    "drift",
+                    Some("y\n"),
+                    Some(blk("u\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    None,
+                    None,
+                    None,
+                ),
+                (
+                    "drift --force",
+                    Some("y\n"),
+                    Some(blk("u\n")),
+                    Some("x\n"),
+                    false,
+                    true,
+                    Some(Update),
+                    Some(blk("y\n")),
+                    Some(false),
+                ),
+                (
+                    "markers deleted",
+                    Some("y\n"),
+                    Some("# T\n".into()),
+                    Some("x\n"),
+                    false,
+                    false,
+                    None,
+                    None,
+                    None,
+                ),
+                (
+                    "markers deleted --force",
+                    Some("y\n"),
+                    Some("# T\n".into()),
+                    Some("x\n"),
+                    false,
+                    true,
+                    Some(Create),
+                    Some(t("y\n")),
+                    Some(false),
+                ),
+                (
+                    "gone, unedited",
+                    None,
+                    Some(t("x\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    Some(Delete),
+                    Some("# T\n".into()),
+                    None,
+                ),
+                (
+                    "gone, edited",
+                    None,
+                    Some(blk("u\n")),
+                    Some("x\n"),
+                    false,
+                    false,
+                    Some(Skip),
+                    None,
+                    None,
+                ),
+                (
+                    "gone, created host emptied",
+                    None,
+                    Some(blk("x\n")),
+                    Some("x\n"),
+                    true,
+                    false,
+                    Some(Delete),
+                    None,
+                    None,
+                ),
+            ];
+            let filter = Filter::new(&[], &[]).unwrap();
+            for (name, theirs, disk, locked, created, force, action, after, created_after) in cases
+            {
+                let plan = run(
+                    theirs,
+                    disk.as_deref(),
+                    locked.map(|b| (b, created)),
+                    force,
+                    &filter,
+                    false,
+                );
+                assert!(plan.broken.is_empty(), "{name}: {:?}", plan.broken);
+                match action {
+                    None => assert!(plan.changes.is_empty(), "{name}: {:?}", plan.changes),
+                    Some(a) => {
+                        assert_eq!(plan.changes.len(), 1, "{name}");
+                        let c = &plan.changes[0];
+                        assert_eq!(c.action, a, "{name}");
+                        assert_eq!(c.bytes, after.map(String::into_bytes), "{name}");
+                        assert_eq!(c.report_path("rig"), "AGENTS.md#rig");
+                    }
+                }
+                let drift = action.is_none() && created_after.is_none();
+                assert_eq!(
+                    plan.drift,
+                    if drift {
+                        vec!["AGENTS.md#rig".to_string()]
+                    } else {
+                        vec![]
+                    },
+                    "{name}"
+                );
+                let got = plan.locked.get("AGENTS.md");
+                // Drift keeps the old lock entry (it still records the last applied body).
+                let expected = if drift {
+                    locked.map(|_| created)
+                } else {
+                    created_after
+                };
+                assert_eq!(got.map(|l| l.created), expected, "{name}");
+                if let (Some(l), Some(b), false) = (got, theirs, drift) {
+                    assert_eq!(l.sha256, body_sha(b), "{name}");
+                }
+            }
+        }
+
+        #[test]
+        fn broken_markers_refused_even_with_force() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            let host = format!("{B}\n{E}\n{B}\n{E}\n");
+            let plan = run(
+                Some("y\n"),
+                Some(&host),
+                Some(("x\n", false)),
+                true,
+                &filter,
+                false,
+            );
+            assert!(plan.changes.is_empty());
+            assert_eq!(plan.broken.len(), 1);
+            assert!(plan.broken[0].contains("lines 1, 3"), "{:?}", plan.broken);
+            assert!(plan.locked.contains_key("AGENTS.md"), "lock entry kept");
+        }
+
+        #[test]
+        fn filtered_host_is_removed() {
+            let filter = Filter::new(&[], &["AGENTS.md".to_string()]).unwrap();
+            let plan = run(
+                Some("x\n"),
+                Some(&format!("# T\n\n{}", blk("x\n"))),
+                Some(("x\n", false)),
+                false,
+                &filter,
+                false,
+            );
+            assert_eq!(plan.changes.len(), 1);
+            assert_eq!(plan.changes[0].action, Action::Delete);
+            assert_eq!(plan.changes[0].bytes, Some(b"# T\n".to_vec()));
+            assert!(plan.locked.is_empty());
+        }
+
+        #[test]
+        fn removing_plans_every_locked_section_as_gone() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            let plan = run(
+                None,
+                Some(&blk("x\n")),
+                Some(("x\n", true)),
+                false,
+                &filter,
+                true,
+            );
+            assert_eq!(plan.changes[0].action, Action::Delete);
+            assert_eq!(plan.changes[0].bytes, None);
+            // theirs still lists the section: removing wins
+            let plan = run(
+                Some("x\n"),
+                Some(&blk("x\n")),
+                Some(("x\n", true)),
+                false,
+                &filter,
+                true,
+            );
+            assert_eq!(plan.changes[0].bytes, None);
+            assert!(plan.locked.is_empty());
+        }
+
+        #[test]
+        fn locked_section_with_missing_markers_and_gone_just_drops_the_entry() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            let plan = run(
+                None,
+                Some("# T\n"),
+                Some(("x\n", false)),
+                false,
+                &filter,
+                false,
+            );
+            assert!(plan.changes.is_empty() && plan.drift.is_empty() && plan.locked.is_empty());
+        }
+
+        #[test]
+        fn host_paths_is_theirs_and_locked() {
+            let mut theirs = RenderedSections::new();
+            theirs.insert(
+                "A.md".into(),
+                RenderedSection {
+                    host: "A.md".into(),
+                    body: "x\n".into(),
+                    piece_id: "p".into(),
+                    piece_name: "p".into(),
+                },
+            );
+            let mut lk = BTreeMap::new();
+            lk.insert(
+                "B.md".to_string(),
+                SectionLock {
+                    sha256: "0".repeat(64),
+                    created: false,
+                },
+            );
+            assert_eq!(
+                host_paths(&theirs, &lk).into_iter().collect::<Vec<_>>(),
+                ["A.md", "B.md"]
+            );
+        }
     }
 }

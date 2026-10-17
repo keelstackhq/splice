@@ -213,6 +213,17 @@ In the host file the channel owns exactly the lines between
 - **Removal** (section gone from target, filtered out, or `channel remove`): delete the block if
   unedited, else keep and report. A host left empty (whitespace only) by a removal is deleted
   only if splice created it (recorded as `created = true` in `[sections]`).
+- **Body rules.** A fragment body is normalised to LF and ends in a newline (empty stays empty);
+  a CRLF host gets CRLF back. A body line equal to the channel's own end marker, or matching its
+  begin marker, is refused (exit 3, naming the channel and fragment): it would corrupt the host.
+  The begin marker matches exactly (`<!-- splice:<channel>:begin` then whitespace, ending in
+  `-->`; `:beginX` does not), so a reworded tail still parses. A UTF-8 BOM before a marker on line
+  1 is recognised and kept. Removing a block also drops the blank line insert added; a host that
+  had no final newline gains one.
+- An unchanged fragment is skipped even if the block was edited (the edit is reported only when
+  the fragment changes). Existing markers whose body equals the fragment are adopted (recorded,
+  nothing written). Broken markers are never fixed, not even with `--force`. Drift keeps the old
+  `[sections]` entry in the lock.
 - `check` reports a section as path `HOST#CHANNEL` with action `update`, class `owned` in
   `changes` (contract §8 shape; `#` cannot occur in a rendered path).
 
