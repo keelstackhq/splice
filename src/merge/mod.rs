@@ -70,7 +70,7 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
 
 fn parses(strategy: MergeStrategy, text: &str) -> bool {
     match strategy {
-        MergeStrategy::Json => serde_json::from_str::<serde_json::Value>(text).is_ok(),
+        MergeStrategy::Json => json::parses_strict(text),
         MergeStrategy::Yaml => yaml_serde::from_str::<yaml_serde::Value>(text).is_ok(),
         _ => true,
     }
@@ -337,5 +337,23 @@ mod tests {
             "1: b\nz: 1\n",
         );
         assert!(!m.text.contains("'1'") && !m.text.contains("\"1\""));
+    }
+
+    #[test]
+    fn text_clean_json_merge_never_duplicates_a_key() {
+        let b = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4\n}\n";
+        let o = "{\n  \"a\": 1,\n  \"x\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4\n}\n";
+        let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"x\": 2\n}\n";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(m.conflicts, ["x"]);
+        assert!(!find_markers(&m.text).is_empty());
+    }
+
+    #[test]
+    fn duplicate_keys_are_rejected_at_any_depth() {
+        assert!(json::parses_strict(r#"{"a":[{"b":1}],"c":{"d":1}}"#));
+        assert!(!json::parses_strict(r#"{"a":1,"a":2}"#));
+        assert!(!json::parses_strict(r#"{"a":[{"b":1,"b":2}]}"#));
+        assert!(!json::parses_strict(r#"{"a":{"b":{"c":1,"c":1}}}"#));
     }
 }

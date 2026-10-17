@@ -7,6 +7,65 @@ use serde_json::ser::{PrettyFormatter, Serializer};
 use super::keypath::{Tree, merge_tree};
 use super::{Merged, ParseError};
 
+/// True when `text` is one JSON value without a repeated object key at any depth.
+pub fn parses_strict(text: &str) -> bool {
+    serde_json::from_str::<Strict>(text).is_ok()
+}
+
+/// Deserialises any JSON value, failing on a repeated object key at any depth.
+struct Strict;
+
+impl<'de> serde::Deserialize<'de> for Strict {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(StrictVisitor)
+    }
+}
+
+struct StrictVisitor;
+
+impl<'de> serde::de::Visitor<'de> for StrictVisitor {
+    type Value = Strict;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("a JSON value without duplicate keys")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+    fn visit_i64<E>(self, _: i64) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+    fn visit_u64<E>(self, _: u64) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+    fn visit_f64<E>(self, _: f64) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+    fn visit_str<E>(self, _: &str) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+    fn visit_unit<E>(self) -> Result<Strict, E> {
+        Ok(Strict)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Strict, A::Error> {
+        while seq.next_element::<Strict>()?.is_some() {}
+        Ok(Strict)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Strict, A::Error> {
+        let mut seen = std::collections::HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key.clone()) {
+                return Err(serde::de::Error::custom(format!("duplicate key `{key}`")));
+            }
+            map.next_value::<Strict>()?;
+        }
+        Ok(Strict)
+    }
+}
+
 pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseError> {
     let parse = |s: &str| {
         serde_json::from_str::<Value>(s)
