@@ -343,3 +343,82 @@ fn failing_post_is_env_error_without_lock() {
     assert!(!dest.path().join(".splice/lock.toml").exists());
     assert!(dest.path().join("package.json").exists());
 }
+
+#[test]
+fn post_output_goes_to_stderr_in_both_modes() {
+    let tpl = template_repo(&["v1"]);
+    with_post(&tpl, "echo hello-out && echo hello-err 1>&2");
+    for json_flag in [false, true] {
+        let dest = tempfile::tempdir().unwrap();
+        let mut cmd = splice_cmd();
+        cmd.args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"]);
+        if json_flag {
+            cmd.arg("--json");
+        }
+        let out = cmd.assert().success().get_output().clone();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        let stderr = String::from_utf8(out.stderr).unwrap();
+        assert!(!stdout.contains("hello-"), "json={json_flag}: {stdout}");
+        assert!(
+            stderr.contains("hello-out") && stderr.contains("hello-err"),
+            "{stderr}"
+        );
+        if json_flag {
+            json(stdout.into_bytes());
+        } else {
+            // Human stdout holds only change lines: `action  path  class`.
+            assert!(
+                stdout.lines().all(|l| l.split("  ").count() == 3),
+                "{stdout}"
+            );
+        }
+    }
+}
+
+#[test]
+fn missing_var_without_json_or_yes_and_no_tty_is_usage() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args(["new", s(&tpl), s(&dest)])
+        .timeout(Duration::from_secs(20))
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--data project="));
+    assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn force_preflights_every_target_before_writing() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(outside.path(), dest.path().join("apps")).unwrap();
+    let out = splice_cmd()
+        .args([
+            "new",
+            s(&tpl),
+            s(&dest),
+            "--data",
+            "project=demo",
+            "--yes",
+            "--force",
+        ])
+        .args(["--piece", "app:web", "--json"])
+        .assert()
+        .code(3)
+        .get_output()
+        .stdout
+        .clone();
+    json(out);
+    // `.editorconfig` sorts before `apps/…` but nothing was written at all.
+    let names: Vec<_> = std::fs::read_dir(dest.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(names, vec![std::ffi::OsString::from("apps")]);
+    assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}

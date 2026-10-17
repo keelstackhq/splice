@@ -165,6 +165,10 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     )?;
 
     // Write every file; seeds only when absent.
+    // Check every target first so a refusal (symlink, `..`) changes nothing.
+    for file in tree.values() {
+        fsio::check_target(&dest, &file.path)?;
+    }
     std::fs::create_dir_all(&dest)?;
     for file in tree.values() {
         let exists = dest.join(&file.path).symlink_metadata().is_ok();

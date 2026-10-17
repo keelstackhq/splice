@@ -21,7 +21,7 @@ fn refuse(rel: &str, why: &str) -> SpliceError {
 
 /// Check that writing `rel` below `root` stays inside `root`: `rel` is relative without `..`, and
 /// neither the target nor any existing directory between `root` and it is a symlink.
-fn check_target(root: &Path, rel: &str) -> Result<()> {
+pub fn check_target(root: &Path, rel: &str) -> Result<()> {
     let rel_path = Path::new(rel);
     if rel.is_empty() || rel_path.is_absolute() {
         return Err(refuse(rel, "the path must be relative"));

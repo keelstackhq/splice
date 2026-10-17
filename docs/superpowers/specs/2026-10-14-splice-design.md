@@ -52,7 +52,8 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 
-`--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. `--piece ID:NAME`
+`--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
+names no variable of the template or the selected pieces is a usage error (exit 2). `--piece ID:NAME`
 names a `multiple` instance.
 
 Human output is terse: one line per change (`create  apps/web/package.json  shared`), then one
