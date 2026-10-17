@@ -14,7 +14,7 @@ fn bad(origin: &str, why: &str) -> SpliceError {
 
 /// Render `/`-separated `raw` segment by segment. A rendered value must not be empty, `.`, `..`
 /// or contain `/` or `\\`, so a variable can neither escape the repo nor add a segment (C8).
-fn render_segments(
+pub(crate) fn render_segments(
     raw: &str,
     renderer: &Renderer,
     ctx: &minijinja::Value,

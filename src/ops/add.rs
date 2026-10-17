@@ -11,23 +11,13 @@ use crate::fsio::{self, sha256_hex};
 use crate::lock::{LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
 use crate::output::{Action, Class, Report};
+use crate::planner::Planned;
 use crate::post::run_post;
 use crate::render::{PieceInstance, RenderInput, RenderedFile, RenderedTree, render_tree};
 use crate::source::TemplateSource;
 use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
-
-/// One step of the reduced plan. `bytes` is set for `create` and `update`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Planned {
-    pub path: String,
-    pub action: Action,
-    pub class: Class,
-    pub bytes: Option<Vec<u8>>,
-    /// Why the step is a conflict.
-    pub note: Option<String>,
-}
 
 fn planned(path: &str, action: Action, class: Class, bytes: Option<Vec<u8>>) -> Planned {
     Planned {

@@ -336,6 +336,15 @@ into the contract at its next `format` bump.
     disjoint edits never rewrites the user's file; hull's `pnpm-workspace.yaml` is the reference
     case (`tests/fixtures/merge/`).
 
+12. Class changes between base and target (plan 02 task 4): owned or shared → seed leaves the
+    file untouched and drops it from the lock (`skip` + message); seed → owned or shared creates
+    the file when absent, keeps it when it equals the target, else is a `conflict` with the
+    whole file in one diff3 block (never drift, also with `--force`); owned ↔ shared follows the
+    target class's rules with the lock hash and base render as they are. A file no longer
+    rendered, or in `[[remove]]`, is deleted when its hash matches the lock or it equals the base
+    render; a `[[remove]]` path not in the lock is kept with a message. These go to hull and the
+    contract at the next `format` bump.
+
 Gap (milestone 2): `add` on the full planner gets the same dirty-tree refusal (exit 2) and
 `--allow-dirty` as `update` (§8.3 step 1); the milestone 1 reduced planner has neither.
 
