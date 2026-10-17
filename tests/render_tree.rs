@@ -198,3 +198,22 @@ fn jinja_files_use_lf_and_non_jinja_bytes_are_untouched() {
     assert_eq!(tree["crlf.txt"].bytes, b"a\r\nb\r\n");
     assert_eq!(tree["j.txt"].bytes, b"a\ndemo\n");
 }
+
+#[test]
+fn piece_without_files_dir_renders_nothing() {
+    let dir = temp_template();
+    let piece = dir.path().join("pieces/hooks");
+    std::fs::create_dir_all(&piece).unwrap();
+    std::fs::write(
+        piece.join("piece.toml"),
+        "id = \"hooks\"\ndescription = \"Post only\"\n\n[[post]]\nrun = \"true\"\nwhen = [\"new\"]\n",
+    )
+    .unwrap();
+    assert!(!piece.join("files").exists());
+    let with = render_in(dir.path(), &["base", "hooks"], &[("project", "demo")]).unwrap();
+    let without = render_in(dir.path(), &["base"], &[("project", "demo")]).unwrap();
+    assert_eq!(
+        with.keys().collect::<Vec<_>>(),
+        without.keys().collect::<Vec<_>>()
+    );
+}

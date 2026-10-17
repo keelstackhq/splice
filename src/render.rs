@@ -135,6 +135,10 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
             .ok_or_else(|| template_err(format!("unknown piece `{}`", inst.id)))?;
         let classifier = Classifier::for_piece(piece)?;
         let ctx = context(t, input, inst, &pieces);
+        // A piece without `files/` (post-only) renders nothing.
+        if !piece.files_dir.exists() {
+            continue;
+        }
         for entry in walkdir::WalkDir::new(&piece.files_dir)
             .follow_links(false)
             .sort_by_file_name()
