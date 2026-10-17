@@ -184,7 +184,7 @@ pub fn commit_all(repo: &Path) {
     );
 }
 
-fn git_stdout(dir: &Path, args: &[&str]) -> String {
+pub fn git_stdout(dir: &Path, args: &[&str]) -> String {
     let mut cmd = Proc::new("git");
     cmd.current_dir(dir).args(args);
     apply_git_env(&mut cmd, STATE_DATE);
@@ -265,7 +265,7 @@ pub fn channel_repo(versions: &[&str]) -> TempDir {
     channel_repo_tagged("channel", &pairs)
 }
 
-/// A new commit on `main`: inside the channel subdir (`inside`) or only `README.md` outside it.
+/// A new commit on `main` (channel fixture only): inside the channel subdir (`inside`) or only `README.md` outside it.
 /// Returns the full sha.
 pub fn track_commit(repo: &Path, inside: bool) -> String {
     let n = git_stdout(repo, &["rev-list", "--count", "HEAD"]);

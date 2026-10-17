@@ -1,7 +1,8 @@
 mod common;
 
 use common::{
-    bare_repo, chan_commit, channel_repo, new_repo_at, template_repo, track_commit, tree_snapshot,
+    bare_repo, chan_commit, channel_repo, git_stdout, new_repo_at, template_repo, track_commit,
+    tree_snapshot,
 };
 use splice::git::Git;
 use tempfile::tempdir;
@@ -62,32 +63,20 @@ fn template_repo_is_reproducible() {
     assert_eq!(head(a.path()), head(b.path()));
 }
 
-fn git_out(dir: &std::path::Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .current_dir(dir)
-        .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "git {args:?}");
-    String::from_utf8(out.stdout).unwrap().trim().to_string()
-}
-
 #[test]
 fn channel_repo_has_subdir_and_tags() {
     let repo = channel_repo(&["v1", "v2"]);
     let p = repo.path();
-    assert_eq!(git_out(p, &["tag"]), "v1.0.0\nv2.0.0");
+    assert_eq!(git_stdout(p, &["tag"]), "v1.0.0\nv2.0.0");
     assert!(p.join("channel/splice.toml").is_file());
     assert!(p.join("README.md").is_file());
-    let tree = || git_out(p, &["rev-parse", "HEAD:channel"]);
+    let tree = || git_stdout(p, &["rev-parse", "HEAD:channel"]);
     let before = tree();
     let outside = track_commit(p, false);
     assert_eq!(outside.len(), 40);
     assert_eq!(tree(), before);
     let inside = track_commit(p, true);
-    assert_eq!(git_out(p, &["rev-parse", "HEAD"]), inside);
+    assert_eq!(git_stdout(p, &["rev-parse", "HEAD"]), inside);
     assert_ne!(tree(), before);
 }
 
@@ -104,6 +93,9 @@ fn chan_commit_leaves_clean_tree() {
 #[test]
 fn bare_repo_has_one_commit_and_no_lock() {
     let repo = bare_repo();
-    assert_eq!(git_out(repo.path(), &["rev-list", "--count", "HEAD"]), "1");
+    assert_eq!(
+        git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]),
+        "1"
+    );
     assert!(!repo.path().join(".splice").exists());
 }

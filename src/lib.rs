@@ -19,6 +19,7 @@ pub mod paths;
 pub mod planner;
 pub mod post;
 pub mod render;
+pub mod sections;
 pub mod source;
 pub mod sources;
 pub mod subset;
