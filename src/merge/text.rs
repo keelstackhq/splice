@@ -6,17 +6,27 @@ use super::Merged;
 
 /// 3-way merge of `ours` (the file on disk) and `theirs` (the new template render) against `base`
 /// (the old render). A conflict yields diff3 blocks with the contract labels `ours`, `base`,
-/// `template`. If `ours` uses CRLF the result does too.
+/// `template`. CRLF policy: if `ours` contains any CRLF the whole result uses CRLF; an LF `ours`
+/// stays LF, whatever `base` and `theirs` use. Diffy runs with a marker length longer than any
+/// line-start run in the inputs, so file content can never be mistaken for a marker.
 pub fn merge_text(base: &str, ours: &str, theirs: &str) -> Merged {
     let crlf = ours.contains("\r\n");
     let (b, o, t) = (lf(base), lf(ours), lf(theirs));
+    let len = [&b, &o, &t]
+        .into_iter()
+        .map(|s| longest_marker_run(s))
+        .max()
+        .unwrap_or(0)
+        .max(7)
+        + 1;
     let result = MergeOptions::new()
+        .set_conflict_marker_length(len)
         .set_conflict_style(ConflictStyle::Diff3)
         .set_incomplete_hunk_style(IncompleteHunkStyle::Git)
         .merge(&b, &o, &t);
     let (text, conflicts) = match result {
         Ok(text) => (text, Vec::new()),
-        Err(raw) => relabel(&raw),
+        Err(raw) => relabel(&raw, len),
     };
     let text = if crlf {
         text.replace('\n', "\r\n")
@@ -44,36 +54,46 @@ fn lf(s: &str) -> String {
     s.replace("\r\n", "\n")
 }
 
-#[derive(Clone, Copy)]
-enum State {
-    Outside,
-    Ours,
-    Base,
-    Theirs,
+/// Length of the longest run of marker characters at the start of any line.
+fn longest_marker_run(text: &str) -> usize {
+    text.lines()
+        .map(|l| {
+            let c = l.chars().next().filter(|c| "<=|>".contains(*c));
+            c.map_or(0, |c| l.chars().take_while(|&x| x == c).count())
+        })
+        .max()
+        .unwrap_or(0)
 }
 
-/// Rename diffy's `||||||| original` / `>>>>>>> theirs` markers, inside conflict hunks only, and
-/// collect `line N` for each hunk. Literal marker-like text outside hunks stays as it is.
-fn relabel(raw: &str) -> (String, Vec<String>) {
+/// Rewrite diffy's markers, which have exactly `len` characters (no input line starts with a run
+/// that long, so they cannot be confused with content), to the contract's 7-character labels, and
+/// collect `line N` for each hunk.
+fn relabel(raw: &str, len: usize) -> (String, Vec<String>) {
+    let (open, base, sep, close) = (
+        format!("{} ", "<".repeat(len)),
+        format!("{} ", "|".repeat(len)),
+        "=".repeat(len),
+        format!("{} ", ">".repeat(len)),
+    );
     let mut out = String::with_capacity(raw.len());
     let mut conflicts = Vec::new();
-    let mut state = State::Outside;
     for (i, line) in raw.split_inclusive('\n').enumerate() {
         let (body, nl) = match line.strip_suffix('\n') {
             Some(b) => (b, "\n"),
             None => (line, ""),
         };
-        let (next, text) = match state {
-            State::Outside if body.starts_with("<<<<<<< ") => {
-                conflicts.push(format!("line {}", i + 1));
-                (State::Ours, "<<<<<<< ours")
-            }
-            State::Ours if body.starts_with("||||||| ") => (State::Base, "||||||| base"),
-            State::Base if body == "=======" => (State::Theirs, body),
-            State::Theirs if body.starts_with(">>>>>>> ") => (State::Outside, ">>>>>>> template"),
-            s => (s, body),
+        let text = if body.starts_with(&open) {
+            conflicts.push(format!("line {}", i + 1));
+            "<<<<<<< ours"
+        } else if body.starts_with(&base) {
+            "||||||| base"
+        } else if body == sep {
+            "======="
+        } else if body.starts_with(&close) {
+            ">>>>>>> template"
+        } else {
+            body
         };
-        state = next;
         out.push_str(text);
         out.push_str(nl);
     }
@@ -140,6 +160,36 @@ mod tests {
             m.text,
             "<<<<<<< ours\nours\n||||||| base\nx\n=======\ntheirs\n>>>>>>> template\n"
         );
+    }
+
+    #[test]
+    fn literal_head_marker_outside_hunk_stays_and_line_is_correct() {
+        let base = "<<<<<<< HEAD\nk\nm\nn\no\nx\n";
+        let ours = "<<<<<<< HEAD\nk\nm\nn\no\nours\n";
+        let theirs = "<<<<<<< HEAD\nk\nm\nn\no\ntheirs\n";
+        let m = merge_text(base, ours, theirs);
+        assert!(m.text.starts_with("<<<<<<< HEAD\nk\n"));
+        assert_eq!(m.conflicts, vec!["line 6"]);
+    }
+
+    #[test]
+    fn literal_theirs_marker_outside_hunk_stays() {
+        let base = ">>>>>>> theirs\nk\nm\nn\no\nx\n";
+        let ours = ">>>>>>> theirs\nk\nm\nn\no\nours\n";
+        let theirs = ">>>>>>> theirs\nk\nm\nn\no\ntheirs\n";
+        let m = merge_text(base, ours, theirs);
+        assert!(m.text.starts_with(">>>>>>> theirs\nk\n"));
+        assert_eq!(m.conflicts, vec!["line 6"]);
+    }
+
+    #[test]
+    fn theirs_line_starting_with_marker_inside_hunk_does_not_end_it() {
+        let m = merge_text("x\n", "ours\n", ">>>>>>> theirs\nmore\n");
+        assert_eq!(
+            m.text,
+            "<<<<<<< ours\nours\n||||||| base\nx\n=======\n>>>>>>> theirs\nmore\n>>>>>>> template\n"
+        );
+        assert_eq!(m.conflicts, vec!["line 1"]);
     }
 
     #[test]

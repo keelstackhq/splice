@@ -2,7 +2,6 @@
 
 const OURS: &str = "<<<<<<< ours";
 const BASE: &str = "||||||| base";
-const SEP: &str = "=======";
 const THEIRS: &str = ">>>>>>> template";
 
 /// 1-based lines with conflict markers. A `<<<<<<< ours` line opens a block and is reported once
@@ -26,8 +25,6 @@ pub fn find_markers(text: &str) -> Vec<usize> {
             open = false;
         } else if !open && line.starts_with(BASE) {
             found.push(n);
-        } else if open && (line.starts_with(BASE) || line.starts_with(SEP)) {
-            // part of the open block
         }
     }
     found
