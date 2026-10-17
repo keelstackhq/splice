@@ -16,41 +16,111 @@ fn bad_flag_with_json_is_one_json_object_exit_2() {
     assert_eq!(v["command"], "new");
 }
 
-fn code2(args: &[&str]) {
-    splice_cmd().args(args).assert().code(2);
+/// Run, expect exit 2, and assert the clap text names every flag in `flags`.
+fn usage_names(args: &[&str], flags: &[&str], phrase: &str) {
+    let out = splice_cmd()
+        .args(args)
+        .assert()
+        .code(2)
+        .get_output()
+        .clone();
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+    for f in flags {
+        assert!(err.contains(f), "{args:?}: stderr lacks {f}: {err}");
+    }
+    assert!(
+        err.contains(phrase),
+        "{args:?}: stderr lacks {phrase:?}: {err}"
+    );
 }
 
 #[test]
 fn ref_and_track_conflict() {
-    code2(&[
-        "--json", "channel", "add", "x", "--ref", "v1", "--track", "main",
-    ]);
+    let out = splice_cmd()
+        .args([
+            "--json", "channel", "add", "x", "--ref", "v1", "--track", "main",
+        ])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let msg = v["messages"].to_string();
+    for t in ["--ref", "--track", "cannot be used with"] {
+        assert!(msg.contains(t), "{t}: {msg}");
+    }
+    usage_names(
+        &["channel", "add", "x", "--ref", "v1", "--track", "main"],
+        &["--ref", "--track"],
+        "cannot be used with",
+    );
 }
 
 #[test]
 fn channel_and_all_conflict() {
-    code2(&["update", "--channel", "a", "--all"]);
+    usage_names(
+        &["update", "--channel", "a", "--all"],
+        &["--channel", "--all"],
+        "cannot be used with",
+    );
 }
 
 #[test]
 fn filter_flags_need_channel() {
-    code2(&["update", "--only", "a/**"]);
-    code2(&["update", "--exclude", "a/**"]);
+    for f in ["--only", "--exclude"] {
+        usage_names(
+            &["update", f, "a/**"],
+            &[f, "--channel"],
+            "required arguments were not provided",
+        );
+    }
 }
 
 #[test]
 fn all_rejects_to() {
-    code2(&["update", "--all", "--to", "2.0.0"]);
+    usage_names(
+        &["update", "--all", "--to", "2.0.0"],
+        &["--all", "--to"],
+        "cannot be used with",
+    );
 }
 
 #[test]
 fn all_rejects_data_only_exclude() {
-    for f in [["--data", "a=b"], ["--only", "a"], ["--exclude", "a"]] {
-        splice_cmd()
-            .args(["update", "--all"])
-            .args(f)
+    for f in ["--data", "--only", "--exclude"] {
+        usage_names(
+            &["update", "--all", f, "a=b"],
+            &["--all", f],
+            "cannot be used with",
+        );
+    }
+}
+
+#[test]
+fn channel_flags_on_other_commands_are_not_implemented_yet() {
+    for args in [
+        vec!["add", "app", "--channel", "rig"],
+        vec!["update", "--channel", "rig"],
+        vec!["update", "--all"],
+        vec!["check", "--channel", "rig"],
+        vec!["diff", "--channel", "rig"],
+    ] {
+        let out = splice_cmd()
+            .arg("--json")
+            .args(&args)
             .assert()
-            .code(2);
+            .code(2)
+            .get_output()
+            .stdout
+            .clone();
+        let v: serde_json::Value = serde_json::from_slice(&out)
+            .unwrap_or_else(|e| panic!("{args:?}: stdout is not one JSON object: {e}"));
+        assert_eq!(v["ok"], false, "{args:?}");
+        assert!(
+            v["messages"].to_string().contains("not implemented yet"),
+            "{args:?}: {v}"
+        );
     }
 }
 
