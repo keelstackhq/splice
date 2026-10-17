@@ -389,6 +389,13 @@ into the contract at its next `format` bump.
     rendered after the add follows §8.4 (deleted when unedited, else kept with a message that
     does not mention the lock, which no longer lists it). `diff` exits 0 on drift and conflicts.
 
+15. `[sections]` (channels plan 04 task 5): splice < 0.2.0 ignores the key (unknown keys warn) and
+    would render the fragment as an owned file, so a template that uses `[sections]` sets
+    `min_splice = "0.2.0"` (the crate version moves to 0.2.0 in plan 04 task 21). Fragments may not
+    be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
+    piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). Plan 04 task 19
+    extends this item with the channel rulings.
+
 ## 11. Testing
 
 - Unit tests next to each module; `cargo nextest run`.

@@ -2,7 +2,10 @@
 
 mod common;
 
-use common::{amend_tip, commit_all, splice_cmd, template_repo, template_repo_tagged};
+use common::{
+    amend_tip, commit_all, commit_tag, splice_cmd, template_repo, template_repo_tagged,
+    tree_snapshot,
+};
 use splice::lock::Lock;
 use std::process::Command as Proc;
 use tempfile::TempDir;
@@ -360,4 +363,26 @@ fn remove_paths_see_the_template_object() {
     );
     assert_eq!(read(&repo, "fixture-2.0.0.cfg"), "mine\n");
     assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
+}
+
+#[test]
+fn update_refuses_a_target_that_adds_sections() {
+    let tpl = template_repo(&["v1"]);
+    let repo = new_repo(&tpl, &[]);
+    let base = tpl.path().join("pieces/base");
+    let toml = std::fs::read_to_string(base.join("piece.toml")).unwrap();
+    std::fs::write(
+        base.join("piece.toml"),
+        format!("{toml}\n[sections]\n\"NOTES.md\" = \"frag.md\"\n"),
+    )
+    .unwrap();
+    std::fs::write(base.join("files/frag.md"), "hello\n").unwrap();
+    commit_tag(tpl.path(), "v2 with sections", "v2.0.0");
+    let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
+    let out = update(&repo, &[]).code(3).get_output().clone();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("piece `base` declares [sections]"), "{text}");
+    assert_eq!(lock_bytes(&repo), lock);
+    assert_eq!(tree_snapshot(repo.path()), tree);
 }

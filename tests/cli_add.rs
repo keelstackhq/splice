@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{commit_all, git, splice_cmd, template_repo, tree_snapshot};
+use common::{amend_tip, commit_all, git, splice_cmd, template_repo, tree_snapshot};
 use splice::lock::Lock;
 use tempfile::TempDir;
 
@@ -482,4 +482,36 @@ fn outside_work_tree_refused_unless_allow_dirty() {
         ])
         .assert()
         .success();
+}
+
+#[test]
+fn add_refuses_a_piece_with_sections() {
+    let tpl = template_repo(&["v1"]);
+    let piece = tpl.path().join("pieces/guide");
+    std::fs::create_dir_all(piece.join("files")).unwrap();
+    std::fs::write(
+        piece.join("piece.toml"),
+        "id = \"guide\"\ndescription = \"g\"\n\n[sections]\n\"NOTES.md\" = \"frag.md\"\n",
+    )
+    .unwrap();
+    std::fs::write(piece.join("files/frag.md"), "hello\n").unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            repo.path().to_str().unwrap(),
+        ])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    commit_all(repo.path());
+    let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
+    let out = add(&repo, &["guide"]).code(3).get_output().clone();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("piece `guide` declares [sections]"), "{text}");
+    assert_eq!(lock_bytes(&repo), lock);
+    assert_eq!(tree_snapshot(repo.path()), tree);
 }

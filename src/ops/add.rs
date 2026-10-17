@@ -62,6 +62,8 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
 
     // 2. Validate the new instance before anything is rendered or written.
     let id = a.piece_id.as_str();
+    // Refuses sections before the unknown-piece usage error below: a locked piece with
+    // `[sections]` is exit 3 whatever piece is asked for.
     let mut used: Vec<&str> = lock.pieces.iter().map(|p| p.id.as_str()).collect();
     used.push(id);
     template.ensure_no_sections(&used)?;

@@ -190,3 +190,41 @@ fn missing_or_escaping_fragment_rejected() {
     let m = section_err("\"AGENTS.md\" = \"../s.md\"", &[]);
     assert!(m.contains("piece.toml") && m.contains("../s.md"), "{m}");
 }
+
+#[cfg(unix)]
+mod symlinks {
+    use super::*;
+
+    const TOML: &str = "id = \"p\"\ndescription = \"d\"\n\n[sections]\n\"AGENTS.md\" = \"FRAG\"\n";
+
+    /// A template whose fragment `frag` is reached through a symlink to a secret outside it.
+    fn load_through_link(frag: &str, link: &str, link_to_dir: bool) -> String {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("s.md"), "SECRET\n").unwrap();
+        let toml = TOML.replace("FRAG", frag);
+        let dir = inline_template(&[("p", &toml, &[])]);
+        let files = dir.path().join("pieces/p/files");
+        let link_path = files.join(link);
+        let target = if link_to_dir {
+            outside.path().to_path_buf()
+        } else {
+            outside.path().join("s.md")
+        };
+        std::os::unix::fs::symlink(target, link_path).unwrap();
+        let e = Template::load(dir.path()).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        e.to_string()
+    }
+
+    #[test]
+    fn symlinked_fragment_rejected() {
+        let m = load_through_link("s.md", "s.md", false);
+        assert!(m.contains("piece.toml") && m.contains("s.md"), "{m}");
+    }
+
+    #[test]
+    fn fragment_below_symlinked_dir_rejected() {
+        let m = load_through_link("sub/s.md", "sub", true);
+        assert!(m.contains("piece.toml") && m.contains("sub/s.md"), "{m}");
+    }
+}

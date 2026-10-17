@@ -293,10 +293,9 @@ fn two_pieces_same_host_rejected() {
     let t = Template::load(dir.path()).unwrap();
     let e = render_sections(&t, &plain_input(&["a", "b"])).unwrap_err();
     assert_eq!(e.exit_code(), 3);
-    let m = e.to_string();
-    assert!(
-        m.contains("AGENTS.md") && m.contains("`a") && m.contains("`b"),
-        "{m}"
+    assert_eq!(
+        e.to_string(),
+        "section host `AGENTS.md` is declared by pieces `a:a` and `b:b`; one section per host"
     );
 }
 
