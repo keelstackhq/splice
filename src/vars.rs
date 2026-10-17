@@ -186,6 +186,7 @@ mod tests {
             seed: vec![],
             merge: IndexMap::new(),
             post: vec![],
+            sections: IndexMap::new(),
             files_dir: "files".into(),
         }
     }

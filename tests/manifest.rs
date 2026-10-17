@@ -1,5 +1,8 @@
+mod common;
+
 use std::path::Path;
 
+use common::inline_template;
 use splice::manifest::{MergeStrategy, Template, When};
 
 fn fixture() -> Template {
@@ -84,11 +87,8 @@ fn channel_fixture(group: &str, name: &str) -> Template {
     Template::load(&root).unwrap()
 }
 
-/// Until the `[sections]` manifest key is known (Task 5) it is the only warning.
-fn only_sections_warnings(t: &Template) {
-    for w in &t.warnings {
-        assert!(w.ends_with("unknown key `sections` ignored"), "{w}");
-    }
+fn no_warnings(t: &Template) {
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
 }
 
 #[test]
@@ -107,12 +107,11 @@ fn channel_fixture_v1_loads() {
         t.pieces["hooks"].post[0].run,
         "echo rig-post >> .rig-post.log"
     );
-    assert_eq!(t.warnings.len(), 2, "{:?}", t.warnings); // core and claude declare sections
-    only_sections_warnings(&t);
+    no_warnings(&t);
     assert!(t.migrations.is_empty());
 
     let v2 = channel_fixture("channel", "v2");
-    only_sections_warnings(&v2);
+    no_warnings(&v2);
     assert_eq!(v2.migrations.len(), 1);
     assert_eq!(
         v2.migrations[0].removes[0].path,
@@ -124,7 +123,7 @@ fn channel_fixture_v1_loads() {
 #[test]
 fn channel_variant_fixtures_load() {
     for name in ["v2-collide", "v2-x"] {
-        only_sections_warnings(&channel_fixture("channel", name));
+        no_warnings(&channel_fixture("channel", name));
     }
     assert!(channel_fixture("template", "v1-claude").warnings.is_empty());
     assert!(channel_fixture("template", "v2-x").warnings.is_empty());
@@ -140,11 +139,54 @@ fn channel_b_fixture_loads() {
     assert_eq!(t.pieces["notes"].post.len(), 2);
     assert!(t.warnings.is_empty(), "{:?}", t.warnings);
     let v2 = channel_fixture("channel-b", "v2");
-    only_sections_warnings(&v2);
+    no_warnings(&v2);
     assert_eq!(v2.migrations.len(), 1);
     assert!(
         v2.migrations[0].steps[0]
             .run
             .contains("SPLICE_FIXTURE_FAIL")
     );
+}
+
+#[test]
+fn sections_parsed() {
+    let t = channel_fixture("channel", "v1");
+    no_warnings(&t);
+    assert_eq!(
+        t.pieces["core"].sections["AGENTS.md"],
+        "sections/rules.md.jinja"
+    );
+    assert_eq!(
+        t.pieces["claude"].sections["CLAUDE.md"],
+        "sections/pointer.md"
+    );
+    assert!(t.pieces["hooks"].sections.is_empty());
+    assert_eq!(t.has_sections(&["hooks", "claude", "core"]), Some("claude"));
+    assert_eq!(t.has_sections(&["hooks", "skills"]), None);
+}
+
+const SECTION_PIECE: &str = "id = \"p\"\ndescription = \"d\"\n";
+
+fn section_err(sections: &str, files: &[(&str, &str)]) -> String {
+    let toml = format!("{SECTION_PIECE}\n[sections]\n{sections}\n");
+    let dir = inline_template(&[("p", &toml, files)]);
+    let e = Template::load(dir.path()).unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+    e.to_string()
+}
+
+#[test]
+fn non_md_host_or_fragment_rejected() {
+    let m = section_err("\"AGENTS.txt\" = \"s.md\"", &[("s.md", "x\n")]);
+    assert!(m.contains("piece.toml") && m.contains("AGENTS.txt"), "{m}");
+    let m = section_err("\"AGENTS.md\" = \"x.txt\"", &[("x.txt", "x\n")]);
+    assert!(m.contains("piece.toml") && m.contains("x.txt"), "{m}");
+}
+
+#[test]
+fn missing_or_escaping_fragment_rejected() {
+    let m = section_err("\"AGENTS.md\" = \"nope.md\"", &[]);
+    assert!(m.contains("piece.toml") && m.contains("nope.md"), "{m}");
+    let m = section_err("\"AGENTS.md\" = \"../s.md\"", &[]);
+    assert!(m.contains("piece.toml") && m.contains("../s.md"), "{m}");
 }

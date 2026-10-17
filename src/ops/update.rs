@@ -111,6 +111,13 @@ pub fn prepare(
     let running = Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version");
     template.check_min_splice(&running)?;
     messages.extend(template.warnings.iter().cloned());
+    template.ensure_no_sections(
+        &lock
+            .pieces
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>(),
+    )?;
 
     // 4. Pieces and vars: every instance's piece must still exist and meet its `requires`.
     for inst in &lock.pieces {

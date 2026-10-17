@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{amend_tip, commit_tag, splice_cmd, template_repo, tree_snapshot};
+use common::{amend_tip, channel_repo, commit_tag, splice_cmd, template_repo, tree_snapshot};
 use std::path::Path;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -421,4 +421,35 @@ fn force_preflights_every_target_before_writing() {
         .collect();
     assert_eq!(names, vec![std::ffi::OsString::from("apps")]);
     assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn new_refuses_sections() {
+    let repo = channel_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args([
+            "new",
+            &format!("{}//channel", repo.path().display()),
+            dest.path().to_str().unwrap(),
+        ])
+        .args(["--piece", "claude", "--yes", "--json"])
+        .assert()
+        .code(3)
+        .get_output()
+        .clone();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("sections are only applied by `splice channel add`"),
+        "{text}"
+    );
+    assert!(
+        text.contains("piece `core`") || text.contains("piece `claude`"),
+        "{text}"
+    );
+    assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 }

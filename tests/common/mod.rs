@@ -300,3 +300,29 @@ pub fn chan_commit(repo: &Path, args: &[&str]) -> assert_cmd::assert::Assert {
     commit_all(repo);
     out
 }
+
+/// `(path under files/, content)`.
+pub type FileSpec<'a> = &'a [(&'a str, &'a str)];
+
+/// A template dir made of `(piece id, piece.toml, [(path under files/, content)])`; the first
+/// piece is the base. Template name `t`, no template vars.
+pub fn inline_template(pieces: &[(&str, &str, FileSpec)]) -> TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let base = pieces[0].0;
+    std::fs::write(
+        dir.path().join("splice.toml"),
+        format!("format = 1\nname = \"t\"\nmin_splice = \"0.1.0\"\nbase = \"{base}\"\n"),
+    )
+    .unwrap();
+    for (id, toml, files) in pieces {
+        let p = dir.path().join("pieces").join(id);
+        std::fs::create_dir_all(p.join("files")).unwrap();
+        std::fs::write(p.join("piece.toml"), toml).unwrap();
+        for (rel, text) in *files {
+            let f = p.join("files").join(rel);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(f, text).unwrap();
+        }
+    }
+    dir
+}

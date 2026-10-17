@@ -117,6 +117,11 @@ readable). Validation errors exit 3 and name the file and key.
 - `[merge]` values are `json|yaml|toml|text`; a `[merge]` key must also match a `shared` glob.
 - `[[post]].when` is required (a missing `when` is a validation error) and its values are
   `new|add|update`.
+- `[sections]` (a splice-only piece key, see the channels spec §6) maps a host path, relative to
+  the piece's `target`, to a fragment file below `files/`. The host ends in `.md`, the fragment in
+  `.md` or `.md.jinja`; the fragment must exist and is not rendered as a file. `new`, `add` and
+  `update` of the main template refuse a piece that declares `[sections]` (exit 3): only
+  `splice channel add` applies them.
 - Migration file names are `<semver>.toml`.
 
 ## 6. Rendering (contract §4)

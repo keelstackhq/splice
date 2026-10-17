@@ -62,6 +62,9 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
 
     // 2. Validate the new instance before anything is rendered or written.
     let id = a.piece_id.as_str();
+    let mut used: Vec<&str> = lock.pieces.iter().map(|p| p.id.as_str()).collect();
+    used.push(id);
+    template.ensure_no_sections(&used)?;
     let Some(piece) = template.pieces.get(id) else {
         let known: Vec<&str> = template.pieces.keys().map(String::as_str).collect();
         return usage(format!(

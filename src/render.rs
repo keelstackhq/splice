@@ -86,6 +86,17 @@ pub struct RenderedFile {
 
 pub type RenderedTree = BTreeMap<String, RenderedFile>;
 
+/// A rendered `[sections]` fragment for a host file (path relative to the repo).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedSection {
+    pub host: String,
+    pub body: String,
+    pub piece_id: String,
+    pub piece_name: String,
+}
+
+pub type RenderedSections = BTreeMap<String, RenderedSection>;
+
 fn context(
     t: &Template,
     input: &RenderInput,
@@ -161,6 +172,9 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
                 })
                 .collect::<Result<Vec<_>>>()?
                 .join("/");
+            if piece.sections.values().any(|f| *f == rel) {
+                continue; // a section fragment is not a file
+            }
             let origin = format!("{}:{rel}", inst.id);
             if ft.is_symlink() {
                 return Err(template_err(format!(
@@ -204,4 +218,53 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
         }
     }
     Ok(tree)
+}
+
+/// Render every instance's `[sections]` fragments, keyed by host path. A fragment that renders
+/// to whitespace only declares nothing; two instances for one host are an error.
+pub fn render_sections(t: &Template, input: &RenderInput) -> Result<RenderedSections> {
+    let renderer = Renderer::new();
+    let mut pieces: Vec<String> = Vec::new();
+    for inst in &input.instances {
+        if !pieces.contains(&inst.id) {
+            pieces.push(inst.id.clone());
+        }
+    }
+    let mut out = RenderedSections::new();
+    for inst in &input.instances {
+        let piece = t
+            .pieces
+            .get(&inst.id)
+            .ok_or_else(|| template_err(format!("unknown piece `{}`", inst.id)))?;
+        let ctx = context(t, input, inst, &pieces);
+        for (key, fragment) in &piece.sections {
+            let (host, _) = render_rel_path(key, piece.target.as_deref(), &renderer, &ctx)?;
+            let origin = format!("{}:{fragment}", inst.id);
+            let raw = std::fs::read(piece.files_dir.join(fragment))?;
+            let text = String::from_utf8(raw)
+                .map_err(|_| template_err(format!("{origin}: fragment is not UTF-8")))?;
+            let body = if fragment.ends_with(".jinja") {
+                renderer.render_str(&text, &ctx, &origin)?
+            } else {
+                text.replace("\r\n", "\n")
+            };
+            if body.trim().is_empty() {
+                continue;
+            }
+            let section = RenderedSection {
+                host: host.clone(),
+                body,
+                piece_id: inst.id.clone(),
+                piece_name: inst.name.clone(),
+            };
+            if let Some(prev) = out.insert(host.clone(), section) {
+                return Err(template_err(format!(
+                    "section host `{host}` is declared by pieces `{}:{}` and `{}:{}`; \
+                     one section per host",
+                    prev.piece_id, prev.piece_name, inst.id, inst.name
+                )));
+            }
+        }
+    }
+    Ok(out)
 }

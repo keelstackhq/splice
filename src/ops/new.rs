@@ -119,6 +119,7 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
 
     // 3. Instances, then 4. variables.
     let picked = select_pieces(&template, &a.pieces)?;
+    template.ensure_no_sections(&picked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>())?;
     let data = parse_data(&a.data)?;
     let known_keys = template.manifest.vars.keys().chain(
         picked

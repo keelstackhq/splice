@@ -76,6 +76,8 @@ pub struct PieceManifest {
     pub seed: Vec<String>,
     pub merge: IndexMap<String, MergeStrategy>,
     pub post: Vec<PostCmd>,
+    /// `[sections]`: host path (relative to `target`) to fragment path under `files/`.
+    pub sections: IndexMap<String, String>,
     pub files_dir: PathBuf,
 }
 
@@ -142,6 +144,8 @@ struct RawPiece {
     merge: IndexMap<String, String>,
     #[serde(default)]
     post: Vec<RawPost>,
+    #[serde(default)]
+    sections: IndexMap<String, String>,
 }
 
 fn err<T>(msg: String) -> Result<T> {
@@ -248,6 +252,31 @@ fn globs(file: &Path, key: &str, patterns: &[String]) -> Result<Vec<globset::Glo
         .collect()
 }
 
+/// `[sections]` entries: `.md` host, `.md`/`.md.jinja` fragment that is a file below `files/`.
+fn check_sections(dir: &Path, f: &str, sections: &IndexMap<String, String>) -> Result<()> {
+    for (host, fragment) in sections {
+        if !host.ends_with(".md") {
+            return err(format!("{f}: [sections] host \"{host}\" must end in .md"));
+        }
+        if !(fragment.ends_with(".md") || fragment.ends_with(".md.jinja")) {
+            return err(format!(
+                "{f}: [sections] fragment \"{fragment}\" must end in .md or .md.jinja"
+            ));
+        }
+        let safe = !fragment.starts_with('/')
+            && !fragment.contains('\\')
+            && fragment
+                .split('/')
+                .all(|seg| !seg.is_empty() && seg != "." && seg != "..");
+        if !safe || !dir.join("files").join(fragment).is_file() {
+            return err(format!(
+                "{f}: [sections] fragment \"{fragment}\" is not a file below files/"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<PieceManifest> {
     let file = dir.join("piece.toml");
     let (text, table) = read_toml(&file)?;
@@ -266,6 +295,7 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
             "files",
             "merge",
             "post",
+            "sections",
         ],
     );
     warn_unknown_vars(warnings, &file, &table);
@@ -287,6 +317,7 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
         };
         post.push(PostCmd { run: p.run, when });
     }
+    check_sections(dir, &f.to_string(), &raw.sections)?;
     globs(&file, "files.owned", &raw.files.owned)?;
     globs(&file, "files.seed", &raw.files.seed)?;
     let shared = globs(&file, "files.shared", &raw.files.shared)?;
@@ -322,6 +353,7 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
         seed: raw.files.seed,
         merge,
         post,
+        sections: raw.sections,
         files_dir: dir.join("files"),
     })
 }
@@ -421,6 +453,25 @@ impl Template {
             migrations: load_migrations(root)?,
             warnings,
         })
+    }
+
+    /// The first of `ids` whose piece declares `[sections]`.
+    pub fn has_sections(&self, ids: &[&str]) -> Option<&str> {
+        ids.iter()
+            .filter_map(|id| self.pieces.get(*id))
+            .find(|p| !p.sections.is_empty())
+            .map(|p| p.id.as_str())
+    }
+
+    /// Exit 3 when one of `ids` declares `[sections]`: only `splice channel add` applies them.
+    pub fn ensure_no_sections(&self, ids: &[&str]) -> Result<()> {
+        match self.has_sections(ids) {
+            Some(id) => err(format!(
+                "piece `{id}` declares [sections]; sections are only applied by \
+                 `splice channel add`"
+            )),
+            None => Ok(()),
+        }
     }
 
     /// Fail (exit 3) when the running splice is older than the template's `min_splice`.

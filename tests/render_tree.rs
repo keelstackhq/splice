@@ -1,9 +1,11 @@
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use splice::manifest::Template;
 use splice::output::Class;
-use splice::render::{PieceInstance, RenderInput, RenderedTree, render_tree};
+use splice::render::{PieceInstance, RenderInput, RenderedTree, render_sections, render_tree};
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/template/v1")
@@ -215,5 +217,100 @@ fn piece_without_files_dir_renders_nothing() {
     assert_eq!(
         with.keys().collect::<Vec<_>>(),
         without.keys().collect::<Vec<_>>()
+    );
+}
+
+fn channel_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/channel/v1")
+}
+
+fn plain_input(pieces: &[&str]) -> RenderInput {
+    RenderInput {
+        template_vars: IndexMap::new(),
+        instances: pieces
+            .iter()
+            .map(|p| PieceInstance {
+                id: p.to_string(),
+                name: p.to_string(),
+                vars: IndexMap::new(),
+            })
+            .collect(),
+        version: "1.0.0".parse().unwrap(),
+    }
+}
+
+#[test]
+fn fragment_not_in_tree() {
+    let t = Template::load(&channel_root()).unwrap();
+    let tree = render_tree(&t, &plain_input(&["core", "claude"])).unwrap();
+    assert!(
+        tree.keys().all(|k| !k.starts_with("sections/")),
+        "{:?}",
+        tree.keys()
+    );
+    assert!(tree.contains_key("docs/agents/rules.md"));
+}
+
+#[test]
+fn sections_render_with_pieces() {
+    let t = Template::load(&channel_root()).unwrap();
+    let with = render_sections(&t, &plain_input(&["core", "claude"])).unwrap();
+    assert_eq!(with.keys().collect::<Vec<_>>(), ["AGENTS.md", "CLAUDE.md"]);
+    assert!(
+        with["AGENTS.md"].body.contains(".claude/agents"),
+        "{:?}",
+        with["AGENTS.md"]
+    );
+    assert_eq!(with["AGENTS.md"].piece_id, "core");
+    assert_eq!(with["CLAUDE.md"].body, "See `AGENTS.md` for the rules.\n");
+    let without = render_sections(&t, &plain_input(&["core"])).unwrap();
+    assert_eq!(without.keys().collect::<Vec<_>>(), ["AGENTS.md"]);
+    assert!(!without["AGENTS.md"].body.contains(".claude/agents"));
+}
+
+#[test]
+fn section_host_is_relative_to_target() {
+    let dir = common::inline_template(&[(
+        "p",
+        "id = \"p\"\ndescription = \"d\"\ntarget = \"sub/{{ name }}\"\n\n\
+         [sections]\n\"AGENTS.md\" = \"s.md\"\n",
+        &[("s.md", "hi\n")],
+    )]);
+    let t = Template::load(dir.path()).unwrap();
+    let s = render_sections(&t, &plain_input(&["p"])).unwrap();
+    assert_eq!(s.keys().collect::<Vec<_>>(), ["sub/p/AGENTS.md"]);
+    assert_eq!(s["sub/p/AGENTS.md"].host, "sub/p/AGENTS.md");
+}
+
+#[test]
+fn two_pieces_same_host_rejected() {
+    let piece = |id: &str| {
+        format!("id = \"{id}\"\ndescription = \"d\"\n\n[sections]\n\"AGENTS.md\" = \"s.md\"\n")
+    };
+    let (a, b) = (piece("a"), piece("b"));
+    let dir =
+        common::inline_template(&[("a", &a, &[("s.md", "a\n")]), ("b", &b, &[("s.md", "b\n")])]);
+    let t = Template::load(dir.path()).unwrap();
+    let e = render_sections(&t, &plain_input(&["a", "b"])).unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(
+        m.contains("AGENTS.md") && m.contains("`a") && m.contains("`b"),
+        "{m}"
+    );
+}
+
+#[test]
+fn whitespace_fragment_declares_nothing() {
+    let dir = common::inline_template(&[(
+        "p",
+        "id = \"p\"\ndescription = \"d\"\n\n[sections]\n\"AGENTS.md\" = \"s.md.jinja\"\n",
+        &[("s.md.jinja", "{% if \"zzz\" in pieces %}x{% endif %}\n")],
+    )]);
+    let t = Template::load(dir.path()).unwrap();
+    assert!(
+        render_sections(&t, &plain_input(&["p"]))
+            .unwrap()
+            .is_empty()
     );
 }

@@ -26,6 +26,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T8 · 7662b3a · splice check (owned drift, conflict markers, update available; --offline; fetch failure is a message); un-ignored resolve_conflict_then_check_passes, strengthened rerun_after_restore_succeeds; cli_check 7 passing, golden_update 3 passing
 - 2026-10-17 · 02/T9 · 7e9d0d5 · splice diff (update plan as unified diff or --json changes, writes nothing, exit 0 on drift/conflict); add on the full planner (merges shared files, --allow-dirty, C3 writes nothing on drift/conflict, reduced planner deleted); check uses a local update-available flag, CRLF marker case; cli_diff 3, cli_add 16 passing
 - 2026-10-17 · 02/final · 7288d7f · final-review fixes ([[remove]] paths see `template`, check preflights lock paths and reports the lock class, wrap_whole CRLF, TOML fallback guard, exit 3 after writes lists applied changes, prerelease-only template is up to date, explain human mode quiet on stderr, failed-post rerun converges); cargo test 243 passing, fmt and clippy -D warnings clean
+- 2026-10-17 · 04/T5 · piece `[sections]`, fragment rendering, main refusal; hull's Nunjucks corpus run must pick up the new conformance case `section-fragment` (C2)
 
 ## Blocked
 
