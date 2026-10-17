@@ -22,6 +22,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T4 · this commit · pure update planner (Disk snapshot, Plan, render_removes, class changes in spec §10.12); planner 15 passing
 - 2026-10-17 · 02/T5 · this commit · apply (files, removals, steps, post, atomic lock last) and post::run_steps; apply 10 passing
 - 2026-10-17 · 02/T6 · this commit · splice update (prepare + run: dirty/downgrade/min_splice/removed-piece refusals, drift refusal, moved tag, locked --data refused, no newer stable = up to date); cli_update 16 passing
+- 2026-10-17 · 02/T7 · this commit · golden v1→v2 update with edits on every class (2 snapshots) + crash-recovery rerun; resolve-then-check test written but ignored until Task 8 (`splice check`); golden_update 2 passing, 1 ignored
 
 ## Blocked
 
