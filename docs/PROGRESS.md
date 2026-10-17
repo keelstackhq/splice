@@ -20,7 +20,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T2 · this commit · text 3-way merge (diffy diff3, contract labels, CRLF) and find_markers; unit 65 passing
 - 2026-10-17 · 02/T3 · this commit · json/yaml/toml key-path merges and merge3 (fast paths, text fallback, markers on conflict); unit 101 passing
 - 2026-10-17 · 02/T4 · this commit · pure update planner (Disk snapshot, Plan, render_removes, class changes in spec §10.12); planner 15 passing
-- 2026-10-17 · 02/T5 · this commit · apply (files, removals, steps, atomic lock, post) and post::run_steps; apply 8 passing
+- 2026-10-17 · 02/T5 · this commit · apply (files, removals, steps, post, atomic lock last) and post::run_steps; apply 10 passing
 
 ## Blocked
 

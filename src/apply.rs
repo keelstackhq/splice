@@ -1,4 +1,4 @@
-//! Apply a [`Plan`] (spec §8.1): files, removals, migration steps, the lock, then `[[post]]`.
+//! Apply a [`Plan`] (spec §8.3, §8.6): files, removals, migration steps, `[[post]]`, then the lock.
 
 use std::path::Path;
 
@@ -27,13 +27,23 @@ pub struct ApplyCtx<'a> {
     pub json: bool,
 }
 
-/// Apply the plan in the fixed order: write files, removals, migration steps, the lock (atomic),
-/// `[[post]]`. Every target is checked before the first write. A failed step exits 3 before the
-/// lock is written; a failed post exits 3 after it. With conflicts the lock is still written,
-/// post is skipped and the result is `Err(Conflict)`.
+/// Apply the plan in the fixed order: write files, removals, migration steps, `[[post]]`, and the
+/// lock (atomic) last. Every target is checked before the first write. A failed step or post
+/// exits 3 before the lock is written, so it still records the old state. With conflicts post is
+/// skipped, the lock is still written (it records the target) and the result is `Err(Conflict)`.
+/// A plan with drift is refused (`Err(Drift)`) before anything is written: the caller decides
+/// about `--force` when planning.
 pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
     let mut report = Report::new("update");
     let plan = ctx.plan;
+
+    if !plan.drift.is_empty() {
+        report.ok = false;
+        for d in &plan.drift {
+            report.msg(format!("`{d}` was edited locally"));
+        }
+        return Err(SpliceError::Drift(report));
+    }
 
     fsio::check_target(ctx.repo, LOCK_PATH)?;
     for c in &plan.changes {
@@ -59,12 +69,18 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
     }
 
     run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json)?;
+    if plan.conflicts.is_empty() && !ctx.no_post {
+        run_post(ctx.repo, &ctx.post, ctx.when, ctx.json).map_err(|e| match e {
+            SpliceError::Env(m) => SpliceError::Env(format!(
+                "{m}; the lock still records {}; `git checkout -- . && git clean -fd` restores the previous state",
+                ctx.from
+            )),
+            other => other,
+        })?;
+    }
     ctx.lock.write_atomic(ctx.repo)?;
 
     if plan.conflicts.is_empty() {
-        if !ctx.no_post {
-            run_post(ctx.repo, &ctx.post, ctx.when, ctx.json)?;
-        }
         Ok(report)
     } else {
         report.ok = false;
@@ -178,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn order_is_files_removals_steps_lock_post() {
+    fn order_is_files_removals_steps_post_lock() {
         let dir = repo_v1();
         let plan = plan_of(vec![
             planned("new.txt", Action::Create, Some("new\n")),
@@ -192,12 +208,16 @@ mod tests {
             plan: &plan,
             steps: &steps,
             post: vec![post(
-                "grep -q 'version = \"2.0.0\"' .splice/lock.toml && echo post >> order.log",
+                "grep -q 'version = \"1.0.0\"' .splice/lock.toml && echo post >> order.log",
             )],
             no_post: false,
         })
         .unwrap();
         assert_eq!(read(dir.path(), "order.log"), "step\npost\n");
+        assert_eq!(
+            read_lock(dir.path()).template.version,
+            Version::new(2, 0, 0)
+        );
         assert_eq!(read(dir.path(), "new.txt"), "new\n");
         assert!(!dir.path().join("old.txt").exists());
         assert_eq!(report.changes.len(), 2);
@@ -245,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn failing_post_keeps_new_lock() {
+    fn failing_post_leaves_old_lock() {
         let dir = repo_v1();
         let plan = plan_of(vec![]);
         let e = go(Run {
@@ -257,10 +277,44 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(e.exit_code(), 3);
+        let msg = e.to_string();
+        assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
+        assert!(msg.contains("1.0.0") && msg.contains("`exit 1`"), "{msg}");
         assert_eq!(
             read_lock(dir.path()).template.version,
-            Version::parse("2.0.0").unwrap()
+            Version::parse("1.0.0").unwrap()
         );
+    }
+
+    #[test]
+    fn removal_of_an_already_gone_file_is_tolerated() {
+        let dir = repo_v1();
+        let plan = plan_of(vec![planned("gone.txt", Action::Delete, None)]);
+        go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn drift_in_the_plan_is_refused_before_any_write() {
+        let dir = repo_v1();
+        let mut plan = plan_of(vec![planned("a.txt", Action::Create, Some("a\n"))]);
+        plan.drift = vec!["old.txt".into()];
+        let e = go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap_err();
+        assert_eq!(e.exit_code(), 1);
+        assert!(!dir.path().join("a.txt").exists());
     }
 
     #[test]
