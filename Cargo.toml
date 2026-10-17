@@ -18,8 +18,12 @@ path = "src/main.rs"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.11"
+tempfile = "3"
 thiserror = "2"
 
 [dev-dependencies]
 assert_cmd = "2.2"
+sha2 = "0.11"
+tempfile = "3"
 serde_json = { version = "1", features = ["preserve_order"] }
