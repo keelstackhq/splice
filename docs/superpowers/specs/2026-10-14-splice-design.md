@@ -154,7 +154,7 @@ All var values are strings.
 
 **Paths.** For each file under `pieces/<id>/files/` (walkdir, sorted): render each path segment,
 strip a trailing `.jinja`, prefix the rendered `target`. The result must be relative, use `/`, and
-contain no empty, `.` or `..` segment; `.splice/lock.toml` is reserved. Violations exit 3. Two
+contain no empty, `.` or `..` segment; `.splice/lock.toml` and everything under `.splice/channels/` are reserved (other `.splice/` paths, e.g. `.splice/migrations/*`, stay renderable). Violations exit 3. Two
 sources producing the same path (within or across instances) exit 3.
 
 **Contents.** `.jinja` files render as UTF-8 with `\n` endings (input `\r\n` is normalised).
