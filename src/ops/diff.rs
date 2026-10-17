@@ -16,6 +16,9 @@ type Result<T> = std::result::Result<T, SpliceError>;
 /// per written file (`a/`, `b/` labels; `/dev/null` for a new file) and one line per removal.
 /// `--json`: the planned `changes`. Drift and conflicts are reported, never an error (exit 0).
 pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
+    if a.channel.is_some() {
+        return Err(super::channel::not_implemented("diff --channel"));
+    }
     let repo = g.dir.as_path();
     let to = parse_to(a.to.as_deref())?;
     let prep = prepare(g, to.as_ref(), &IndexMap::new(), false)?;

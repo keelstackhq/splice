@@ -47,10 +47,17 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 |---|---|
 | `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
 | `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
-| `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post]` | Move to a newer template version (default: latest stable tag). |
-| `splice check [--offline]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
-| `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
+| `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag). `--channel` updates one channel, `--all` the main template and every channel. |
+| `splice check [--offline] [--channel NAME]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
+| `splice diff [--to VERSION] [--channel NAME]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
+| `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only GLOB]… [--exclude GLOB]… [--allow-dirty] [--force] [--no-post]` | Render a template source into the repo as a named channel (channels spec §3). |
+| `splice channel remove <name> [--allow-dirty] [--force]` | Stop tracking a channel and delete its lock. |
+
+`add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
+`--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
+working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
+until channels plan tasks 10 and 17 land.
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,

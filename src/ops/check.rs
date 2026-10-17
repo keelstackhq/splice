@@ -23,6 +23,9 @@ fn newer_stable(lock: &Lock) -> Result<Option<semver::Version>> {
 
 /// Writes nothing: the lock is only read, and the only cache touched is the fetcher's own.
 pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
+    if a.channel.is_some() {
+        return Err(super::channel::not_implemented("check --channel"));
+    }
     let repo = g.dir.as_path();
     let Some(lock) = Lock::read(repo)? else {
         return Err(SpliceError::Usage(format!(

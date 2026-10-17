@@ -187,6 +187,27 @@ fn symlink_in_template_is_error() {
     assert!(err.to_string().contains("symlink"), "{err}");
 }
 
+#[cfg(unix)]
+#[test]
+fn non_regular_file_in_template_is_error() {
+    let dir = temp_template();
+    let fifo = dir.path().join("pieces/base/files/pipe");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let err = render_in(dir.path(), &["base"], &[("project", "demo")]).unwrap_err();
+    assert_eq!(err.exit_code(), 3);
+    assert!(
+        err.to_string()
+            .contains("is not a regular file below files/"),
+        "{err}"
+    );
+}
+
 #[test]
 fn jinja_files_use_lf_and_non_jinja_bytes_are_untouched() {
     let dir = temp_template();

@@ -278,6 +278,9 @@ pub fn parse_to(to: Option<&str>) -> Result<Option<Version>> {
 }
 
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
+    if a.channel.is_some() || a.all {
+        return Err(super::channel::not_implemented("update --channel/--all"));
+    }
     let repo = g.dir.as_path();
 
     // 1. A clean work tree is the undo button.

@@ -38,5 +38,9 @@ pub fn run(cli: Cli) -> Result<Report, SpliceError> {
         Command::Update(args) => ops::update::run(&cli.global, args),
         Command::Check(args) => ops::check::run(&cli.global, args),
         Command::Diff(args) => ops::diff::run(&cli.global, args),
+        Command::Channel(args) => match &args.command {
+            cli::ChannelCommand::Add(a) => ops::channel::add(&cli.global, a),
+            cli::ChannelCommand::Remove(a) => ops::channel::remove(&cli.global, a),
+        },
     }
 }

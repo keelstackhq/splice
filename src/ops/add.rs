@@ -41,6 +41,9 @@ fn keep_conflicts(plan: &mut Plan) {
 }
 
 pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
+    if a.channel.is_some() {
+        return Err(super::channel::not_implemented("add --channel"));
+    }
     let mut report = Report::new("add");
     let repo = g.dir.as_path();
     if !a.allow_dirty {

@@ -177,9 +177,15 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
                 continue; // a section fragment is not a file
             }
             let origin = format!("{}:{rel}", inst.id);
-            if ft.is_symlink() || !fsio::is_plain_file_below(&piece.files_dir, &rel) {
+            if ft.is_symlink() {
                 return Err(template_err(format!(
                     "{origin}: symlinks are not allowed in a template"
+                )));
+            }
+            if !fsio::is_plain_file_below(&piece.files_dir, &rel) {
+                return Err(template_err(format!(
+                    "{origin}: is not a regular file below files/ \
+                     (symlinks are not allowed in a template)"
                 )));
             }
             let (path, key) = render_rel_path(&rel, piece.target.as_deref(), &renderer, &ctx)?;

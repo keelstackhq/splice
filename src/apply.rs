@@ -77,7 +77,8 @@ pub struct ApplyCtx<'a> {
     pub json: bool,
     /// The report's `command` (`add`, `update`, `channel add`, …).
     pub command: &'static str,
-    /// Section host writes and deletes (a channel's only; empty for main).
+    /// Section host writes and deletes. A channel's only: must be empty for `LockOut::Main`
+    /// (main never has sections; `write_phase` debug-asserts it).
     pub sections: &'a [SectionChange],
 }
 
@@ -129,6 +130,10 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
 
 /// [`apply_files`] plus whether anything may have been written (for the restore hint).
 fn write_phase(ctx: &ApplyCtx) -> Result<(Report, bool), SpliceError> {
+    debug_assert!(
+        ctx.sections.is_empty() || matches!(ctx.lock, LockOut::Channel(_)),
+        "the main lock never has sections"
+    );
     let mut report = Report::new(ctx.command);
     let plan = ctx.plan;
     let still = ctx.lock.still_records(&ctx.from);
@@ -205,7 +210,8 @@ fn write_phase(ctx: &ApplyCtx) -> Result<(Report, bool), SpliceError> {
 
 /// Write every lock atomically, in the given order (`update --all`: main, then channels by
 /// name), after all files and post commands. Each file is atomic on its own; a failure at one
-/// lock names the locks already written and those not written (a re-run converges).
+/// lock names the locks already written, the one being written ("not confirmed written": the
+/// rename may or may not have happened) and those not attempted (a re-run converges).
 pub fn write_locks(repo: &Path, locks: &[&LockOut]) -> Result<(), SpliceError> {
     for (j, lock) in locks.iter().enumerate() {
         if let Err(e) = lock.write_atomic(repo) {
@@ -217,12 +223,13 @@ pub fn write_locks(repo: &Path, locks: &[&LockOut]) -> Result<(), SpliceError> {
                 }
             };
             return Err(SpliceError::Env(format!(
-                "cannot write `{}`: {e}; locks written: {}; locks not written: {}; re-run the \
-                 update to converge, or `git checkout -- . && git clean -fd` restores the \
-                 previous state",
+                "cannot write `{}`: {e}; locks written: {}; not confirmed written: {}; locks not \
+                 written: {}; re-run the update to converge, or `git checkout -- . && git clean \
+                 -fd` restores the previous state",
                 lock.path(),
                 names(&locks[..j]),
-                names(&locks[j..]),
+                lock.path(),
+                names(&locks[j + 1..]),
             )));
         }
     }
@@ -673,11 +680,29 @@ mod tests {
         let msg = e.to_string();
         assert!(
             msg.contains("locks written: .splice/lock.toml;")
-                && msg.contains("locks not written: .splice/channels/rig.toml;"),
+                && msg.contains("not confirmed written: .splice/channels/rig.toml;")
+                && msg.contains("locks not written: none;"),
             "{msg}"
         );
         assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
         assert!(dir.path().join(LOCK_PATH).is_file());
+    }
+
+    #[test]
+    fn write_locks_failure_at_first_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".splice"), "not a dir").unwrap();
+        let main = LockOut::Main(lock_at("2.0.0"));
+        let rig = LockOut::Channel(chan_at("2.0.0"));
+        let msg = write_locks(dir.path(), &[&main, &rig])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("locks written: none;")
+                && msg.contains("not confirmed written: .splice/lock.toml;")
+                && msg.contains("locks not written: .splice/channels/rig.toml;"),
+            "{msg}"
+        );
     }
 
     #[test]
