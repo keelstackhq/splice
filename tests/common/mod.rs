@@ -60,11 +60,23 @@ fn copy_dir(from: &Path, to: &Path) {
 /// the repo content is replaced by `tests/fixtures/template/<name>`, committed on `main` and
 /// tagged `v<semver>`: `v1` becomes `v1.0.0`. Commit dates are fixed, one day apart.
 pub fn template_repo(versions: &[&str]) -> TempDir {
+    let tags: Vec<String> = versions.iter().map(|v| format!("{v}.0.0")).collect();
+    let pairs: Vec<(&str, &str)> = versions
+        .iter()
+        .zip(&tags)
+        .map(|(v, t)| (*v, t.as_str()))
+        .collect();
+    template_repo_tagged(&pairs)
+}
+
+/// Like [`template_repo`], with explicit `(fixture dir, tag)` pairs, for example
+/// `("v2-nolib", "v2.0.0")`.
+pub fn template_repo_tagged(versions: &[(&str, &str)]) -> TempDir {
     let repo = tempfile::tempdir().unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/template");
     let first = "2026-01-01T00:00:00+00:00";
     git(repo.path(), first, &["init", "-q", "-b", "main"]);
-    for (i, version) in versions.iter().enumerate() {
+    for (i, (version, tag)) in versions.iter().enumerate() {
         let date = format!("2026-01-{:02}T00:00:00+00:00", i + 1);
         for entry in std::fs::read_dir(repo.path()).unwrap() {
             let path = entry.unwrap().path();
@@ -80,8 +92,7 @@ pub fn template_repo(versions: &[&str]) -> TempDir {
         copy_dir(&fixtures.join(version), repo.path());
         git(repo.path(), &date, &["add", "-A"]);
         git(repo.path(), &date, &["commit", "-q", "-m", version]);
-        let tag = format!("{version}.0.0");
-        git(repo.path(), &date, &["tag", &tag]);
+        git(repo.path(), &date, &["tag", tag]);
     }
     repo
 }

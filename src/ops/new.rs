@@ -24,7 +24,7 @@ fn usage<T>(msg: String) -> Result<T> {
 }
 
 /// `K=V` flags; a later flag for the same key wins.
-fn parse_data(flags: &[String]) -> Result<IndexMap<String, String>> {
+pub(crate) fn parse_data(flags: &[String]) -> Result<IndexMap<String, String>> {
     let mut data = IndexMap::new();
     for flag in flags {
         match flag.split_once('=') {
