@@ -4,6 +4,7 @@ pub mod cli;
 pub mod error;
 pub mod fetch;
 pub mod git;
+pub mod manifest;
 pub mod output;
 pub mod source;
 

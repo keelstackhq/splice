@@ -1,0 +1,3 @@
+{# greeting for the app #}
+{% if scope %}const owner = "{{ scope }}";{% elif project %}const owner = "{{ project }}";{% else %}const owner = "none";{% endif %}
+console.log("{{ name | upper }} {{ name | lower }}", owner);

@@ -104,12 +104,14 @@ readable). Validation errors exit 3 and name the file and key.
 - `base` must name an existing piece with `multiple = false`.
 - Piece `id` equals its directory name. `requires` ids must exist. No cycles needed (requires is
   a presence check, not an order).
-- Var names match `^[a-z_][a-z0-9_]*$`; a piece var may not reuse a template var name or the
-  reserved names `pieces`, `piece`, `template`. `pattern` compiles with the `regex` crate (keep
+- Var names match `^[a-z_][a-z0-9_]*$` and may not be `loop`, `self`, `range` or `namespace`
+  (hull renderer rule; contract §9 does not list them yet, so they are decided here). A piece var
+  may not reuse a template var name or the reserved names `pieces`, `piece`, `template`. `pattern` compiles with the `regex` crate (keep
   patterns to the JS/Rust common subset: no look-around, no backrefs). Defaults are literal (not
   rendered) and must match `pattern`.
 - `[merge]` values are `json|yaml|toml|text`; a `[merge]` key must also match a `shared` glob.
-- `[[post]].when` values are `new|add|update`.
+- `[[post]].when` is required (a missing `when` is a validation error) and its values are
+  `new|add|update`.
 - Migration file names are `<semver>.toml`.
 
 ## 6. Rendering (contract §4)
