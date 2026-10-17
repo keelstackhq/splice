@@ -2,25 +2,9 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo, tree_snapshot};
+use common::{commit_all, git, splice_cmd, template_repo, tree_snapshot};
 use splice::lock::Lock;
-use std::path::Path;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-
-/// Commit everything (also when nothing changed), so `add` sees a clean tree.
-fn commit_all(repo: &Path) {
-    if !repo.join(".git").exists() {
-        git(repo, DATE, &["init", "-q", "-b", "main"]);
-    }
-    git(repo, DATE, &["add", "-A"]);
-    git(
-        repo,
-        DATE,
-        &["commit", "-q", "--allow-empty", "-m", "state"],
-    );
-}
 
 /// A repo made by `splice new` from the v1 fixture; the template dir is returned to keep it alive.
 fn new_repo(extra: &[&str]) -> (TempDir, TempDir) {

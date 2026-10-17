@@ -75,6 +75,7 @@ impl Sources {
 
     /// Current claims, main first, then channels by name.
     pub fn claims(&self) -> Vec<Claim> {
+        // The main lock has no sections.
         let none = BTreeMap::new();
         self.main
             .iter()
@@ -266,6 +267,20 @@ mod tests {
         assert!(
             e.to_string().contains("path CLAUDE.md is owned by main"),
             "{e}"
+        );
+    }
+
+    #[test]
+    fn mixed_host_and_file_conflicts_are_one_sorted_message() {
+        let e = check_claims(&[
+            claim(Main, &["CLAUDE.md", "b"], &[]),
+            claim(ch("rig"), &["b"], &["CLAUDE.md"]),
+        ])
+        .unwrap_err();
+        assert_eq!(
+            e.to_string(),
+            "path CLAUDE.md is owned by main; exclude it with --exclude CLAUDE.md or remove it from one source\n\
+             path b is owned by main; exclude it with --exclude b or remove it from one source"
         );
     }
 

@@ -2,16 +2,8 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo};
-use std::path::Path;
+use common::{commit_all, splice_cmd, template_repo};
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
-}
 
 /// `splice new` of the app piece from `tpl` (at `--ref` when given) into a committed repo.
 fn new_repo(tpl: &TempDir, git_ref: Option<&str>) -> TempDir {

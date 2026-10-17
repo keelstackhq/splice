@@ -1,0 +1,1 @@
+- rigb 2.0.0 changed the notes.

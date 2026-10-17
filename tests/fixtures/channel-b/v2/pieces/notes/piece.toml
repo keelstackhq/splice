@@ -1,0 +1,17 @@
+id = "notes"
+description = "Notes and a hook"
+multiple = false
+
+[files]
+owned = ["docs/agents/rigb.md", ".claude/hooks/session-start.d/rigb-sync.sh"]
+
+[sections]
+"CHANGELOG.md" = "sections/log.md"
+
+[[post]]
+run = "echo rig-post >> .rig-post.log"
+when = ["add", "update"]
+
+[[post]]
+run = "grep -q 'version = \"1.0.0\"' .splice/channels/rigb.toml && echo old-lock >> .rig-post.log"
+when = ["update"]

@@ -75,3 +75,76 @@ fn fixture_v2_without_lib_has_no_lib_piece() {
     let t = fixture_v("v2-nolib");
     assert_eq!(t.pieces.keys().collect::<Vec<_>>(), ["app", "base"]);
 }
+
+fn channel_fixture(group: &str, name: &str) -> Template {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(group)
+        .join(name);
+    Template::load(&root).unwrap()
+}
+
+/// Until the `[sections]` manifest key is known (Task 5) it is the only warning.
+fn only_sections_warnings(t: &Template) {
+    for w in &t.warnings {
+        assert!(w.ends_with("unknown key `sections` ignored"), "{w}");
+    }
+}
+
+#[test]
+fn channel_fixture_v1_loads() {
+    let t = channel_fixture("channel", "v1");
+    assert_eq!(
+        (t.manifest.name.as_str(), t.manifest.base.as_str()),
+        ("rig", "core")
+    );
+    assert_eq!(
+        t.pieces.keys().collect::<Vec<_>>(),
+        ["claude", "collide", "core", "hooks", "skills"]
+    );
+    assert!(t.pieces["skills"].multiple);
+    assert_eq!(
+        t.pieces["hooks"].post[0].run,
+        "echo rig-post >> .rig-post.log"
+    );
+    assert_eq!(t.warnings.len(), 2, "{:?}", t.warnings); // core and claude declare sections
+    only_sections_warnings(&t);
+    assert!(t.migrations.is_empty());
+
+    let v2 = channel_fixture("channel", "v2");
+    only_sections_warnings(&v2);
+    assert_eq!(v2.migrations.len(), 1);
+    assert_eq!(
+        v2.migrations[0].removes[0].path,
+        ".claude/agents/explorer.md"
+    );
+    assert_eq!(v2.migrations[0].removes[0].piece.as_deref(), Some("claude"));
+}
+
+#[test]
+fn channel_variant_fixtures_load() {
+    for name in ["v2-collide", "v2-x"] {
+        only_sections_warnings(&channel_fixture("channel", name));
+    }
+    assert!(channel_fixture("template", "v1-claude").warnings.is_empty());
+    assert!(channel_fixture("template", "v2-x").warnings.is_empty());
+}
+
+#[test]
+fn channel_b_fixture_loads() {
+    let t = channel_fixture("channel-b", "v1");
+    assert_eq!(
+        (t.manifest.name.as_str(), t.manifest.base.as_str()),
+        ("rigb", "notes")
+    );
+    assert_eq!(t.pieces["notes"].post.len(), 2);
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+    let v2 = channel_fixture("channel-b", "v2");
+    only_sections_warnings(&v2);
+    assert_eq!(v2.migrations.len(), 1);
+    assert!(
+        v2.migrations[0].steps[0]
+            .run
+            .contains("SPLICE_FIXTURE_FAIL")
+    );
+}

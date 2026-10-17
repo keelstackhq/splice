@@ -1,0 +1,10 @@
+id = "claude"
+description = "Claude Code agents"
+multiple = false
+requires = ["core"]
+
+[files]
+owned = [".claude/agents/reviewer.md"]
+
+[sections]
+"CLAUDE.md" = "sections/pointer.md"

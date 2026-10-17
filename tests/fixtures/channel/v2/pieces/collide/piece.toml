@@ -1,0 +1,7 @@
+id = "collide"
+description = "Owns a path the main fixture also owns"
+multiple = false
+requires = ["core"]
+
+[files]
+owned = [".editorconfig"]

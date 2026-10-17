@@ -2,13 +2,10 @@
 
 mod common;
 
-use common::{amend_tip, git, splice_cmd, template_repo, template_repo_tagged};
+use common::{amend_tip, commit_all, splice_cmd, template_repo, template_repo_tagged};
 use splice::lock::Lock;
-use std::path::Path;
 use std::process::Command as Proc;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
 
 /// `splice new` from `tpl` into a fresh repo, then commit everything so the tree is clean.
 fn new_repo(tpl: &TempDir, extra: &[&str]) -> TempDir {
@@ -25,11 +22,6 @@ fn new_repo(tpl: &TempDir, extra: &[&str]) -> TempDir {
         .success();
     commit_all(repo.path());
     repo
-}
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
 }
 
 fn update(repo: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {

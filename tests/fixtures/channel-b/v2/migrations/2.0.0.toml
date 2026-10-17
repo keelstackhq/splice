@@ -1,0 +1,2 @@
+[[step]]
+run = "test -z \"$SPLICE_FIXTURE_FAIL\""

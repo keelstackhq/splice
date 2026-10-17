@@ -2,17 +2,9 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo};
-use std::path::Path;
+use common::{commit_all, splice_cmd, template_repo};
 use std::process::Command as Proc;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
-}
 
 /// A repo at v1 of `tpl`, committed, with a shared edit that conflicts with v2 (`ci.yml`) and a
 /// shared edit that merges cleanly (`notes.txt`), committed too.

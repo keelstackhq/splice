@@ -1,0 +1,25 @@
+format = 1
+splice = "0.1.0"
+
+[channel]
+name = "rig"
+only = []
+exclude = []
+
+[template]
+source = "gh:keelstackhq/rigging//channel"
+version = "1.0.0"
+commit = "3f2c9d1e5a7b4c6d8e0f1a2b3c4d5e6f708192a3"
+
+[vars]
+
+[[pieces]]
+id = "core"
+name = "core"
+vars = {}
+
+[files]
+"docs/agents/rules.md" = { class = "owned", sha256 = "0000000000000000000000000000000000000000000000000000000000000000" }
+
+[sections]
+"AGENTS.md" = { sha256 = "1111111111111111111111111111111111111111111111111111111111111111", created = false }

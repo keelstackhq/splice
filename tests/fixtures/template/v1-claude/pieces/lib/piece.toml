@@ -1,0 +1,4 @@
+id = "lib"
+description = "Lib piece"
+multiple = false
+requires = ["app"]

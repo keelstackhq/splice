@@ -1,0 +1,18 @@
+id = "base"
+description = "Base piece"
+multiple = false
+
+[files]
+owned = ["CLAUDE.md", ".editorconfig", "tool.config.mts", "logo.png", "old.txt"]
+shared = ["package.json", "config/settings.toml", ".github/workflows/ci.yml", "notes.txt"]
+seed = ["README.md"]
+
+[merge]
+"package.json" = "json"
+"config/settings.toml" = "toml"
+".github/workflows/ci.yml" = "yaml"
+"notes.txt" = "text"
+
+[[post]]
+run = "echo post> .post-ran"
+when = ["new", "update"]
