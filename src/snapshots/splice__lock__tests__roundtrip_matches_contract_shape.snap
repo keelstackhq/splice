@@ -1,0 +1,28 @@
+---
+source: src/lock.rs
+expression: redact(&text)
+---
+format = 1
+splice = "[redacted]"
+
+[template]
+source = "[redacted]"
+version = "1.2.0"
+commit = "[redacted]"
+
+[vars]
+scope = "acme"
+
+[[pieces]]
+id = "base"
+name = "base"
+vars = {}
+
+[[pieces]]
+id = "preact-app"
+name = "web"
+vars = { name = "web" }
+
+[files]
+"apps/web/package.json" = { class = "shared", sha256 = "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356" }
+"apps/web/vite.config.ts" = { class = "owned", sha256 = "4d523dee6bc8c17a3e283570526d8d6ed3d1edda07c53e94c55e491bbf780337" }

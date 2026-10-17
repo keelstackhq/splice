@@ -116,3 +116,26 @@ fn no_version_tags_is_template_error() {
     let err = f.resolve(&source(repo.path()), None, false).unwrap_err();
     assert!(matches!(err, SpliceError::Template(_)), "{err:?}");
 }
+
+#[test]
+fn checkout_rejects_commit_that_is_not_40_lowercase_hex() {
+    let repo = template_repo(&["v1"]);
+    let cache = tempdir().unwrap();
+    let f = Fetcher::new(cache.path().into());
+    let src = source(repo.path());
+    let good = f.resolve(&src, None, false).unwrap().commit;
+    for bad in [
+        "../../etc",
+        "HEAD",
+        "v1.0.0",
+        &good[..39],
+        &good.to_uppercase(),
+        &format!("{good}0"),
+        "",
+    ] {
+        let err = f.checkout(&src, bad, Version::new(1, 0, 0)).expect_err(bad);
+        assert!(matches!(err, SpliceError::Template(_)), "{bad}: {err}");
+        assert_eq!(err.exit_code(), 3);
+    }
+    assert!(f.checkout(&src, &good, Version::new(1, 0, 0)).is_ok());
+}

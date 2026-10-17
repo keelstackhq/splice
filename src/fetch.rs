@@ -156,6 +156,8 @@ impl Fetcher {
         commit: &str,
         version: Version,
     ) -> Result<ResolvedTemplate> {
+        // The commit becomes a cache path segment: never accept anything but a full sha.
+        validate_commit(commit)?;
         if let Some(found) = self.cached(src, commit, &version)? {
             return Ok(found);
         }
@@ -199,6 +201,22 @@ impl Fetcher {
             }
         }
         template_at(src, &commit, &version, &tree)
+    }
+}
+
+/// A commit taken from a lock must be a full lowercase sha: it is used as a cache path segment.
+pub fn validate_commit(commit: &str) -> Result<()> {
+    if commit.len() == 40
+        && commit
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        Ok(())
+    } else {
+        Err(SpliceError::Template(format!(
+            "invalid commit `{commit}`: expected 40 lowercase hex characters; \
+             fix `commit` in .splice/lock.toml"
+        )))
     }
 }
 
