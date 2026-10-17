@@ -64,6 +64,9 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
         } else {
             input.theirs.get(&host)
         };
+        if want.is_none() && lk.is_none() {
+            continue; // neither wanted nor locked: not this channel's business
+        }
         let keep_lock = |plan: &mut SectionPlan| {
             if let Some(l) = lk {
                 plan.locked.insert(host.clone(), l.clone());
@@ -128,17 +131,20 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
             sha256: sha.clone(),
             created,
         };
-        let apply =
-            |plan: &mut SectionPlan, r: Result<String, SpliceError>, action, created| match r {
-                Ok(text) => {
-                    plan.changes.push(change(action, Some(text), None));
-                    plan.locked.insert(host.clone(), new_lock(created));
-                }
-                Err(e) => {
-                    plan.broken.push(format!("{host}: {e}"));
-                    keep_lock(plan);
-                }
-            };
+        let apply = |plan: &mut SectionPlan,
+                     r: Result<String, SpliceError>,
+                     action,
+                     created,
+                     note: Option<String>| match r {
+            Ok(text) => {
+                plan.changes.push(change(action, Some(text), note));
+                plan.locked.insert(host.clone(), new_lock(created));
+            }
+            Err(e) => {
+                plan.broken.push(format!("{host}: {e}"));
+                keep_lock(plan);
+            }
+        };
         let drift = |plan: &mut SectionPlan| {
             plan.drift.push(path.clone());
             keep_lock(plan);
@@ -147,14 +153,15 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
             (None, None) => {
                 // Insert: host absent -> created with only the block.
                 let r = insert(disk_text, input.channel, &body);
-                apply(&mut plan, r, Action::Create, disk_text.is_none());
+                apply(&mut plan, r, Action::Create, disk_text.is_none(), None);
             }
             (None, Some(b)) => {
                 if body_sha(&b.body) == sha {
                     plan.locked.insert(host.clone(), new_lock(false)); // adopt
                 } else if input.force {
                     let r = replace(disk_text.unwrap_or_default(), input.channel, b, &body);
-                    apply(&mut plan, r, Action::Update, false);
+                    let note = format!("{path}: adopted differing block, replaced (--force)");
+                    apply(&mut plan, r, Action::Update, false, Some(note));
                 } else {
                     plan.drift.push(path.clone());
                 }
@@ -162,7 +169,7 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
             (Some(_), None) => {
                 if input.force {
                     let r = insert(disk_text, input.channel, &body);
-                    apply(&mut plan, r, Action::Create, disk_text.is_none());
+                    apply(&mut plan, r, Action::Create, disk_text.is_none(), None);
                 } else {
                     drift(&mut plan);
                 }
@@ -172,7 +179,7 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
                     keep_lock(&mut plan); // G8: fragment unchanged
                 } else if input.force || body_sha(&b.body) == l.sha256 {
                     let r = replace(disk_text.unwrap_or_default(), input.channel, b, &body);
-                    apply(&mut plan, r, Action::Update, l.created);
+                    apply(&mut plan, r, Action::Update, l.created, None);
                 } else {
                     drift(&mut plan);
                 }
@@ -628,6 +635,18 @@ mod tests {
             filter: &Filter,
             removing: bool,
         ) -> SectionPlan {
+            let disk = disk.map(str::as_bytes);
+            run_bytes(theirs_body, disk, locked, force, filter, removing)
+        }
+
+        fn run_bytes(
+            theirs_body: Option<&str>,
+            disk: Option<&[u8]>,
+            locked: Option<(&str, bool)>,
+            force: bool,
+            filter: &Filter,
+            removing: bool,
+        ) -> SectionPlan {
             let mut theirs = RenderedSections::new();
             if let Some(b) = theirs_body {
                 theirs.insert(
@@ -643,7 +662,7 @@ mod tests {
             let mut disk_m = Disk::default();
             disk_m
                 .files
-                .insert("AGENTS.md".into(), disk.map(|d| d.as_bytes().to_vec()));
+                .insert("AGENTS.md".into(), disk.map(<[u8]>::to_vec));
             let mut lk = BTreeMap::new();
             if let Some((b, created)) = locked {
                 lk.insert(
@@ -944,6 +963,83 @@ mod tests {
                 false,
             );
             assert!(plan.changes.is_empty() && plan.drift.is_empty() && plan.locked.is_empty());
+        }
+
+        #[test]
+        fn force_on_adopt_differing_replaces_with_a_note() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            let plan = run(Some("x\n"), Some(&blk("u\n")), None, true, &filter, false);
+            assert!(plan.drift.is_empty() && plan.broken.is_empty());
+            assert_eq!(plan.changes.len(), 1);
+            let c = &plan.changes[0];
+            assert_eq!(c.action, Action::Update);
+            assert_eq!(c.bytes, Some(blk("x\n").into_bytes()));
+            assert_eq!(
+                c.note.as_deref(),
+                Some("AGENTS.md#rig: adopted differing block, replaced (--force)")
+            );
+            assert!(!plan.locked["AGENTS.md"].created);
+        }
+
+        #[test]
+        fn force_never_deletes_an_edited_gone_block_and_drops_the_entry() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            let plan = run(
+                None,
+                Some(&blk("u\n")),
+                Some(("x\n", false)),
+                true,
+                &filter,
+                false,
+            );
+            assert_eq!(plan.changes.len(), 1);
+            assert_eq!(plan.changes[0].action, Action::Skip);
+            assert_eq!(plan.changes[0].bytes, None);
+            assert!(plan.drift.is_empty() && plan.broken.is_empty());
+            assert!(plan.locked.is_empty(), "the block becomes unmanaged");
+        }
+
+        #[test]
+        fn non_utf8_host_is_broken_only_when_wanted_or_locked() {
+            let all = Filter::new(&[], &[]).unwrap();
+            let bad: &[u8] = b"# T\n\xff\n";
+            // wanted
+            let plan = run_bytes(Some("x\n"), Some(bad), None, true, &all, false);
+            assert_eq!(plan.broken.len(), 1, "{:?}", plan.broken);
+            assert!(plan.broken[0].contains("AGENTS.md") && plan.broken[0].contains("UTF-8"));
+            assert!(plan.changes.is_empty());
+            // locked, gone: entry kept, nothing written
+            let plan = run_bytes(None, Some(bad), Some(("x\n", false)), false, &all, false);
+            assert_eq!(plan.broken.len(), 1);
+            assert!(plan.locked.contains_key("AGENTS.md"));
+            // neither wanted (filtered out) nor locked: not this channel's business
+            let ex = Filter::new(&[], &["AGENTS.md".to_string()]).unwrap();
+            let plan = run_bytes(Some("x\n"), Some(bad), None, false, &ex, false);
+            assert!(plan.broken.is_empty(), "{:?}", plan.broken);
+            assert!(plan.changes.is_empty() && plan.drift.is_empty() && plan.locked.is_empty());
+        }
+
+        #[test]
+        fn fragment_injecting_markers_is_broken_and_keeps_the_entry() {
+            let all = Filter::new(&[], &[]).unwrap();
+            let body = format!("y\n{E}\n");
+            let plan = run(
+                Some(&body),
+                Some(&blk("x\n")),
+                Some(("x\n", false)),
+                true,
+                &all,
+                false,
+            );
+            assert!(plan.changes.is_empty());
+            assert_eq!(plan.broken.len(), 1, "{:?}", plan.broken);
+            assert!(
+                plan.broken[0].starts_with("AGENTS.md: "),
+                "{:?}",
+                plan.broken
+            );
+            assert!(plan.broken[0].contains("rig"), "{:?}", plan.broken);
+            assert_eq!(plan.locked["AGENTS.md"].sha256, body_sha("x\n"));
         }
 
         #[test]

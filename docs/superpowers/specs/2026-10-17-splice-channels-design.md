@@ -224,6 +224,17 @@ In the host file the channel owns exactly the lines between
   the fragment changes). Existing markers whose body equals the fragment are adopted (recorded,
   nothing written). Broken markers are never fixed, not even with `--force`. Drift keeps the old
   `[sections]` entry in the lock.
+- `--force` on existing markers that are not locked and whose body differs replaces the body and
+  notes `HOST#CHANNEL: adopted differing block, replaced (--force)`. A gone section whose block
+  was edited is kept, also with `--force`; a gone section whose markers are already missing needs
+  no change. Both drop the `[sections]` entry: the block (if any) becomes unmanaged.
+- A host that is not valid UTF-8 counts as broken markers only when the channel wants a section
+  in it or has one locked there; otherwise the channel ignores it.
+- Apply order per source: files, then section hosts (rewritten, or deleted when emptied and
+  created by splice), then removals, migration steps, post, and the channel lock last. Every
+  host is checked like a write target first (relative, no `..`, no symlink on the way), so a
+  symlinked host is refused (exit 3) with nothing written. Fragments are re-checked as regular
+  files below `files/` right before they are read.
 - `check` reports a section as path `HOST#CHANNEL` with action `update`, class `owned` in
   `changes` (contract §8 shape; `#` cannot occur in a rendered path).
 

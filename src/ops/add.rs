@@ -3,7 +3,7 @@
 
 use indexmap::IndexMap;
 
-use crate::apply::{ApplyCtx, apply};
+use crate::apply::{ApplyCtx, LockOut, apply};
 use crate::cli::{AddArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
@@ -182,11 +182,13 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         steps: Vec::new(),
         from: lock.template.version.clone(),
         to: resolved.version.clone(),
-        lock: Lock::from_tree(&resolved, &lock.vars, &instances, &theirs),
+        lock: LockOut::Main(Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)),
         post,
         when: When::Add,
         no_post: a.no_post,
         json: g.json,
+        command: "add",
+        sections: &[],
     })?;
     report.changes = applied.changes;
     report.messages.extend(applied.messages);

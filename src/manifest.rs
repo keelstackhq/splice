@@ -9,6 +9,7 @@ use semver::Version;
 use serde::Deserialize;
 
 use crate::error::SpliceError;
+use crate::fsio;
 use crate::migrate::{Migration, load_migrations};
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -252,21 +253,6 @@ fn globs(file: &Path, key: &str, patterns: &[String]) -> Result<Vec<globset::Glo
         .collect()
 }
 
-/// True when `rel` below `root` is a regular file and neither `root` nor any directory on the way
-/// nor the file itself is a symlink (the template may not reach outside itself).
-fn is_plain_file_below(root: &Path, rel: &str) -> bool {
-    let mut cur = root.to_path_buf();
-    let mut meta = std::fs::symlink_metadata(&cur);
-    for seg in rel.split('/') {
-        if !meta.as_ref().is_ok_and(|m| m.is_dir()) {
-            return false;
-        }
-        cur.push(seg);
-        meta = std::fs::symlink_metadata(&cur);
-    }
-    meta.is_ok_and(|m| m.is_file())
-}
-
 /// `[sections]` entries: `.md` host, `.md`/`.md.jinja` fragment that is a file below `files/`.
 fn check_sections(dir: &Path, f: &str, sections: &IndexMap<String, String>) -> Result<()> {
     for (host, fragment) in sections {
@@ -283,7 +269,7 @@ fn check_sections(dir: &Path, f: &str, sections: &IndexMap<String, String>) -> R
             && fragment
                 .split('/')
                 .all(|seg| !seg.is_empty() && seg != "." && seg != "..");
-        if !safe || !is_plain_file_below(&dir.join("files"), fragment) {
+        if !safe || !fsio::is_plain_file_below(&dir.join("files"), fragment) {
             return err(format!(
                 "{f}: [sections] fragment \"{fragment}\" is not a regular file below files/ (symlinks are not allowed)"
             ));

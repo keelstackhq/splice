@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 
 use crate::classify::Classifier;
 use crate::error::SpliceError;
+use crate::fsio;
 use crate::manifest::{MergeStrategy, Template};
 use crate::output::Class;
 use crate::paths::render_rel_path;
@@ -176,7 +177,7 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
                 continue; // a section fragment is not a file
             }
             let origin = format!("{}:{rel}", inst.id);
-            if ft.is_symlink() {
+            if ft.is_symlink() || !fsio::is_plain_file_below(&piece.files_dir, &rel) {
                 return Err(template_err(format!(
                     "{origin}: symlinks are not allowed in a template"
                 )));
@@ -240,6 +241,13 @@ pub fn render_sections(t: &Template, input: &RenderInput) -> Result<RenderedSect
         for (key, fragment) in &piece.sections {
             let (host, _) = render_rel_path(key, piece.target.as_deref(), &renderer, &ctx)?;
             let origin = format!("{}:{fragment}", inst.id);
+            // Checked at load too; re-checked right before the read (the template may change).
+            if !fsio::is_plain_file_below(&piece.files_dir, fragment) {
+                return Err(template_err(format!(
+                    "{origin}: [sections] fragment is not a regular file below files/ \
+                     (symlinks are not allowed in a template)"
+                )));
+            }
             let raw = std::fs::read(piece.files_dir.join(fragment))?;
             let text = String::from_utf8(raw)
                 .map_err(|_| template_err(format!("{origin}: fragment is not UTF-8")))?;

@@ -313,3 +313,70 @@ fn whitespace_fragment_declares_nothing() {
             .is_empty()
     );
 }
+
+#[cfg(unix)]
+mod symlinked_template {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    /// A symlinked `files/` dir must not be walked (guard: walkdir reports the root as a symlink).
+    #[test]
+    fn symlinked_files_dir_is_error() {
+        let dir = temp_template();
+        let outside = tempfile::tempdir().unwrap();
+        let files = dir.path().join("pieces/base/files");
+        let moved = outside.path().join("files");
+        std::fs::rename(&files, &moved).unwrap();
+        symlink(&moved, &files).unwrap();
+        let err = render_in(dir.path(), &["base"], &[("project", "demo")]).unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+        assert!(err.to_string().contains("symlink"), "{err}");
+    }
+
+    fn section_template() -> tempfile::TempDir {
+        common::inline_template(&[(
+            "p",
+            "id = \"p\"\ndescription = \"d\"\n\n[sections]\n\"AGENTS.md\" = \"sub/s.md\"\n",
+            &[("sub/s.md", "hi\n")],
+        )])
+    }
+
+    /// `render_sections` re-checks the fragment right before reading it (the load-time check
+    /// alone leaves a window).
+    #[test]
+    fn fragment_swapped_for_a_symlink_after_load_is_error() {
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("s.md"), "SECRET\n").unwrap();
+        for link_dir in [false, true] {
+            let dir = section_template();
+            let t = Template::load(dir.path()).unwrap();
+            let files = dir.path().join("pieces/p/files");
+            if link_dir {
+                std::fs::remove_dir_all(files.join("sub")).unwrap();
+                symlink(outside.path(), files.join("sub")).unwrap();
+            } else {
+                std::fs::remove_file(files.join("sub/s.md")).unwrap();
+                symlink(outside.path().join("s.md"), files.join("sub/s.md")).unwrap();
+            }
+            let err = render_sections(&t, &plain_input(&["p"])).unwrap_err();
+            assert_eq!(err.exit_code(), 3, "{link_dir}");
+            let m = err.to_string();
+            assert!(m.contains("sub/s.md") && m.contains("symlink"), "{m}");
+            assert!(!m.contains("SECRET"), "{m}");
+        }
+    }
+
+    #[test]
+    fn symlinked_files_dir_after_load_is_error_for_sections() {
+        let outside = tempfile::tempdir().unwrap();
+        let dir = section_template();
+        let t = Template::load(dir.path()).unwrap();
+        let files = dir.path().join("pieces/p/files");
+        let moved = outside.path().join("files");
+        std::fs::rename(&files, &moved).unwrap();
+        symlink(&moved, &files).unwrap();
+        let err = render_sections(&t, &plain_input(&["p"])).unwrap_err();
+        assert_eq!(err.exit_code(), 3);
+        assert!(err.to_string().contains("symlink"), "{err}");
+    }
+}

@@ -5,7 +5,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use semver::Version;
 
-use crate::apply::{ApplyCtx, apply};
+use crate::apply::{ApplyCtx, LockOut, apply};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
@@ -330,11 +330,13 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         steps,
         from: prep.from.clone(),
         to: prep.to.clone(),
-        lock: prep.lock_new.clone(),
+        lock: LockOut::Main(prep.lock_new.clone()),
         post,
         when: When::Update,
         no_post: a.no_post,
         json: g.json,
+        command: "update",
+        sections: &[],
     });
     let prepend = |mut r: Report| {
         let mut all = messages.clone();
