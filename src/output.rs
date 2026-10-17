@@ -57,6 +57,9 @@ pub struct Report {
     pub command: String,
     pub changes: Vec<Change>,
     pub messages: Vec<String>,
+    /// Human-mode stdout lines that replace the default change lines (not in `--json`).
+    #[serde(skip)]
+    pub lines: Vec<String>,
 }
 
 impl Report {
@@ -66,6 +69,7 @@ impl Report {
             command: command.to_string(),
             changes: Vec::new(),
             messages: Vec::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -93,6 +97,12 @@ impl Report {
     pub fn print(&self, json: bool) {
         if json {
             println!("{}", self.to_json());
+            return;
+        }
+        if !self.lines.is_empty() {
+            for l in &self.lines {
+                println!("{l}");
+            }
             return;
         }
         let mut changes: Vec<&Change> = self.changes.iter().collect();

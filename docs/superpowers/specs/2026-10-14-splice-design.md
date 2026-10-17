@@ -287,7 +287,9 @@ per changed file plus one line per removal. `--json` returns the planned `change
 Re-renders the lock state from the cached tree (offline after the first fetch) and prints
 `<path>  <class>  <piece-id>/<instance-name>  glob=<glob|default>  merge=<strategy>`; `--json`:
 one change `{path, action: "skip", class}` and messages `piece=…`, `glob=…`, `merge=…`. An
-unmanaged path → ok, no changes, message `unmanaged`.
+unmanaged path → ok, no changes, message `unmanaged`. `merge=` is the `[merge]` strategy for
+shared files and `none` for owned and seed files. Paths are normalised first (`./` prefix, `\`
+separators); absolute paths and `..` are a usage error.
 
 ## 9. JSON output (contract §8)
 
