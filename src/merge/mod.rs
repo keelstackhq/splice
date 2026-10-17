@@ -347,6 +347,32 @@ mod tests {
         let m = merge3(MergeStrategy::Json, b, o, t);
         assert_eq!(m.conflicts, ["x"]);
         assert!(!find_markers(&m.text).is_empty());
+        let mut inside = false;
+        let outside: Vec<&str> = m
+            .text
+            .lines()
+            .filter(|l| {
+                if l.starts_with("<<<<<<< ") {
+                    inside = true;
+                }
+                let keep = !inside;
+                if l.starts_with(">>>>>>> ") {
+                    inside = false;
+                }
+                keep
+            })
+            .collect();
+        assert!(outside.iter().filter(|l| l.contains("\"x\"")).count() <= 1);
+    }
+
+    #[test]
+    fn input_with_a_duplicate_key_never_merges_cleanly() {
+        let b = "{\n  \"a\": 1,\n  \"b\": 2\n}\n";
+        let o = "{\n  \"a\": 1,\n  \"a\": 5,\n  \"b\": 2\n}\n";
+        let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3\n}\n";
+        assert!(json::merge_json(b, o, t).is_err());
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert!(m.text.contains("\"a\": 1,") && m.text.contains("\"a\": 5,"));
     }
 
     #[test]

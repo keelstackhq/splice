@@ -68,6 +68,9 @@ impl<'de> serde::de::Visitor<'de> for StrictVisitor {
 
 pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseError> {
     let parse = |s: &str| {
+        if !parses_strict(s) {
+            return Err(ParseError("invalid JSON or duplicate key".to_string()));
+        }
         serde_json::from_str::<Value>(s)
             .map(Tree::from_value)
             .map_err(|e| ParseError(e.to_string()))
