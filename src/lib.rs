@@ -20,6 +20,7 @@ pub mod planner;
 pub mod post;
 pub mod render;
 pub mod source;
+pub mod sources;
 pub mod subset;
 pub mod vars;
 
