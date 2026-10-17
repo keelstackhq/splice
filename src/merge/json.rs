@@ -1,6 +1,10 @@
 //! JSON merge: key-path 3-way merge, re-serialised with ours' indentation.
 
 use serde::Serialize;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashSet};
+
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 use serde_json::ser::{PrettyFormatter, Serializer};
 
@@ -9,60 +13,90 @@ use super::{Merged, ParseError};
 
 /// True when `text` is one JSON value without a repeated object key at any depth.
 pub fn parses_strict(text: &str) -> bool {
-    serde_json::from_str::<Strict>(text).is_ok()
+    duplicate_keys(text).is_some_and(|d| d.is_empty())
 }
 
-/// Deserialises any JSON value, failing on a repeated object key at any depth.
-struct Strict;
+/// Dotted paths of object keys that repeat within one object (array positions are not part of
+/// the path), sorted; `None` when `text` is not one JSON value.
+pub fn duplicate_keys(text: &str) -> Option<Vec<String>> {
+    let found = RefCell::new(BTreeSet::new());
+    let seed = Seed {
+        path: String::new(),
+        found: &found,
+    };
+    let mut de = serde_json::Deserializer::from_str(text);
+    seed.deserialize(&mut de).ok()?;
+    de.end().ok()?;
+    Some(found.into_inner().into_iter().collect())
+}
 
-impl<'de> serde::Deserialize<'de> for Strict {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        d.deserialize_any(StrictVisitor)
+struct Seed<'a> {
+    path: String,
+    found: &'a RefCell<BTreeSet<String>>,
+}
+
+impl<'de> DeserializeSeed<'de> for Seed<'_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
+        d.deserialize_any(self)
     }
 }
 
-struct StrictVisitor;
-
-impl<'de> serde::de::Visitor<'de> for StrictVisitor {
-    type Value = Strict;
+impl<'de> Visitor<'de> for Seed<'_> {
+    type Value = ();
 
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str("a JSON value without duplicate keys")
+        f.write_str("a JSON value")
     }
 
-    fn visit_bool<E>(self, _: bool) -> Result<Strict, E> {
-        Ok(Strict)
+    fn visit_bool<E>(self, _: bool) -> Result<(), E> {
+        Ok(())
     }
-    fn visit_i64<E>(self, _: i64) -> Result<Strict, E> {
-        Ok(Strict)
+    fn visit_i64<E>(self, _: i64) -> Result<(), E> {
+        Ok(())
     }
-    fn visit_u64<E>(self, _: u64) -> Result<Strict, E> {
-        Ok(Strict)
+    fn visit_u64<E>(self, _: u64) -> Result<(), E> {
+        Ok(())
     }
-    fn visit_f64<E>(self, _: f64) -> Result<Strict, E> {
-        Ok(Strict)
+    fn visit_f64<E>(self, _: f64) -> Result<(), E> {
+        Ok(())
     }
-    fn visit_str<E>(self, _: &str) -> Result<Strict, E> {
-        Ok(Strict)
+    fn visit_str<E>(self, _: &str) -> Result<(), E> {
+        Ok(())
     }
-    fn visit_unit<E>(self) -> Result<Strict, E> {
-        Ok(Strict)
-    }
-
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Strict, A::Error> {
-        while seq.next_element::<Strict>()?.is_some() {}
-        Ok(Strict)
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
     }
 
-    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Strict, A::Error> {
-        let mut seen = std::collections::HashSet::new();
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
+        while seq
+            .next_element_seed(Seed {
+                path: self.path.clone(),
+                found: self.found,
+            })?
+            .is_some()
+        {}
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let mut seen = HashSet::new();
         while let Some(key) = map.next_key::<String>()? {
-            if !seen.insert(key.clone()) {
-                return Err(serde::de::Error::custom(format!("duplicate key `{key}`")));
+            let path = if self.path.is_empty() {
+                key.clone()
+            } else {
+                format!("{}.{key}", self.path)
+            };
+            if !seen.insert(key) {
+                self.found.borrow_mut().insert(path.clone());
             }
-            map.next_value::<Strict>()?;
+            map.next_value_seed(Seed {
+                path,
+                found: self.found,
+            })?;
         }
-        Ok(Strict)
+        Ok(())
     }
 }
 

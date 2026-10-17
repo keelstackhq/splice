@@ -41,7 +41,7 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     if matches!(strategy, MergeStrategy::Json | MergeStrategy::Yaml) {
         let m = merge_text(base, ours, theirs);
         if m.conflicts.is_empty() && parses(strategy, &m.text) {
-            return m;
+            return no_new_duplicates(strategy, base, ours, theirs, m);
         }
     }
     let structured = match strategy {
@@ -51,7 +51,8 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
         MergeStrategy::Toml => toml::merge_toml(base, ours, theirs),
     };
     let Ok(merged) = structured else {
-        return merge_text(base, ours, theirs);
+        let m = merge_text(base, ours, theirs);
+        return no_new_duplicates(strategy, base, ours, theirs, m);
     };
     if merged.conflicts.is_empty() {
         return merged;
@@ -65,6 +66,34 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     Merged {
         text,
         conflicts: merged.conflicts,
+    }
+}
+
+/// A clean JSON text merge must not introduce a duplicate key that ours did not have (a
+/// duplicate already in ours is the user's content and stays verbatim). If it would, the whole
+/// file becomes one conflict block.
+fn no_new_duplicates(
+    strategy: MergeStrategy,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    merged: Merged,
+) -> Merged {
+    if strategy != MergeStrategy::Json || !merged.conflicts.is_empty() {
+        return merged;
+    }
+    let had = json::duplicate_keys(ours).unwrap_or_default();
+    let introduced: Vec<String> = json::duplicate_keys(&merged.text)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|k| !had.contains(k))
+        .collect();
+    if introduced.is_empty() {
+        return merged;
+    }
+    Merged {
+        text: wrap_whole(base, ours, theirs),
+        conflicts: introduced,
     }
 }
 
@@ -340,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn text_clean_json_merge_never_duplicates_a_key() {
+    fn adjacent_additions_of_the_same_json_key_conflict() {
         let b = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4\n}\n";
         let o = "{\n  \"a\": 1,\n  \"x\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4\n}\n";
         let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"x\": 2\n}\n";
@@ -365,14 +394,25 @@ mod tests {
         assert!(outside.iter().filter(|l| l.contains("\"x\"")).count() <= 1);
     }
 
+    const FIVE: &str = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"e\": 5\n}\n";
+
     #[test]
-    fn input_with_a_duplicate_key_never_merges_cleanly() {
-        let b = "{\n  \"a\": 1,\n  \"b\": 2\n}\n";
-        let o = "{\n  \"a\": 1,\n  \"a\": 5,\n  \"b\": 2\n}\n";
-        let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3\n}\n";
-        assert!(json::merge_json(b, o, t).is_err());
-        let m = merge3(MergeStrategy::Json, b, o, t);
-        assert!(m.text.contains("\"a\": 1,") && m.text.contains("\"a\": 5,"));
+    fn far_apart_edits_that_introduce_a_duplicate_key_conflict() {
+        let ours = FIVE.replace("\"b\": 2", "\"b\": 9");
+        let theirs = FIVE.replace("\"d\": 4,", "\"d\": 4,\n  \"a\": 7,");
+        let m = merge3(MergeStrategy::Json, FIVE, &ours, &theirs);
+        assert_eq!(m.conflicts, ["a"]);
+        assert!(!find_markers(&m.text).is_empty());
+    }
+
+    #[test]
+    fn a_duplicate_key_the_user_already_had_is_kept_verbatim() {
+        let ours = FIVE.replace("\"a\": 1,", "\"a\": 1,\n  \"a\": 5,");
+        let theirs = FIVE.replace("\"e\": 5", "\"e\": 6");
+        assert!(json::merge_json(FIVE, &ours, &theirs).is_err());
+        let m = merge3(MergeStrategy::Json, FIVE, &ours, &theirs);
+        assert!(m.conflicts.is_empty());
+        assert_eq!(m.text, ours.replace("\"e\": 5", "\"e\": 6"));
     }
 
     #[test]
