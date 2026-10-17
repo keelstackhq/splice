@@ -126,11 +126,22 @@ fn rerun_after_restore_succeeds() {
     apply_user_edits(&repo);
     let lock_v1 = std::fs::read(repo.path().join(".splice/lock.toml")).unwrap();
 
-    // The v2 migration step fails: exit 3, lock still describes v1.
-    update_cmd(&repo)
+    // The v2 migration step fails: exit 3, lock still describes v1, files were written, the
+    // restore hint is on stderr and the step's marker file is absent.
+    let before = tree_snapshot(repo.path());
+    let failed = splice_cmd()
+        .current_dir(repo.path())
+        .args(["update", "--yes"])
         .env("SPLICE_FIXTURE_FAIL", "1")
         .assert()
         .code(3);
+    let stderr = String::from_utf8_lossy(&failed.get_output().stderr).into_owned();
+    assert!(
+        stderr.contains("git checkout -- . && git clean -fd"),
+        "{stderr}"
+    );
+    assert_ne!(tree_snapshot(repo.path()), before);
+    assert!(!repo.path().join(".splice/migrated.txt").exists());
     assert_eq!(
         std::fs::read(repo.path().join(".splice/lock.toml")).unwrap(),
         lock_v1
@@ -151,11 +162,19 @@ fn rerun_after_restore_succeeds() {
         .code(1); // the yaml conflict
     let lock = Lock::read(repo.path()).unwrap().unwrap();
     assert_eq!(lock.template.version.to_string(), "2.0.0");
+
+    // The re-run lands exactly where an update that never failed lands.
+    let reference = new_at(&tpl, "1.0.0");
+    apply_user_edits(&reference);
+    update_cmd(&reference).assert().code(1);
+    assert_eq!(
+        redact(&tree_snapshot(repo.path())),
+        redact(&tree_snapshot(reference.path()))
+    );
+    assert!(read(&repo, ".github/workflows/ci.yml").contains("<<<<<<< ours"));
 }
 
-// `splice check` lands in Task 8; that task removes this `ignore`.
 #[test]
-#[ignore = "needs `splice check` (plan 02 Task 8)"]
 fn resolve_conflict_then_check_passes() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_at(&tpl, "1.0.0");
