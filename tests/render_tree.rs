@@ -134,8 +134,8 @@ fn binary_shared_is_error() {
     std::fs::write(
         &toml,
         text.replace(
-            r#"owned = [".editorconfig", "tool.config.mts", "logo.png"]"#,
-            r#"owned = [".editorconfig", "tool.config.mts"]"#,
+            r#"owned = [".editorconfig", "tool.config.mts", "logo.png", "old.txt"]"#,
+            r#"owned = [".editorconfig", "tool.config.mts", "old.txt"]"#,
         )
         .replace(
             r#"shared = ["package.json","#,

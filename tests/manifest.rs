@@ -40,3 +40,38 @@ fn fixture_covers_the_contract_features() {
     assert_eq!(base.post[0].when, [When::New, When::Update]);
     assert!(base.files_dir.join("logo.png").is_file());
 }
+
+fn fixture_v(name: &str) -> Template {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/template")
+        .join(name);
+    Template::load(&root).unwrap()
+}
+
+#[test]
+fn fixture_v2_loads_with_migration() {
+    let t = fixture_v("v2");
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+    assert_eq!(t.migrations.len(), 1);
+    let m = &t.migrations[0];
+    assert_eq!(m.version.to_string(), "2.0.0");
+    assert_eq!(m.removes[0].path, "tool.config.mts");
+    assert!(m.steps[0].run.contains("SPLICE_FIXTURE_FAIL"));
+    assert!(fixture().migrations.is_empty());
+}
+
+#[test]
+fn fixture_v3_needs_a_newer_splice() {
+    let t = fixture_v("v3");
+    assert_eq!(t.manifest.min_splice.to_string(), "99.0.0");
+    assert!(
+        t.check_min_splice(&semver::Version::parse("0.1.0").unwrap())
+            .is_err()
+    );
+}
+
+#[test]
+fn fixture_v2_without_lib_has_no_lib_piece() {
+    let t = fixture_v("v2-nolib");
+    assert_eq!(t.pieces.keys().collect::<Vec<_>>(), ["app", "base"]);
+}

@@ -9,6 +9,7 @@ use semver::Version;
 use serde::Deserialize;
 
 use crate::error::SpliceError;
+use crate::migrate::{Migration, load_migrations};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -84,6 +85,8 @@ pub struct Template {
     pub manifest: TemplateManifest,
     /// Sorted by id.
     pub pieces: IndexMap<String, PieceManifest>,
+    /// `migrations/<semver>.toml`, sorted by version.
+    pub migrations: Vec<Migration>,
     /// Unknown keys found while loading (newer templates stay readable).
     pub warnings: Vec<String>,
 }
@@ -415,6 +418,7 @@ impl Template {
                 vars,
             },
             pieces,
+            migrations: load_migrations(root)?,
             warnings,
         })
     }

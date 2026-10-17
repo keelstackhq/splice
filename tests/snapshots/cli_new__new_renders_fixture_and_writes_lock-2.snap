@@ -67,6 +67,11 @@ expression: r
       "class": "shared"
     },
     {
+      "path": "old.txt",
+      "action": "create",
+      "class": "owned"
+    },
+    {
       "path": "only-with-app.txt",
       "action": "create",
       "class": "owned"

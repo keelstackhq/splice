@@ -3,5 +3,12 @@
   "private": true,
   "scripts": {
     "check": "echo check"
-  }
+  },
+  "devDependencies": {
+    "typescript": "5.0.0"
+  },
+  "keywords": [
+{% for p in pieces %}    "{{ p }}",
+{% endfor %}    "fixture"
+  ]
 }

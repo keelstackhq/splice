@@ -16,6 +16,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 01/T9 · abd2847..f5cfcf5 · splice add, reduced planner; unit 48, cli_add 10 passing; conflicts write nothing
 - 2026-10-17 · 01/T10 · 5f16bd9 · splice explain; cli_explain 5 passing
 - 2026-10-17 · 01/final · c2c021b..427932f · final-review fixes (add --force keeps shared, absolute local source, files/-less piece, spec §8.3); cargo test 112 passing, fmt and clippy -D warnings clean
+- 2026-10-17 · 02/T1 · this commit · fixture v2/v3/v2-nolib, v1 extended, migrations loader; unit 54, manifest 5 passing
 
 ## Blocked
 
