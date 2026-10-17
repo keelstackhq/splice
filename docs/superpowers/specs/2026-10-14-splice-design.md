@@ -257,8 +257,15 @@ between them (it runs after both).
   **toml:** `toml_edit::DocumentMut`, edited in place so comments and layout survive.
 - Key-path rules exactly as contract §5: arrays are values, ours' key order kept, new keys
   appended to their parent, a key deleted on one side and changed on the other is a conflict.
-- Fast paths before parsing: O = B → T verbatim; T = B → O verbatim. JSON/YAML are re-serialised
-  only on a real merge (indent detected from ours: tabs or N spaces; trailing newline kept).
+- Fast paths before parsing: O = B → T verbatim; T = B or T = O → O verbatim.
+- **json and yaml are text-first:** run the line-based text merge; if it is clean and its result
+  still parses as the format, use it verbatim (layout, indentation and YAML comments survive).
+  Only otherwise run the structured merge. On the structured path JSON is re-serialised with
+  ours' indent (tabs or N spaces) and final newline; YAML is re-serialised by yaml_serde (two
+  spaces), sequences re-indented to ours' style, and **comments may be lost** there.
+- An empty or whitespace-only base counts as `{}` (json) or an empty mapping (yaml).
+- YAML mapping keys must be strings: `1: a` is not coerced to `"1"`; such a file, like a
+  multi-document one, is a parse error and falls back to text.
 - A parse error in any side falls back to text.
 - **Structured conflict → markers:** run the text merge; if it yields markers, use them; if it
   merges cleanly anyway, wrap the whole file in one diff3 block (ours / base / theirs). Every
@@ -324,6 +331,10 @@ into the contract at its next `format` bump.
     `loop self range namespace` are never variables; bare `pieces`/`piece`/`template` are rejected;
     dotted access is limited to `piece.id|name`, `template.name|version`; `else` only inside `if`.
     These go to hull and the contract at the next `format` bump.
+
+11. Merge formatting (task 3 review): json/yaml merge text-first (§8.5) so the common case of
+    disjoint edits never rewrites the user's file; hull's `pnpm-workspace.yaml` is the reference
+    case (`tests/fixtures/merge/`).
 
 Gap (milestone 2): `add` on the full planner gets the same dirty-tree refusal (exit 2) and
 `--allow-dirty` as `update` (§8.3 step 1); the milestone 1 reduced planner has neither.

@@ -13,7 +13,12 @@ pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
             .map(Tree::from_value)
             .map_err(|e| ParseError(e.to_string()))
     };
-    let (b, o, t) = (parse(base)?, parse(ours)?, parse(theirs)?);
+    let b = if base.trim().is_empty() {
+        Tree::empty_map()
+    } else {
+        parse(base)?
+    };
+    let (o, t) = (parse(ours)?, parse(theirs)?);
     let mut conflicts = Vec::new();
     let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts).into_value();
     Ok(Merged {

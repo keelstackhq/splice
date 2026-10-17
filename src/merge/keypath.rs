@@ -27,6 +27,12 @@ impl Tree {
         }
     }
 
+    /// An empty (or whitespace-only) base file counts as an empty map, so a file that only the
+    /// template and the user created merges per key.
+    pub fn empty_map() -> Tree {
+        Tree::Map(IndexMap::new())
+    }
+
     pub fn into_value(self) -> Value {
         match self {
             Tree::Map(map) => {

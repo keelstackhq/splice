@@ -37,6 +37,13 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     if theirs == base || theirs == ours {
         return clean(ours);
     }
+    // json and yaml: a clean line merge that still parses keeps the user's layout and comments.
+    if matches!(strategy, MergeStrategy::Json | MergeStrategy::Yaml) {
+        let m = merge_text(base, ours, theirs);
+        if m.conflicts.is_empty() && parses(strategy, &m.text) {
+            return m;
+        }
+    }
     let structured = match strategy {
         MergeStrategy::Text => return merge_text(base, ours, theirs),
         MergeStrategy::Json => json::merge_json(base, ours, theirs),
@@ -58,6 +65,14 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     Merged {
         text,
         conflicts: merged.conflicts,
+    }
+}
+
+fn parses(strategy: MergeStrategy, text: &str) -> bool {
+    match strategy {
+        MergeStrategy::Json => serde_json::from_str::<serde_json::Value>(text).is_ok(),
+        MergeStrategy::Yaml => yaml_serde::from_str::<yaml_serde::Value>(text).is_ok(),
+        _ => true,
     }
 }
 
@@ -251,5 +266,76 @@ mod tests {
     fn text_strategy_is_the_text_merge() {
         let m = merge3(MergeStrategy::Text, "a\nb\nc\n", "A\nb\nc\n", "a\nb\nC\n");
         assert_eq!(m.text, "A\nb\nC\n");
+    }
+
+    const WORKSPACE: &str = include_str!("../../tests/fixtures/merge/pnpm-workspace.yaml");
+
+    fn after(text: &str, anchor: &str, add: &str) -> String {
+        text.replacen(anchor, &format!("{anchor}\n{add}"), 1)
+    }
+
+    #[test]
+    fn hull_workspace_user_pin_and_template_bump_keep_comments_and_indent() {
+        let ours = after(WORKSPACE, "  wrangler: 4.151.0", "  zod: 3.0.0");
+        let theirs = WORKSPACE.replacen("hono: 4.13.13", "hono: 4.13.14", 1);
+        let m = merge3(MergeStrategy::Yaml, WORKSPACE, &ours, &theirs);
+        assert!(m.conflicts.is_empty());
+        let want = after(&theirs, "  wrangler: 4.151.0", "  zod: 3.0.0");
+        assert_eq!(m.text, want);
+        assert!(m.text.contains("# @cascivo/react peers on"));
+    }
+
+    #[test]
+    fn hull_workspace_overlapping_edits_use_structured_path_with_ours_indent() {
+        let ours = after(WORKSPACE, "  wrangler: 4.151.0", "  zod: 3.0.0");
+        let theirs = after(WORKSPACE, "  wrangler: 4.151.0", "  zstd: 1.0.0");
+        let m = merge3(MergeStrategy::Yaml, WORKSPACE, &ours, &theirs);
+        assert!(m.conflicts.is_empty(), "{:?}", m.conflicts);
+        assert!(find_markers(&m.text).is_empty());
+        assert!(
+            m.text
+                .starts_with("packages:\n  - apps/*\n  - packages/*\n")
+        );
+        assert!(m.text.contains("\n  zod: 3.0.0\n"));
+        assert!(m.text.contains("\n  zstd: 1.0.0\n"));
+        assert!(m.text.contains("\n  ignoreMissing:\n    - "));
+    }
+
+    #[test]
+    fn flush_sequences_in_ours_stay_flush() {
+        let m = merge3(
+            MergeStrategy::Yaml,
+            "s:\n- a\nk: 1\n",
+            "s:\n- a\nk: 1\nx: 1\n",
+            "s:\n- a\nk: 1\ny: 1\n",
+        );
+        assert!(m.conflicts.is_empty());
+        assert_eq!(m.text, "s:\n- a\nk: 1\nx: 1\ny: 1\n");
+    }
+
+    #[test]
+    fn empty_base_json_merges_per_key() {
+        let m = merge3(MergeStrategy::Json, "", "{\"a\":1}", "{\"b\":2}");
+        assert!(m.conflicts.is_empty());
+        assert_eq!(m.text, "{\n  \"a\": 1,\n  \"b\": 2\n}");
+    }
+
+    #[test]
+    fn empty_base_yaml_merges_per_key() {
+        let m = merge3(MergeStrategy::Yaml, "", "a: 1\n", "b: 2\n");
+        assert!(m.conflicts.is_empty());
+        assert_eq!(m.text, "a: 1\nb: 2\n");
+    }
+
+    #[test]
+    fn yaml_non_string_key_is_not_coerced() {
+        assert!(yaml::merge_yaml("1: a\n", "1: a\nx: 1\n", "1: b\n").is_err());
+        let m = merge3(
+            MergeStrategy::Yaml,
+            "1: a\nz: 1\n",
+            "1: a\nz: 2\n",
+            "1: b\nz: 1\n",
+        );
+        assert!(!m.text.contains("'1'") && !m.text.contains("\"1\""));
     }
 }
