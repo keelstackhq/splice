@@ -196,7 +196,11 @@ name, `requires`. Because `pieces` changes, every instance is re-rendered: base 
 lock state, theirs = render with the new instance. The result goes through the same planner as
 `update` (§8.3), so other pieces' `{% if "x" in pieces %}` blocks update with full merge rules.
 Milestone 1 ships a reduced planner (replace only unedited files, report the rest); milestone 2
-switches `add` to the full planner.
+switches `add` to the full planner. The reduced planner follows §8.4 for deleted and no-longer
+rendered files, and on any conflict (without `--force`) it writes nothing, not even the lock, and
+exits 1 listing the conflicts. Post commands run before the lock is written: a failing one leaves
+the written files without a lock update (exit 3), and re-running the same `add` is safe because a
+file that already equals the new render is skipped.
 
 ### 8.3 `update`
 
@@ -315,6 +319,9 @@ into the contract at its next `format` bump.
     `loop self range namespace` are never variables; bare `pieces`/`piece`/`template` are rejected;
     dotted access is limited to `piece.id|name`, `template.name|version`; `else` only inside `if`.
     These go to hull and the contract at the next `format` bump.
+
+Gap (milestone 2): `add` on the full planner gets the same dirty-tree refusal (exit 2) and
+`--allow-dirty` as `update` (§8.3 step 1); the milestone 1 reduced planner has neither.
 
 ## 11. Testing
 

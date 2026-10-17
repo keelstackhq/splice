@@ -70,6 +70,13 @@ pub fn write_file(root: &Path, rel: &str, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+/// Remove `rel` below `root`, with the same checks as [`write_file`].
+pub fn remove_file(root: &Path, rel: &str) -> Result<()> {
+    check_target(root, rel)?;
+    std::fs::remove_file(root.join(rel))?;
+    Ok(())
+}
+
 /// Like [`write_file`] but atomic: write an exclusively created, randomly named temp file in the
 /// target's directory, fsync it, rename it over `rel` and fsync the directory. A user's own
 /// `<rel>.tmp` is never touched. The same checks as [`write_file`] apply.

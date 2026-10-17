@@ -125,6 +125,8 @@ fn usage_errors_change_nothing() {
 fn edited_file_reported_not_overwritten() {
     let (_tpl, repo) = new_repo(&[]);
     std::fs::write(repo.path().join("apps.txt"), "mine\n").unwrap();
+    let tree = tree_snapshot(repo.path());
+    let lock = lock_bytes(&repo);
     let out = add(&repo, &["app", "--name", "admin"])
         .code(1)
         .get_output()
@@ -148,9 +150,9 @@ fn edited_file_reported_not_overwritten() {
             .unwrap()
             .contains("edited locally")
     );
-    // The rest was written, with the lock.
-    assert!(repo.path().join("apps/admin/package.json").exists());
-    assert_eq!(Lock::read(repo.path()).unwrap().unwrap().pieces.len(), 2);
+    // C3: nothing else was written and the lock is unchanged.
+    assert_eq!(tree_snapshot(repo.path()), tree);
+    assert_eq!(lock_bytes(&repo), lock);
 }
 
 #[test]

@@ -57,7 +57,8 @@ const EDITED: &str = "edited locally; run `splice update` after milestone 2 or m
 ///   has the locked content, else it is a conflict; a seed is skipped.
 /// - A path only in `base` is deleted when the disk still has the locked content, else conflict.
 ///
-/// With `force`, conflicts become replacements (and deletions). Seeds are never touched.
+/// With `force`, conflicts become replacements; an edited file that is no longer rendered is kept.
+/// A seed or shared file deleted locally stays deleted. Seeds are never touched.
 pub fn plan_reduced(
     base: &RenderedTree,
     theirs: &RenderedTree,
@@ -76,22 +77,21 @@ pub fn plan_reduced(
         let class = new.class;
         let step = match (&disk, old) {
             (None, None) => planned(path, Action::Create, class, Some(new.bytes.clone())),
-            (None, Some(_)) if class == Class::Seed => {
-                planned(path, Action::Create, class, Some(new.bytes.clone()))
-            }
+            // A seed or shared file the user deleted stays deleted (spec §8.4).
+            (None, Some(_)) if class != Class::Owned => planned(path, Action::Skip, class, None),
             (Some(_), _) if class == Class::Seed => planned(path, Action::Skip, class, None),
             (Some(d), _) if *d == new.bytes => planned(path, Action::Skip, class, None),
             (Some(_), None) => {
                 // The file is new to the template state but exists with other content.
                 let step = conflict(path, class, "already exists with different content");
-                forced(step, force, new)
+                forced(step, force, new, false)
             }
             (Some(d), Some(_)) => {
                 let locked = lock.files.get(path).map(|f| f.sha256.as_str());
                 if locked == Some(sha256_hex(d).as_str()) {
                     planned(path, Action::Update, class, Some(new.bytes.clone()))
                 } else {
-                    forced(conflict(path, class, EDITED), force, new)
+                    forced(conflict(path, class, EDITED), force, new, false)
                 }
             }
             (None, Some(_)) => forced(
@@ -102,6 +102,7 @@ pub fn plan_reduced(
                 ),
                 force,
                 new,
+                true,
             ),
         };
         plan.push(step);
@@ -115,8 +116,16 @@ pub fn plan_reduced(
             continue;
         };
         let locked = lock.files.get(path).map(|f| f.sha256.as_str());
-        plan.push(if force || locked == Some(sha256_hex(&disk).as_str()) {
+        plan.push(if locked == Some(sha256_hex(&disk).as_str()) {
             planned(path, Action::Delete, old.class, None)
+        } else if force {
+            // `--force` never deletes user edits: keep the file and say so (spec §8.4).
+            Planned {
+                note: Some(format!(
+                    "`{path}` is no longer rendered but was edited locally; kept"
+                )),
+                ..planned(path, Action::Skip, old.class, None)
+            }
         } else {
             conflict(path, old.class, EDITED)
         });
@@ -125,14 +134,14 @@ pub fn plan_reduced(
 }
 
 /// A conflict stays one unless `force` turns it into an overwrite.
-fn forced(step: Planned, force: bool, new: &RenderedFile) -> Planned {
+fn forced(step: Planned, force: bool, new: &RenderedFile, absent: bool) -> Planned {
     if force {
-        planned(
-            &new.path,
-            Action::Update,
-            new.class,
-            Some(new.bytes.clone()),
-        )
+        let action = if absent {
+            Action::Create
+        } else {
+            Action::Update
+        };
+        planned(&new.path, action, new.class, Some(new.bytes.clone()))
     } else {
         step
     }
@@ -246,10 +255,19 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
 
     // 4. Plan (checks every target), then apply; the lock is the last write.
     let plan = plan_reduced(&base, &theirs, repo, &lock, a.force)?;
+    // Any conflict (only possible without `--force`): write nothing, no files and no lock (C3).
+    if plan.iter().any(|s| s.action == Action::Conflict) {
+        for step in plan.iter().filter(|s| s.action == Action::Conflict) {
+            report.push(&step.path, step.action, step.class);
+            report.msg(step.note.clone().unwrap_or_default());
+        }
+        report.msg("nothing was written; edit or move the files above, or pass --force");
+        return Err(SpliceError::Conflict(report));
+    }
     for step in &plan {
         match (&step.bytes, step.action) {
             (Some(bytes), _) => fsio::write_file(repo, &step.path, bytes)?,
-            (None, Action::Delete) => std::fs::remove_file(repo.join(&step.path))?,
+            (None, Action::Delete) => fsio::remove_file(repo, &step.path)?,
             _ => {}
         }
         report.push(&step.path, step.action, step.class);
@@ -257,10 +275,9 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
             report.msg(note.clone());
         }
     }
-    let conflicts = plan.iter().any(|s| s.action == Action::Conflict);
 
-    // 5. Post commands of every piece present after the add, unless something conflicted.
-    if !a.no_post && !conflicts {
+    // 5. Post commands of every piece present after the add, (a conflict returned earlier).
+    if !a.no_post {
         let mut cmds: Vec<PostCmd> = Vec::new();
         let mut seen: Vec<&str> = Vec::new();
         for inst in &instances {
@@ -279,8 +296,131 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     }
 
     Lock::from_tree(&resolved, &lock.vars, &instances, &theirs).write_atomic(repo)?;
-    if conflicts {
-        return Err(SpliceError::Conflict(report));
-    }
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lock::{LockFile, LockTemplate};
+    use crate::manifest::MergeStrategy;
+
+    fn file(path: &str, bytes: &str, class: Class) -> RenderedFile {
+        RenderedFile {
+            path: path.into(),
+            bytes: bytes.as_bytes().to_vec(),
+            class,
+            strategy: MergeStrategy::Text,
+            piece_id: "p".into(),
+            piece_name: "p".into(),
+            glob: None,
+        }
+    }
+
+    fn tree(files: &[RenderedFile]) -> RenderedTree {
+        files.iter().map(|f| (f.path.clone(), f.clone())).collect()
+    }
+
+    /// A lock that lists every non-seed file of `base`.
+    fn lock_of(base: &RenderedTree) -> Lock {
+        Lock {
+            format: 1,
+            splice: semver::Version::new(0, 1, 0),
+            template: LockTemplate {
+                source: "x".into(),
+                version: semver::Version::new(1, 0, 0),
+                commit: "0".repeat(40),
+            },
+            vars: IndexMap::new(),
+            pieces: Vec::new(),
+            files: base
+                .values()
+                .filter(|f| f.class != Class::Seed)
+                .map(|f| {
+                    (
+                        f.path.clone(),
+                        LockFile {
+                            class: f.class,
+                            sha256: sha256_hex(&f.bytes),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn plan(
+        base: &[RenderedFile],
+        theirs: &[RenderedFile],
+        disk: &[(&str, &str)],
+        force: bool,
+    ) -> Vec<Planned> {
+        let dir = tempfile::tempdir().unwrap();
+        for (p, c) in disk {
+            std::fs::write(dir.path().join(p), c).unwrap();
+        }
+        let base = tree(base);
+        plan_reduced(&base, &tree(theirs), dir.path(), &lock_of(&base), force).unwrap()
+    }
+
+    #[test]
+    fn deleted_seed_stays_deleted() {
+        for force in [false, true] {
+            let p = plan(
+                &[file("s.txt", "1", Class::Seed)],
+                &[file("s.txt", "2", Class::Seed)],
+                &[],
+                force,
+            );
+            assert_eq!(p.len(), 1);
+            assert_eq!(p[0].action, Action::Skip);
+            assert!(p[0].bytes.is_none());
+        }
+    }
+
+    #[test]
+    fn deleted_shared_stays_deleted_deleted_owned_is_drift() {
+        let shared = plan(
+            &[file("a", "1", Class::Shared)],
+            &[file("a", "2", Class::Shared)],
+            &[],
+            false,
+        );
+        assert_eq!(shared[0].action, Action::Skip);
+        let owned = plan(
+            &[file("a", "1", Class::Owned)],
+            &[file("a", "2", Class::Owned)],
+            &[],
+            false,
+        );
+        assert_eq!(owned[0].action, Action::Conflict);
+        // Forced recreation is a create, not an update.
+        let forced = plan(
+            &[file("a", "1", Class::Owned)],
+            &[file("a", "2", Class::Owned)],
+            &[],
+            true,
+        );
+        assert_eq!(forced[0].action, Action::Create);
+    }
+
+    #[test]
+    fn force_keeps_edited_files_that_are_no_longer_rendered() {
+        let base = [file("gone", "1", Class::Owned)];
+        let edited = plan(&base, &[], &[("gone", "mine")], true);
+        assert_eq!(edited.len(), 1);
+        assert_eq!(edited[0].action, Action::Skip);
+        assert!(edited[0].note.as_deref().unwrap().contains("kept"));
+        // Without force it is a conflict; unedited files are deleted either way.
+        assert_eq!(
+            plan(&base, &[], &[("gone", "mine")], false)[0].action,
+            Action::Conflict
+        );
+        for force in [false, true] {
+            assert_eq!(
+                plan(&base, &[], &[("gone", "1")], force)[0].action,
+                Action::Delete
+            );
+        }
+    }
 }
