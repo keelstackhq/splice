@@ -32,6 +32,7 @@ thiserror = "2"
 toml = "1.1"
 toml_edit = "0.25"
 walkdir = "2.5"
+yaml_serde = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.2"
