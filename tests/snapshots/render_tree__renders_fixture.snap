@@ -1,0 +1,23 @@
+---
+source: tests/render_tree.rs
+expression: tree_listing(&tree)
+---
+.editorconfig  owned  Text  base:base  .editorconfig  54 bytes
+.github/workflows/ci.yml  shared  Yaml  base:base  .github/workflows/ci.yml  93 bytes
+README.md  seed  Text  base:base  README.md  20 bytes
+apps.txt  owned  Text  base:base  -  22 bytes
+apps/admin/package.json  shared  Json  app:admin  package.json  50 bytes
+apps/admin/src/index.html  seed  Text  app:admin  src/**  35 bytes
+apps/admin/src/main.ts  seed  Text  app:admin  src/**  58 bytes
+apps/admin/tsconfig.json  owned  Text  app:admin  tsconfig.json  42 bytes
+apps/web/package.json  shared  Json  app:web  package.json  48 bytes
+apps/web/src/index.html  seed  Text  app:web  src/**  35 bytes
+apps/web/src/main.ts  seed  Text  app:web  src/**  54 bytes
+apps/web/tsconfig.json  owned  Text  app:web  tsconfig.json  42 bytes
+config/settings.toml  shared  Toml  base:base  config/settings.toml  43 bytes
+demo.code-workspace  owned  Text  base:base  -  20 bytes
+logo.png  owned  Text  base:base  logo.png  20 bytes
+notes.txt  shared  Text  base:base  notes.txt  34 bytes
+only-with-app.txt  owned  Text  base:base  -  16 bytes
+package.json  shared  Json  base:base  package.json  92 bytes
+tool.config.mts  owned  Text  base:base  tool.config.mts  33 bytes

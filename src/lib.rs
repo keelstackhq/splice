@@ -1,11 +1,14 @@
 //! splice: bootstrap a repo from versioned template pieces and keep it current.
 
+pub mod classify;
 pub mod cli;
 pub mod error;
 pub mod fetch;
+pub mod fsio;
 pub mod git;
 pub mod manifest;
 pub mod output;
+pub mod paths;
 pub mod render;
 pub mod source;
 pub mod subset;
