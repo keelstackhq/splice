@@ -327,3 +327,44 @@ fn deleted_seed_stays_deleted_and_force_keeps_edited_base_only_files() {
             .contains("the lock records the template's version")
     }));
 }
+
+#[test]
+fn relative_local_source_is_locked_as_an_absolute_path() {
+    let tpl = template_repo(&["v1"]);
+    let parent = tpl.path().parent().unwrap();
+    let tpl_name = tpl.path().file_name().unwrap().to_str().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let repo = out.path().join("out");
+    splice_cmd()
+        .current_dir(parent)
+        .args(["new", &format!("./{tpl_name}"), repo.to_str().unwrap()])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    let lock = Lock::read(&repo).unwrap().unwrap();
+    let source = std::path::Path::new(&lock.template.source);
+    assert!(source.is_absolute(), "{}", lock.template.source);
+    assert_eq!(
+        source.canonicalize().unwrap(),
+        tpl.path().canonicalize().unwrap()
+    );
+    // `add` from inside the repo, and `-C` from elsewhere, both find the template.
+    splice_cmd()
+        .current_dir(&repo)
+        .args(["add", "app", "--name", "admin", "--yes", "--json"])
+        .assert()
+        .success();
+    assert!(repo.join("apps/admin/package.json").exists());
+    let elsewhere = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .current_dir(elsewhere.path())
+        .args([
+            "-C",
+            repo.to_str().unwrap(),
+            "explain",
+            "apps.txt",
+            "--json",
+        ])
+        .assert()
+        .success();
+}

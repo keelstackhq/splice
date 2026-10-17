@@ -77,7 +77,9 @@ clap parse errors still exit 2; when `--json` is in argv they are also reported 
 Source spec grammar: `gh:<owner>/<repo>[//<subdir>]` → `https://github.com/<owner>/<repo>.git`;
 any `https://`, `ssh://`, `git@…` or `file://` URL with optional `//<subdir>` after the repo part;
 or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lock stores the
-spec as given (`gh:keelstackhq/hull//template`).
+spec as given (`gh:keelstackhq/hull//template`), except that a local path is stored as an absolute
+path (`splice new tpl out` locks `/abs/tpl`), so later commands work from any directory and with
+`-C`. A relative local source is resolved against the current directory, not against `-C`.
 
 All git work shells out to the `git` CLI (present wherever repos live), so the user's credentials,
 proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c core.eol=lf` and

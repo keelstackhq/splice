@@ -92,6 +92,19 @@ impl TemplateSource {
         })
     }
 
+    /// The spec the lock stores: as given, except that a local path is made absolute (resolved
+    /// against the current directory) so `add`, `update` and `explain` work from any directory.
+    pub fn lock_spec(&self) -> String {
+        let SourceKind::Local { path } = &self.kind else {
+            return self.spec.clone();
+        };
+        let abs = path.canonicalize().unwrap_or_else(|_| path.clone());
+        match &self.subdir {
+            Some(sub) => format!("{}//{sub}", abs.display()),
+            None => abs.display().to_string(),
+        }
+    }
+
     /// First 16 hex digits of sha256 of the URL (git) or canonical path (local).
     pub fn cache_key(&self) -> String {
         let id = match &self.kind {

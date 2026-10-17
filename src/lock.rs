@@ -114,7 +114,7 @@ impl Lock {
             splice: semver::Version::parse(env!("CARGO_PKG_VERSION"))
                 .expect("CARGO_PKG_VERSION is semver"),
             template: LockTemplate {
-                source: t.source.spec.clone(),
+                source: t.source.lock_spec(),
                 version: t.version.clone(),
                 commit: t.commit.clone(),
             },
