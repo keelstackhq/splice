@@ -245,3 +245,85 @@ fn post_runs_for_add_unless_conflicts() {
     add(&repo, &["app", "--name", "a"]).success();
     assert_eq!(read(&repo, ".add-post"), "ran\n");
 }
+
+/// The fixture template plus `only-without-app.txt`, which renders only while `app` is absent.
+fn repo_with_base_only_file() -> (TempDir, TempDir) {
+    let tpl = template_repo(&["v1"]);
+    std::fs::write(
+        tpl.path()
+            .join("pieces/base/files/only-without-app.txt.jinja"),
+        "{% if \"app\" in pieces %}{% else %}no app\n{% endif %}",
+    )
+    .unwrap();
+    common::amend_tip(tpl.path(), "v1.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            repo.path().to_str().unwrap(),
+        ])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    assert_eq!(read(&repo, "only-without-app.txt"), "no app\n");
+    (tpl, repo)
+}
+
+fn change<'a>(r: &'a serde_json::Value, path: &str) -> &'a serde_json::Value {
+    r["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["path"] == path)
+        .unwrap_or_else(|| panic!("no change for {path}: {r}"))
+}
+
+#[test]
+fn force_keeps_user_made_shared_file() {
+    let (_tpl, repo) = new_repo(&[]);
+    std::fs::create_dir_all(repo.path().join("apps/admin")).unwrap();
+    std::fs::write(repo.path().join("apps/admin/package.json"), "mine\n").unwrap();
+    let out = add(&repo, &["app", "--name", "admin", "--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert_eq!(read(&repo, "apps/admin/package.json"), "mine\n");
+    assert_eq!(change(&r, "apps/admin/package.json")["action"], "skip");
+    assert!(
+        r["messages"].as_array().unwrap().iter().any(|m| {
+            let m = m.as_str().unwrap();
+            m.contains("apps/admin/package.json")
+                && m.contains("kept, merge by hand; the lock records the template's version")
+        }),
+        "{r}"
+    );
+    // The lock records the template's version of the shared file.
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert!(lock.files.contains_key("apps/admin/package.json"));
+    // Owned files are still replaced under --force.
+    assert_eq!(read(&repo, "apps.txt"), "pieces:\n- base\n- app\n\n");
+}
+
+#[test]
+fn deleted_seed_stays_deleted_and_force_keeps_edited_base_only_files() {
+    let (_tpl, repo) = repo_with_base_only_file();
+    std::fs::remove_file(repo.path().join("README.md")).unwrap();
+    std::fs::write(repo.path().join("only-without-app.txt"), "mine\n").unwrap();
+    let out = add(&repo, &["app", "--name", "admin", "--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert!(!repo.path().join("README.md").exists());
+    assert_eq!(read(&repo, "only-without-app.txt"), "mine\n");
+    assert_eq!(change(&r, "only-without-app.txt")["action"], "skip");
+    assert!(r["messages"].as_array().unwrap().iter().any(|m| {
+        m.as_str()
+            .unwrap()
+            .contains("the lock records the template's version")
+    }));
+}

@@ -57,7 +57,8 @@ const EDITED: &str = "edited locally; run `splice update` after milestone 2 or m
 ///   has the locked content, else it is a conflict; a seed is skipped.
 /// - A path only in `base` is deleted when the disk still has the locked content, else conflict.
 ///
-/// With `force`, conflicts become replacements; an edited file that is no longer rendered is kept.
+/// With `force`, owned conflicts become replacements; edited shared files and edited files that are
+/// no longer rendered are kept (spec §8.4).
 /// A seed or shared file deleted locally stays deleted. Seeds are never touched.
 pub fn plan_reduced(
     base: &RenderedTree,
@@ -122,7 +123,7 @@ pub fn plan_reduced(
             // `--force` never deletes user edits: keep the file and say so (spec §8.4).
             Planned {
                 note: Some(format!(
-                    "`{path}` is no longer rendered but was edited locally; kept"
+                    "`{path}` is no longer rendered but was edited locally; kept (the lock records the template's version)"
                 )),
                 ..planned(path, Action::Skip, old.class, None)
             }
@@ -134,8 +135,17 @@ pub fn plan_reduced(
 }
 
 /// A conflict stays one unless `force` turns it into an overwrite.
+/// An edited shared file is never replaced (spec §8.4: `--force` replaces owned drift only).
 fn forced(step: Planned, force: bool, new: &RenderedFile, absent: bool) -> Planned {
-    if force {
+    if force && new.class == Class::Shared && !absent {
+        Planned {
+            note: Some(format!(
+                "`{}` kept, merge by hand; the lock records the template's version",
+                new.path
+            )),
+            ..planned(&new.path, Action::Skip, new.class, None)
+        }
+    } else if force {
         let action = if absent {
             Action::Create
         } else {
@@ -402,6 +412,33 @@ mod tests {
             true,
         );
         assert_eq!(forced[0].action, Action::Create);
+    }
+
+    #[test]
+    fn force_keeps_edited_shared_files_but_replaces_owned() {
+        let base = [file("a", "1", Class::Shared)];
+        let theirs = [file("a", "2", Class::Shared)];
+        let kept = plan(&base, &theirs, &[("a", "mine")], true);
+        assert_eq!(kept[0].action, Action::Skip);
+        assert!(kept[0].bytes.is_none());
+        assert!(
+            kept[0]
+                .note
+                .as_deref()
+                .unwrap()
+                .contains("kept, merge by hand")
+        );
+        // A user-made file at a new shared path is kept too.
+        let new = plan(&[], &theirs, &[("a", "mine")], true);
+        assert_eq!(new[0].action, Action::Skip);
+        // Owned drift is replaced under force (spec §8.4).
+        let owned = plan(
+            &[file("a", "1", Class::Owned)],
+            &[file("a", "2", Class::Owned)],
+            &[("a", "mine")],
+            true,
+        );
+        assert_eq!(owned[0].action, Action::Update);
     }
 
     #[test]
