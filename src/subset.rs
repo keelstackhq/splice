@@ -4,9 +4,33 @@ use crate::error::SpliceError;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
-/// Path roots that behave differently in MiniJinja and Nunjucks, or that only make sense inside
-/// `in pieces` / `for ... in pieces` (spec §5, §6; ruling C1).
-const FORBIDDEN_ROOTS: [&str; 5] = ["loop", "self", "range", "namespace", "pieces"];
+/// Names that are keywords or literals in one engine or the other, or that behave differently
+/// there (spec §6, ruling C1; mirrors hull's `RESERVED_IDENTS`). Never usable as variables.
+const KEYWORDS: [&str; 12] = [
+    "true",
+    "false",
+    "none",
+    "not",
+    "and",
+    "or",
+    "in",
+    "is",
+    "loop",
+    "self",
+    "range",
+    "namespace",
+];
+
+/// Context objects usable only through `"id" in pieces`, `for x in pieces` or dotted access.
+const BARE_FORBIDDEN: [&str; 3] = ["pieces", "piece", "template"];
+
+/// The only dotted names (contract §9.3).
+const DOTTED: [&str; 4] = [
+    "piece.id",
+    "piece.name",
+    "template.name",
+    "template.version",
+];
 
 /// Reject any template syntax outside the portable subset. Errors name `origin:line`.
 pub fn validate(text: &str, origin: &str) -> Result<()> {
@@ -90,8 +114,19 @@ fn check_path(p: &str) -> std::result::Result<(), String> {
         ));
     }
     let root = p.split('.').next().unwrap_or_default();
-    if FORBIDDEN_ROOTS.contains(&root) {
-        return Err(format!("`{root}` cannot be used as a variable here"));
+    if KEYWORDS.contains(&root) {
+        return Err(format!("`{root}` is a keyword or literal, not a variable"));
+    }
+    if p.contains('.') {
+        if !DOTTED.contains(&p) {
+            return Err(format!(
+                "dotted name `{p}` is not allowed (only piece.id, piece.name, template.name, template.version)"
+            ));
+        }
+    } else if BARE_FORBIDDEN.contains(&p) {
+        return Err(format!(
+            "bare `{p}` is not allowed (use `\"id\" in pieces`, piece.id, piece.name, template.name or template.version)"
+        ));
     }
     Ok(())
 }
@@ -165,7 +200,7 @@ fn check_statement(
             _ => Err("`endfor` without a matching `for`".into()),
         },
         ["for", var, "in", "pieces"] => {
-            if !is_ident(var) || FORBIDDEN_ROOTS.contains(var) {
+            if !is_ident(var) || (KEYWORDS.contains(var) || BARE_FORBIDDEN.contains(var)) {
                 return Err(format!("`{var}` is not allowed as a loop variable"));
             }
             stack.push(Frame::For { line });
@@ -256,6 +291,30 @@ mod tests {
             "{% extends 'x' %}",
             "{% import 'x' as y %}",
             "{% ifa %}{% endif %}",
+            "{{ true }}",
+            "{{ false }}",
+            "{{ none }}",
+            "{% if false %}{% endif %}",
+            "{% if true %}{% endif %}",
+            "{% if none %}{% endif %}",
+            "{{ not }}",
+            "{{ and }}",
+            "{{ or }}",
+            "{{ in }}",
+            "{{ is }}",
+            "{% if not %}{% endif %}",
+            "{{ true.x }}",
+            "{{ piece }}",
+            "{{ template }}",
+            "{% if piece %}{% endif %}",
+            "{% if template %}{% endif %}",
+            "{{ piece.version }}",
+            "{{ template.id }}",
+            "{{ piece.name.x }}",
+            "{{ a.b }}",
+            "{% if a.b %}{% endif %}",
+            "{% for true in pieces %}{% endfor %}",
+            "{% for piece in pieces %}{% endfor %}",
         ] {
             let e = validate(t, "f.jinja").unwrap_err();
             assert_eq!(e.exit_code(), 3, "{t}");
@@ -271,7 +330,9 @@ mod tests {
             "{% for p in pieces %}{% if p %}{{ p }}{% else %}-{% endif %}{% endfor %}",
             "{% if a %}{% if b %}x{% elif c %}y{% endif %}{% elif d %}z{% endif %}",
             "{{ piece.id | lower }}{{template.version|upper}}",
-            "{{ _a1.b_2 }}",
+            "{{ _a1_b2 }}",
+            "{{ piece.id }}{{ piece.name }}{{ template.name }}{{ template.version }}",
+            "{% if piece.name %}{% endif %}",
             "plain { text } and {x} and } {",
             "{# {{ not parsed #}",
             "{{\n name\n}}",

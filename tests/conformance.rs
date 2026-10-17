@@ -87,11 +87,15 @@ fn gate_runs_before_render() {
 }
 
 #[test]
-fn no_autoescape_and_only_two_filters() {
+fn no_autoescape_and_only_lower_upper_filters() {
     let r = Renderer::new();
     assert_eq!(
         r.render_str("{{ x }}", &context! { x => "<&>\"" }, "t.html")
             .unwrap(),
         "<&>\""
     );
+    let e = r
+        .render_str("{{ x | title }}", &context! { x => "a" }, "t")
+        .unwrap_err();
+    assert_eq!(e.exit_code(), 3);
 }

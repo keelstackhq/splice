@@ -129,6 +129,12 @@ comment  := "{#" any "#}"
 string   := '"' [a-z0-9-]+ '"'
 ```
 
+Gate decisions (mirrored by hull's gate): `ident` is `[a-z_][a-z0-9_]*` and may not be one of
+`true false none not and or in is loop self range namespace`; bare `pieces`, `piece` and `template`
+are rejected as variables (use `"id" in pieces`, `for x in pieces`, or dotted access); a dotted
+`path` may only be `piece.id`, `piece.name`, `template.name` or `template.version`; `else` is
+allowed only once, inside `if` (never in `for`), and `elif` not after `else`.
+
 No whitespace-control dashes (`{%-`), no `set`, `macro`, `include`, `raw`, operators or literals
 other than the piece-id string. Path names (`{{ var }}` in a path segment) allow only `output`.
 
@@ -302,6 +308,10 @@ into the contract at its next `format` bump.
 8. Exit 1 also covers `update`/`add` conflicts and owned-drift refusal; failed steps/post exit 3.
 9. The lock has no owning piece per file, so `explain` re-renders; JSON has no extra fields, so
    `diff --json` carries no patch text.
+10. Subset gate (task 5 review): keyword literals (`true false none not and or in is`) and
+    `loop self range namespace` are never variables; bare `pieces`/`piece`/`template` are rejected;
+    dotted access is limited to `piece.id|name`, `template.name|version`; `else` only inside `if`.
+    These go to hull and the contract at the next `format` bump.
 
 ## 11. Testing
 
