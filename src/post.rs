@@ -1,10 +1,47 @@
 //! `[[post]]` commands (spec §8.1).
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
+
+use semver::Version;
 
 use crate::error::SpliceError;
 use crate::manifest::{PostCmd, When};
+use crate::migrate::Step;
+
+/// Run `run` through the shell with `repo` as working directory and `envs` added. Our stdout is
+/// for the report only: the child's stdout joins its stderr on ours, and both stream as they are
+/// produced. With `json` its stdin is closed.
+fn run_shell(
+    repo: &Path,
+    run: &str,
+    json: bool,
+    envs: &[(&str, String)],
+) -> std::io::Result<ExitStatus> {
+    let mut shell = if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.args(["/C", run]);
+        c
+    } else {
+        let mut c = Command::new("sh");
+        c.args(["-c", run]);
+        c
+    };
+    shell.current_dir(repo);
+    shell.envs(envs.iter().map(|(k, v)| (*k, v.as_str())));
+    shell.stdout(stderr_stdio()?).stderr(Stdio::inherit());
+    if json {
+        shell.stdin(Stdio::null());
+    }
+    shell.status()
+}
+
+fn how(status: ExitStatus) -> String {
+    match status.code() {
+        Some(c) => format!("exit {c}"),
+        None => "killed by a signal".to_string(),
+    }
+}
 
 /// Run every command whose `when` contains `when`, in order, skipping repeats of an identical
 /// `run` string. The shell is `sh -c` (`cmd /C` on Windows) with `repo` as working directory.
@@ -17,33 +54,51 @@ pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result
             continue;
         }
         seen.push(&cmd.run);
-        let mut shell = if cfg!(windows) {
-            let mut c = Command::new("cmd");
-            c.args(["/C", &cmd.run]);
-            c
-        } else {
-            let mut c = Command::new("sh");
-            c.args(["-c", &cmd.run]);
-            c
-        };
-        shell.current_dir(repo);
-        // Our stdout is for the report only: the child's stdout joins its stderr on ours, and
-        // both stream as they are produced.
-        shell
-            .stdout(stderr_stdio().map_err(|e| spawn_error(&cmd.run, &e))?)
-            .stderr(Stdio::inherit());
-        if json {
-            shell.stdin(Stdio::null());
-        }
-        let status = shell.status().map_err(|e| spawn_error(&cmd.run, &e))?;
+        let status = run_shell(repo, &cmd.run, json, &[]).map_err(|e| spawn_error(&cmd.run, &e))?;
         if !status.success() {
-            let how = match status.code() {
-                Some(c) => format!("exit {c}"),
-                None => "killed by a signal".to_string(),
-            };
             return Err(SpliceError::Env(format!(
-                "post command `{}` failed ({how})",
-                cmd.run
+                "post command `{}` failed ({})",
+                cmd.run,
+                how(status)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Run the migration steps in order (each paired with its migration's version), with
+/// `SPLICE_FROM_VERSION` and `SPLICE_TO_VERSION` set. Output goes to our stderr like `run_post`.
+/// A failure is an environment error (exit 3) naming the step, its version and the command that
+/// restores the previous state; the lock has not been written yet.
+pub fn run_steps(
+    repo: &Path,
+    steps: &[(&Version, &Step)],
+    from: &Version,
+    to: &Version,
+    json: bool,
+) -> Result<(), SpliceError> {
+    let envs = [
+        ("SPLICE_FROM_VERSION", from.to_string()),
+        ("SPLICE_TO_VERSION", to.to_string()),
+    ];
+    for (version, step) in steps {
+        if let Some(d) = &step.description {
+            eprintln!("migration {version}: {d}");
+        }
+        let restore = format!(
+            "the lock still records {from}; `git checkout -- . && git clean -fd` restores the previous state"
+        );
+        let status = run_shell(repo, &step.run, json, &envs).map_err(|e| {
+            SpliceError::Env(format!(
+                "cannot run migration step `{}` (migration {version}): {e}; {restore}",
+                step.run
+            ))
+        })?;
+        if !status.success() {
+            return Err(SpliceError::Env(format!(
+                "migration step `{}` (migration {version}) failed ({}); {restore}",
+                step.run,
+                how(status)
             )));
         }
     }

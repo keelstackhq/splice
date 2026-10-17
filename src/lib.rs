@@ -1,5 +1,6 @@
 //! splice: bootstrap a repo from versioned template pieces and keep it current.
 
+pub mod apply;
 pub mod classify;
 pub mod cli;
 pub mod error;
