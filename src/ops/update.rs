@@ -19,8 +19,6 @@ use crate::vars::{VarSource, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
-const RESTORE: &str = "`git checkout -- . && git clean -fd` restores the previous state";
-
 /// Everything an update would do, computed without writing (spec §8.3 steps 1–6, without the
 /// dirty-tree check). `plan` may hold drift and conflicts: callers decide what to do with them.
 pub struct Prepared {
@@ -60,6 +58,12 @@ pub fn prepare(
     };
     let from = lock.template.version.clone();
     let mut messages = Vec::new();
+    // `--data` may only set template vars the lock does not have yet (spec §8.3 step 4).
+    if let Some((k, v)) = data.keys().find_map(|k| lock.vars.get_key_value(k)) {
+        return usage(format!(
+            "`{k}` is locked at `{v}`; update keeps lock values (spec §8.3 step 4)"
+        ));
+    }
 
     // 2. Target: `--to` or the latest stable tag; never older than the lock.
     let src = TemplateSource::parse(&lock.template.source)?;
@@ -72,10 +76,15 @@ pub fn prepare(
     if let Some(v) = to.filter(|v| *v < &from) {
         return Err(downgrade(v));
     }
-    let target = match to {
+    let mut target = match to {
         Some(v) => fetcher.resolve_version(&src, v)?,
         None => fetcher.resolve(&src, None, false)?,
     };
+    // No newer stable tag (e.g. a prerelease lock): nothing to do, stay on the lock's commit.
+    let no_newer = to.is_none() && target.version < from;
+    if no_newer {
+        target = fetcher.checkout(&src, &lock.template.commit, from.clone())?;
+    }
     if target.version < from {
         return Err(downgrade(&target.version));
     }
@@ -114,21 +123,33 @@ pub fn prepare(
             )));
         }
     }
-    let known_keys = || {
-        template.manifest.vars.keys().chain(
-            lock.pieces
-                .iter()
-                .flat_map(|p| template.pieces[&p.id].vars.keys()),
-        )
-    };
-    if let Some(key) = data.keys().find(|k| !known_keys().any(|n| n == *k)) {
-        return usage(format!(
-            "--data `{key}`: no such variable in template {} or its pieces in this repo",
-            target.version
-        ));
+    for key in data.keys() {
+        if template.manifest.vars.contains_key(key) {
+            continue;
+        }
+        let piece_var = lock
+            .pieces
+            .iter()
+            .any(|p| template.pieces[&p.id].vars.contains_key(key));
+        return usage(if piece_var {
+            format!(
+                "--data `{key}` is a piece variable; update sets only new template variables \
+                 (piece variables come from `splice add` or `splice new --piece`)"
+            )
+        } else {
+            format!(
+                "--data `{key}`: no such variable in template {}",
+                target.version
+            )
+        });
     }
     let source = VarSource {
         data,
+        interactive: interactive(g),
+    };
+    let no_data = IndexMap::new();
+    let piece_source = VarSource {
+        data: &no_data,
         interactive: interactive(g),
     };
     // Lock values are kept; vars new in the target are resolved; dropped vars disappear.
@@ -139,11 +160,16 @@ pub fn prepare(
         instances.push(PieceInstance {
             id: inst.id.clone(),
             name: inst.name.clone(),
-            vars: resolve_vars(&piece.vars, &inst.vars, &source)?,
+            vars: resolve_vars(&piece.vars, &inst.vars, &piece_source)?,
         });
     }
 
     if up_to_date {
+        messages.push(if no_newer {
+            format!("up to date (no newer stable than {from}; use --to <tag> for a prerelease)")
+        } else {
+            format!("up to date at {from}")
+        });
         return Ok(Prepared {
             plan: Plan::default(),
             lock_new: lock,
@@ -245,7 +271,6 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     if prep.up_to_date {
         let mut report = Report::new("update");
         report.messages = prep.messages;
-        report.msg(format!("up to date at {}", prep.to));
         return Ok(report);
     }
 
@@ -300,7 +325,6 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         Ok(r) => Ok(prepend(r)),
         Err(SpliceError::Conflict(r)) => Err(SpliceError::Conflict(prepend(r))),
         Err(SpliceError::Drift(r)) => Err(SpliceError::Drift(prepend(r))),
-        Err(SpliceError::Io(e)) => Err(SpliceError::Env(format!("{e}; {RESTORE}"))),
         Err(e) => Err(e),
     }
 }

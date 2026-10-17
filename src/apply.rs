@@ -50,15 +50,20 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         fsio::check_target(ctx.repo, &c.path)?;
     }
 
+    // From here on a failure may leave files written: say how to restore (only then).
+    let mut wrote = false;
     for c in &plan.changes {
         if let (Some(bytes), true) = (&c.bytes, c.action != Action::Delete) {
-            fsio::write_file(ctx.repo, &c.path, bytes)?;
+            fsio::write_file(ctx.repo, &c.path, bytes)
+                .map_err(|e| after_write(e, wrote, &ctx.from))?;
+            wrote = true;
         }
     }
     for c in plan.changes.iter().filter(|c| c.action == Action::Delete) {
         match fsio::remove_file(ctx.repo, &c.path) {
             Err(SpliceError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {}
-            r => r?,
+            Err(e) => return Err(after_write(e, wrote, &ctx.from)),
+            Ok(()) => wrote = true,
         }
     }
     for c in &plan.changes {
@@ -69,6 +74,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
     }
 
     run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, ctx.json)?;
+    wrote |= !ctx.steps.is_empty();
     if plan.conflicts.is_empty() && !ctx.no_post {
         run_post(ctx.repo, &ctx.post, ctx.when, ctx.json).map_err(|e| match e {
             SpliceError::Env(m) => SpliceError::Env(format!(
@@ -77,8 +83,11 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
             )),
             other => other,
         })?;
+        wrote |= ctx.post.iter().any(|p| p.when.contains(&ctx.when));
     }
-    ctx.lock.write_atomic(ctx.repo)?;
+    ctx.lock
+        .write_atomic(ctx.repo)
+        .map_err(|e| after_write(e, wrote, &ctx.from))?;
 
     if plan.conflicts.is_empty() {
         Ok(report)
@@ -90,6 +99,17 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         ));
         Err(SpliceError::Conflict(report))
     }
+}
+
+/// An error after the write phase began: it says the lock still records `from`, and, when
+/// something was written, how to restore the previous state.
+fn after_write(e: SpliceError, wrote: bool, from: &Version) -> SpliceError {
+    let hint = if wrote {
+        "; `git checkout -- . && git clean -fd` restores the previous state"
+    } else {
+        ""
+    };
+    SpliceError::Env(format!("{e}; the lock still records {from}{hint}"))
 }
 
 #[cfg(all(test, unix))]
@@ -380,6 +400,8 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(e.exit_code(), 3);
+        // Nothing was written: no restore hint.
+        assert!(!e.to_string().contains("git checkout"), "{e}");
         assert!(!dir.path().join("a.txt").exists());
         assert_eq!(
             read_lock(dir.path()).template.version,
@@ -403,5 +425,47 @@ mod tests {
         .unwrap();
         assert_eq!(read(dir.path(), "old.txt"), "old\n");
         assert_eq!(report.messages, vec!["kept".to_string()]);
+    }
+
+    #[test]
+    fn failure_after_a_write_carries_the_restore_hint() {
+        let dir = repo_v1();
+        std::fs::create_dir(dir.path().join("adir")).unwrap();
+        let plan = plan_of(vec![
+            planned("new.txt", Action::Create, Some("new\n")),
+            planned("adir", Action::Delete, None),
+        ]);
+        let e = go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        let msg = e.to_string();
+        assert!(msg.contains("the lock still records 1.0.0"), "{msg}");
+        assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
+    }
+
+    #[test]
+    fn failed_lock_write_says_the_lock_still_records_from() {
+        let dir = repo_v1();
+        std::fs::remove_file(dir.path().join(LOCK_PATH)).unwrap();
+        std::fs::create_dir(dir.path().join(LOCK_PATH)).unwrap();
+        let plan = plan_of(vec![planned("new.txt", Action::Create, Some("new\n"))]);
+        let e = go(Run {
+            repo: dir.path(),
+            plan: &plan,
+            steps: &[],
+            post: vec![],
+            no_post: false,
+        })
+        .unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        let msg = e.to_string();
+        assert!(msg.contains("the lock still records 1.0.0"), "{msg}");
+        assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
     }
 }

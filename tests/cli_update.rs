@@ -256,6 +256,50 @@ fn new_var_from_data_and_unknown_data_refused() {
 }
 
 #[test]
+fn locked_template_var_in_data_refused() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let before = lock_bytes(&repo);
+    let out = update(&repo, &["--data", "project=other"])
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    assert!(
+        messages(&json(&out)).contains("`project` is locked at `demo`; update keeps lock values")
+    );
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(porcelain(&repo), "");
+}
+
+#[test]
+fn piece_var_in_data_refused() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app"]);
+    let before = lock_bytes(&repo);
+    update(&repo, &["--data", "name=other"]).code(2);
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(porcelain(&repo), "");
+}
+
+#[test]
+fn prerelease_lock_without_newer_stable_is_up_to_date() {
+    let tpl = template_repo_tagged(&[("v1", "v1.0.0"), ("v2", "v2.0.0-rc.1")]);
+    let repo = new_repo(&tpl, &["--ref", "v2.0.0-rc.1"]);
+    let before = lock_bytes(&repo);
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert!(
+        messages(&json(&out)).contains(
+            "up to date (no newer stable than 2.0.0-rc.1; use --to <tag> for a prerelease)"
+        )
+    );
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(porcelain(&repo), "");
+    // An explicit older --to is still a downgrade.
+    update(&repo, &["--to", "1.0.0"]).code(2);
+}
+
+#[test]
 fn removed_piece_is_template_error() {
     let tpl = template_repo_tagged(&[("v1", "v1.0.0"), ("v2-nolib", "v2.0.0")]);
     let repo = new_repo(

@@ -21,7 +21,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T3 · this commit · json/yaml/toml key-path merges and merge3 (fast paths, text fallback, markers on conflict); unit 101 passing
 - 2026-10-17 · 02/T4 · this commit · pure update planner (Disk snapshot, Plan, render_removes, class changes in spec §10.12); planner 15 passing
 - 2026-10-17 · 02/T5 · this commit · apply (files, removals, steps, post, atomic lock last) and post::run_steps; apply 10 passing
-- 2026-10-17 · 02/T6 · this commit · splice update (prepare + run: dirty/downgrade/min_splice/removed-piece refusals, drift refusal, moved tag); cli_update 13 passing
+- 2026-10-17 · 02/T6 · this commit · splice update (prepare + run: dirty/downgrade/min_splice/removed-piece refusals, drift refusal, moved tag, locked --data refused, no newer stable = up to date); cli_update 16 passing
 
 ## Blocked
 

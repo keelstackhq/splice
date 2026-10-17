@@ -53,7 +53,9 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
-names no variable of the template or the selected pieces is a usage error (exit 2). `--piece ID:NAME`
+names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
+`--data` sets only template vars new in the target: a var already in the lock or a piece var is
+exit 2 (§8.3 step 4). `--piece ID:NAME`
 names a `multiple` instance.
 
 Human output is terse: one line per change (`create  apps/web/package.json  shared`), then one
@@ -210,10 +212,15 @@ file that already equals the new render is skipped.
    `--allow-dirty`; refuse outside a git work tree unless `--allow-dirty`. The clean tree is the
    recovery story: every failure can be undone with `git checkout -- . && git clean -fd`, and
    every error message after files were written says so.
-2. Target = `--to` or latest stable tag. Target < lock version → exit 2. Target = lock version →
-   nothing to do (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
+2. Target = `--to` or latest stable tag. `--to` < lock version → exit 2. No `--to` and no stable
+   tag newer than the lock (e.g. a prerelease lock) → exit 0, "up to date (no newer stable than
+   X; use --to <tag> for a prerelease)", nothing written. Target = lock version → nothing to do
+   (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
 3. Fetch both trees. Load the target manifest; check `format` and `min_splice` (exit 3).
 4. Vars: keep lock values; prompt for vars new in the target; drop vars it no longer declares.
+   `--data K=V` may set only template vars new in the target; `K` already in the lock → exit 2
+   ("`K` is locked at `V`; update keeps lock values"), a piece var → exit 2 (piece vars come
+   from `add` / `new --piece`), both before any write.
    A piece instance whose id no longer exists, or whose `requires` fails → exit 3 before writing.
 5. **base** = render(lock commit, lock vars, lock pieces). **theirs** = render(target, new vars,
    same pieces). Both into memory (`RenderedTree`, a `BTreeMap<String, RenderedFile>`).
@@ -223,7 +230,9 @@ file that already equals the new render is skipped.
    semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
    `when` ∋ `update`, then write the lock atomically (§8.6) as the last step (as in §8.1 and §8.6).
    A failing step or post command exits 3 **before** the lock is written: the files are updated
-   but the lock still records the old state, and re-running `update` is safe.
+   but the lock still records the old state, and re-running `update` is safe. The restore hint
+   appears only once something was written (a refused target before the first write has none);
+   a failed lock write says the lock still records the old version.
 8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
 
 ### 8.4 Planner rules
@@ -344,6 +353,11 @@ into the contract at its next `format` bump.
     rendered, or in `[[remove]]`, is deleted when its hash matches the lock or it equals the base
     render; a `[[remove]]` path not in the lock is kept with a message. These go to hull and the
     contract at the next `format` bump.
+13. `update` inputs (plan 02 task 6 review): `--data` on `update` sets only template vars new in
+    the target; a locked var or a piece var is exit 2, so `--data` never silently loses to the
+    lock. Without `--to`, a latest stable tag older than the lock (prerelease lock) is "up to
+    date" (exit 0), not a downgrade; an explicit older `--to` stays exit 2. Errors carry the
+    `git checkout -- . && git clean -fd` hint only after a write.
 
 Gap (milestone 2): `add` on the full planner gets the same dirty-tree refusal (exit 2) and
 `--allow-dirty` as `update` (§8.3 step 1); the milestone 1 reduced planner has neither.
