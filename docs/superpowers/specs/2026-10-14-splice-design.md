@@ -220,9 +220,10 @@ file that already equals the new render is skipped.
 6. **Plan** (pure, in memory, §8.4). If any owned file drifted and `--force` is absent: write
    nothing, exit 1, list the drifted files.
 7. **Apply:** write files, delete removals, run migration `[[step]]`s for versions A < v ≤ B in
-   semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), write the lock atomically
-   (§8.6), then run `[[post]]` with `when` ∋ `update`. A failing step exits 3 **before** the lock
-   is written; a failing post command exits 3 **after** it (the files and lock agree).
+   semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
+   `when` ∋ `update`, then write the lock atomically (§8.6) as the last step (as in §8.1 and §8.6).
+   A failing step or post command exits 3 **before** the lock is written: the files are updated
+   but the lock still records the old state, and re-running `update` is safe.
 8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
 
 ### 8.4 Planner rules
