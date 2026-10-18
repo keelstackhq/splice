@@ -515,3 +515,61 @@ fn add_refuses_a_piece_with_sections() {
     assert_eq!(lock_bytes(&repo), lock);
     assert_eq!(tree_snapshot(repo.path()), tree);
 }
+
+#[test]
+fn main_add_claim_conflict_with_channel() {
+    // B4: a main piece rendering a path that channel rig owns → exit 2 naming the channel.
+    let tpl = common::inline_template(&[
+        (
+            "base",
+            "id = \"base\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"base.txt\"]\n",
+            &[("base.txt", "b\n")],
+        ),
+        (
+            "agents",
+            "id = \"agents\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\".claude/agents/reviewer.md\"]\n",
+            &[(".claude/agents/reviewer.md", "# mine\n")],
+        ),
+    ]);
+    git(
+        tpl.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    common::commit_tag(tpl.path(), "v1", "v1.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            repo.path().to_str().unwrap(),
+            "--yes",
+            "--json",
+        ])
+        .assert()
+        .success();
+    commit_all(repo.path());
+    let ch = common::channel_repo(&["v1"]);
+    let src = format!("{}//channel", ch.path().display());
+    common::chan_commit(repo.path(), &["channel", "add", &src, "--piece", "claude"]);
+    let before = lock_bytes(&repo);
+    let v = json(add(&repo, &["agents"]).code(2).get_output().stdout.clone());
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("path .claude/agents/reviewer.md is owned by channel rig"),
+        "{v}"
+    );
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(
+        read(&repo, ".claude/agents/reviewer.md"),
+        "# reviewer\n\nReview read-only.\n"
+    );
+    assert_eq!(
+        common::git_stdout(
+            repo.path(),
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        ""
+    );
+}

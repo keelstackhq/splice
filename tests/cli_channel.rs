@@ -448,3 +448,243 @@ fn failed_post_writes_no_channel_lock() {
     assert!(repo.path().join("a.txt").is_file());
     assert!(!repo.path().join(".splice/channels/t.toml").exists());
 }
+
+fn changes(v: &serde_json::Value) -> Vec<(String, String)> {
+    v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["path"].as_str().unwrap().to_string(),
+                c["action"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn second_harness_instance() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let s = src(&ch);
+    let r = repo.path();
+    let main_lock = std::fs::read(r.join(".splice/lock.toml")).unwrap();
+    chan_commit(r, &full_args(&s));
+    let v = stdout_json(
+        chan(
+            r,
+            &[
+                "add",
+                "skills",
+                "--channel",
+                "rig",
+                "--name",
+                "agents",
+                "--data",
+                "dir=agents",
+            ],
+        )
+        .success(),
+    );
+    assert_eq!(v["command"], "add");
+    for f in ["caveman", "verify"] {
+        assert_eq!(
+            read(r, &format!(".agents/skills/{f}/SKILL.md")),
+            read(r, &format!(".claude/skills/{f}/SKILL.md"))
+        );
+    }
+    let cl = rig(r, "rig");
+    let skills: Vec<_> = cl
+        .lock
+        .pieces
+        .iter()
+        .filter(|p| p.id == "skills")
+        .map(|p| (p.name.as_str(), p.vars["dir"].as_str()))
+        .collect();
+    assert_eq!(skills, [("claude", "claude"), ("agents", "agents")]);
+    assert!(cl.lock.files.contains_key(".agents/skills/verify/SKILL.md"));
+    assert_eq!(cl.sections.len(), 2);
+    assert_eq!(
+        std::fs::read(r.join(".splice/lock.toml")).unwrap(),
+        main_lock
+    );
+}
+
+#[test]
+fn add_channel_unknown() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    chan_commit(repo.path(), &["channel", "add", &src(&ch)]);
+    let v = stdout_json(chan(repo.path(), &["add", "claude", "--channel", "zz"]).code(2));
+    let msg = v["messages"].to_string();
+    assert!(
+        msg.contains("unknown channel `zz`") && msg.contains("rig"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn add_channel_respects_filter() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(
+        r,
+        &[
+            "channel",
+            "add",
+            &src(&ch),
+            "--piece",
+            "skills:claude",
+            "--data",
+            "dir=claude",
+            "--exclude",
+            ".agents/skills/caveman/**",
+        ],
+    );
+    chan(
+        r,
+        &[
+            "add",
+            "skills",
+            "--channel",
+            "rig",
+            "--name",
+            "agents",
+            "--data",
+            "dir=agents",
+        ],
+    )
+    .success();
+    assert!(!r.join(".agents/skills/caveman").exists());
+    assert!(r.join(".agents/skills/verify/SKILL.md").is_file());
+    assert!(r.join(".claude/skills/caveman/SKILL.md").is_file());
+    let cl = rig(r, "rig");
+    assert!(
+        !cl.lock
+            .files
+            .contains_key(".agents/skills/caveman/SKILL.md")
+    );
+    assert_eq!(cl.meta.exclude, [".agents/skills/caveman/**"]);
+}
+
+#[test]
+fn add_channel_claim_conflict() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    let before = read(r, ".splice/channels/rig.toml");
+    let v = stdout_json(chan(r, &["add", "collide", "--channel", "rig"]).code(2));
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("path .editorconfig is owned by main"),
+        "{v}"
+    );
+    assert_eq!(read(r, ".splice/channels/rig.toml"), before);
+    assert_eq!(status(r), "");
+}
+
+#[test]
+fn add_channel_updates_section_with_new_piece() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    assert!(!read(r, "AGENTS.md").contains("Subagents"));
+    let v = stdout_json(chan(r, &["add", "claude", "--channel", "rig"]).success());
+    let c = changes(&v);
+    assert!(
+        c.contains(&("AGENTS.md#rig".into(), "update".into())),
+        "{c:?}"
+    );
+    assert!(
+        c.contains(&("CLAUDE.md#rig".into(), "create".into())),
+        "{c:?}"
+    );
+    assert!(read(r, "AGENTS.md").contains("- Subagents live in `.claude/agents`."));
+    assert!(r.join(".claude/agents/explorer.md").is_file());
+    assert_eq!(rig(r, "rig").sections.len(), 2);
+}
+
+#[test]
+fn add_channel_drift_writes_nothing() {
+    // G11: `add --channel` follows `add`: drift or conflict → nothing written, exit 1.
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    std::fs::create_dir_all(r.join(".claude/agents")).unwrap();
+    std::fs::write(r.join(".claude/agents/explorer.md"), "# mine\n").unwrap();
+    commit_all(r);
+    let before = read(r, ".splice/channels/rig.toml");
+    let v = stdout_json(chan(r, &["add", "claude", "--channel", "rig"]).code(1));
+    assert_eq!(v["ok"], false);
+    assert_eq!(read(r, ".splice/channels/rig.toml"), before);
+    assert_eq!(status(r), "");
+    assert!(!r.join("CLAUDE.md").exists());
+}
+
+#[test]
+fn seed_at_main_owned_path_is_dropped() {
+    // G10: a channel seed at a path the main lock owns is never written nor locked.
+    let t = inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nseed = [\".editorconfig\"]\n",
+        &[(".editorconfig", "root = false\n")],
+    );
+    let (_tpl, repo) = main_repo();
+    let r = repo.path();
+    let before = std::fs::read(r.join(".editorconfig")).unwrap();
+    let v = stdout_json(chan(r, &["channel", "add", t.path().to_str().unwrap()]).success());
+    assert!(
+        !changes(&v).iter().any(|(p, _)| p == ".editorconfig"),
+        "{v}"
+    );
+    assert_eq!(std::fs::read(r.join(".editorconfig")).unwrap(), before);
+    assert!(!rig(r, "t").lock.files.contains_key(".editorconfig"));
+}
+
+#[test]
+fn claim_conflict_with_existing_channel() {
+    let t = inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"docs/agents/rules.md\"]\n",
+        &[("docs/agents/rules.md", "# other\n")],
+    );
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    let v = stdout_json(chan(r, &["channel", "add", t.path().to_str().unwrap()]).code(2));
+    assert!(
+        v["messages"].to_string().contains(
+            "path docs/agents/rules.md is owned by channel rig; exclude it with --exclude docs/agents/rules.md"
+        ),
+        "{v}"
+    );
+    assert!(!r.join(".splice/channels/t.toml").exists());
+    assert_eq!(status(r), "");
+}
+
+#[test]
+fn add_channel_names_the_other_holder() {
+    // rig sorts before t, yet t already holds the path: the message names channel t.
+    let t = inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\".claude/agents/explorer.md\"]\n",
+        &[(".claude/agents/explorer.md", "# t\n")],
+    );
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    let v = stdout_json(chan(r, &["add", "claude", "--channel", "rig"]).code(2));
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("path .claude/agents/explorer.md is owned by channel t"),
+        "{v}"
+    );
+    assert_eq!(status(r), "");
+}

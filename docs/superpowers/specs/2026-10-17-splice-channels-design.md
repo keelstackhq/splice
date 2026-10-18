@@ -167,7 +167,8 @@ Classes are exactly contract §5. Recommended classes for agent files in a chann
 **One owner per path.** Every operation loads every lock. A path rendered as owned or shared by a
 source while another source's lock lists it in `[files]` is a **claim conflict**: nothing is
 written, exit 2, message `path X is owned by <main|channel NAME>; exclude it with
---exclude X or remove it from one source`. All sources are planned first (in memory) and checked
+--exclude X or remove it from one source`, naming the source that already holds the path (never the
+one being changed). All sources are planned first (in memory) and checked
 together, then applied. Seed vs seed: the first writer wins (seeds are written only if absent);
 no error. A section host must not be in any lock's `[files]` (exit 2, same message). Main
 `update` and `add` run the same check when `.splice/channels/` has locks (no channels: M2
