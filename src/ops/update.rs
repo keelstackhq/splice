@@ -1,5 +1,6 @@
 //! `splice update` (spec §8.3): move the repo to a newer template version.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use indexmap::IndexMap;
@@ -8,15 +9,20 @@ use semver::Version;
 use crate::apply::{ApplyCtx, LockOut, apply};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
-use crate::fetch::Fetcher;
+use crate::fetch::{Fetcher, ResolvedTemplate};
+use crate::filter::Filter;
 use crate::git::Git;
-use crate::lock::{LOCK_PATH, Lock};
+use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
 use crate::migrate::select;
-use crate::output::Report;
+use crate::output::{Class, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
-use crate::render::{PieceInstance, RenderInput, render_tree};
+use crate::render::{
+    PieceInstance, RenderInput, RenderedSections, RenderedTree, render_sections, render_tree,
+};
+use crate::sections::{SectionChange, SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
+use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -37,6 +43,18 @@ pub struct Prepared {
     pub up_to_date: bool,
     /// Report messages (template warnings, moved tag).
     pub messages: Vec<String>,
+    /// A channel update's lock, section plan and planned claim; `None` for the main template.
+    pub channel: Option<ChannelPrepared>,
+}
+
+/// The channel part of [`Prepared`].
+pub struct ChannelPrepared {
+    /// The channel lock to write after applying the plan (`lock_new` of [`Prepared`] is its
+    /// `lock`).
+    pub lock_new: ChannelLock,
+    pub sections: SectionPlan,
+    /// What the channel owns after the update (checked against every other source).
+    pub claim: Claim,
 }
 
 fn usage<T>(msg: String) -> Result<T> {
@@ -134,21 +152,58 @@ pub(crate) fn instances_for(
     Ok((template_vars, instances))
 }
 
-/// Spec §8.3 steps 1–6 except the dirty check: read the lock, pick the target, fetch both trees,
-/// check `min_splice`, resolve vars, render base and theirs, and plan.
-pub fn prepare(
+/// The version an update moves to.
+pub enum Target<'a> {
+    /// The latest stable tag (none newer: up to date).
+    Latest,
+    /// `--to`.
+    Version(&'a Version),
+    /// A tracked branch head (Task 13).
+    Branch(&'a str),
+}
+
+/// What a lock's source renders: base (lock state), theirs (target) and theirs' sections. The
+/// section planner compares with the lock's sha, so there are no base sections (A9).
+struct Rendered {
+    base: RenderedTree,
+    theirs: RenderedTree,
+    theirs_sections: RenderedSections,
+    /// The rendered `[[remove]]` paths of the selected migrations.
+    removes: Vec<String>,
+}
+
+/// Steps 2–5 for one lock: the target, its manifest, the vars and instances and, unless up to
+/// date, both renders.
+struct Resolved {
+    from: Version,
+    target: ResolvedTemplate,
+    template: Template,
+    vars: IndexMap<String, String>,
+    instances: Vec<PieceInstance>,
+    /// No `--to` and no newer stable tag.
+    no_newer: bool,
+    messages: Vec<String>,
+    /// `None` when up to date and `render_current` is false.
+    rendered: Option<Rendered>,
+}
+
+/// Which source a lock belongs to: the main template refuses `[sections]`; a channel may need
+/// the renders even when its version is current (a filter change).
+#[derive(Clone, Copy)]
+enum Kind {
+    Main,
+    Channel { render_current: bool },
+}
+
+/// Spec §8.3 steps 2–5 on any lock: pick the target, fetch both trees, check `min_splice`,
+/// resolve vars and render base and theirs.
+fn prepare_lock(
     g: &GlobalArgs,
-    to: Option<&Version>,
+    lock: &Lock,
+    target: Target,
     data: &IndexMap<String, String>,
-    force: bool,
-) -> Result<Prepared> {
-    let repo = g.dir.as_path();
-    let Some(lock) = Lock::read(repo)? else {
-        return usage(format!(
-            "{} has no {LOCK_PATH}; run `splice new` first",
-            repo.display()
-        ));
-    };
+    kind: Kind,
+) -> Result<Resolved> {
     let from = lock.template.version.clone();
     let mut messages = Vec::new();
     // `--data` may only set template vars the lock does not have yet (spec §8.3 step 4).
@@ -157,6 +212,15 @@ pub fn prepare(
             "`{k}` is locked at `{v}`; update keeps lock values (spec §8.3 step 4)"
         ));
     }
+    let to = match target {
+        Target::Latest => None,
+        Target::Version(v) => Some(v),
+        Target::Branch(_) => {
+            return Err(super::channel::not_implemented(
+                "update --channel on a tracked channel",
+            ));
+        }
+    };
 
     // 2. Target: `--to` or the latest stable tag; never older than the lock.
     let src = TemplateSource::parse(&lock.template.source)?;
@@ -202,13 +266,15 @@ pub fn prepare(
     let running = Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version");
     template.check_min_splice(&running)?;
     messages.extend(template.warnings.iter().cloned());
-    template.ensure_no_sections(
-        &lock
-            .pieces
-            .iter()
-            .map(|p| p.id.as_str())
-            .collect::<Vec<_>>(),
-    )?;
+    if let Kind::Main = kind {
+        template.ensure_no_sections(
+            &lock
+                .pieces
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect::<Vec<_>>(),
+        )?;
+    }
 
     // 4. Pieces and vars: every instance's piece must still exist and meet its `requires`.
     for inst in &lock.pieces {
@@ -271,48 +337,115 @@ pub fn prepare(
         });
     }
 
-    if up_to_date {
-        messages.push(if no_newer {
-            format!("up to date (no newer stable than {from}; use --to <tag> for a prerelease)")
-        } else {
-            format!("up to date at {from}")
-        });
-        return Ok(Prepared {
-            plan: Plan::default(),
-            lock_new: lock,
-            from: from.clone(),
-            to: from,
-            template,
-            instances,
-            up_to_date,
-            messages,
-        });
-    }
-
-    // 5. base = the lock state, theirs = the target with the new vars, same pieces.
-    let old = fetcher.checkout(&src, &lock.template.commit, from.clone())?;
-    let old_template = Template::load(&old.root)?;
-    let base = render_tree(
-        &old_template,
-        &RenderInput {
-            template_vars: lock.vars.clone(),
-            instances: lock.instances(),
-            version: from.clone(),
-        },
-    )?;
-    let theirs = render_tree(
-        &template,
-        &RenderInput {
+    let render_current = matches!(
+        kind,
+        Kind::Channel {
+            render_current: true
+        }
+    );
+    let rendered = if up_to_date && !render_current {
+        None
+    } else {
+        // 5. base = the lock state, theirs = the target with the new vars, same pieces.
+        let theirs_input = RenderInput {
             template_vars: vars.clone(),
             instances: instances.clone(),
             version: target.version.clone(),
-        },
-    )?;
+        };
+        let base = if up_to_date {
+            None
+        } else {
+            let old = fetcher.checkout(&src, &lock.template.commit, from.clone())?;
+            let old_template = Template::load(&old.root)?;
+            Some(render_tree(
+                &old_template,
+                &RenderInput {
+                    template_vars: lock.vars.clone(),
+                    instances: lock.instances(),
+                    version: from.clone(),
+                },
+            )?)
+        };
+        let theirs = render_tree(&template, &theirs_input)?;
+        let theirs_sections = match kind {
+            Kind::Main => RenderedSections::new(),
+            Kind::Channel { .. } => render_sections(&template, &theirs_input)?,
+        };
+        // Up to date: same commit, same vars, so the lock state renders exactly as theirs.
+        let base = base.unwrap_or_else(|| theirs.clone());
+        let migrations = select(&template.migrations, &from, &target.version);
+        let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
+        let removes = render_removes(&template, &target.version, &removes, &instances, &vars)?;
+        Some(Rendered {
+            base,
+            theirs,
+            theirs_sections,
+            removes,
+        })
+    };
+    Ok(Resolved {
+        from,
+        target,
+        template,
+        vars,
+        instances,
+        no_newer,
+        messages,
+        rendered,
+    })
+}
+
+/// The "up to date" message of step 2.
+fn up_to_date_message(r: &Resolved) -> String {
+    if r.no_newer {
+        format!(
+            "up to date (no newer stable than {}; use --to <tag> for a prerelease)",
+            r.from
+        )
+    } else {
+        format!("up to date at {}", r.from)
+    }
+}
+
+/// Spec §8.3 steps 1–6 except the dirty check: read the lock, pick the target, fetch both trees,
+/// check `min_splice`, resolve vars, render base and theirs, and plan.
+pub fn prepare(
+    g: &GlobalArgs,
+    to: Option<&Version>,
+    data: &IndexMap<String, String>,
+    force: bool,
+) -> Result<Prepared> {
+    let repo = g.dir.as_path();
+    let Some(lock) = Lock::read(repo)? else {
+        return usage(format!(
+            "{} has no {LOCK_PATH}; run `splice new` first",
+            repo.display()
+        ));
+    };
+    let target = to.map_or(Target::Latest, Target::Version);
+    let mut r = prepare_lock(g, &lock, target, data, Kind::Main)?;
+    let Some(rendered) = r.rendered.take() else {
+        r.messages.push(up_to_date_message(&r));
+        return Ok(Prepared {
+            plan: Plan::default(),
+            lock_new: lock,
+            from: r.from.clone(),
+            to: r.from,
+            template: r.template,
+            instances: r.instances,
+            up_to_date: true,
+            messages: r.messages,
+            channel: None,
+        });
+    };
+    let Rendered {
+        base,
+        theirs,
+        removes,
+        ..
+    } = rendered;
 
     // 6. Plan (pure) over a disk snapshot of every path involved.
-    let migrations = select(&template.migrations, &from, &target.version);
-    let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
-    let removes = render_removes(&template, &target.version, &removes, &instances, &vars)?;
     let disk = Disk::snapshot(
         repo,
         base.keys()
@@ -328,16 +461,158 @@ pub fn prepare(
         removes,
         force,
     });
-    let lock_new = Lock::from_tree(&target, &vars, &instances, &theirs);
+    let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
     Ok(Prepared {
         plan,
         lock_new,
-        from,
-        to: target.version,
-        template,
-        instances,
-        up_to_date,
-        messages,
+        from: r.from,
+        to: r.target.version,
+        template: r.template,
+        instances: r.instances,
+        up_to_date: false,
+        messages: r.messages,
+        channel: None,
+    })
+}
+
+/// [`prepare`] for channel `cl`: its own lock, vars and pieces (never the main template's),
+/// base filtered with the stored filter and theirs with `filter_new` (or the stored one), the
+/// claim check against `others` (every current source; this channel's claim is replaced and
+/// checked last), the G10 seed drop, then the file and section plans. A new filter is stored in
+/// the new lock's `[channel]` and replaces both lists (G16).
+pub fn prepare_channel(
+    g: &GlobalArgs,
+    cl: &ChannelLock,
+    others: &[Claim],
+    to: Option<&Version>,
+    filter_new: Option<(&[String], &[String])>,
+    force: bool,
+) -> Result<Prepared> {
+    let repo = g.dir.as_path();
+    let name = cl.meta.name.as_str();
+    let lock_path = cl.path();
+    let stored = Filter::from_meta(&cl.meta, &lock_path)?;
+    let filter = match filter_new {
+        Some((only, exclude)) => Filter::new(only, exclude)?,
+        None => stored.clone(),
+    };
+    let target = match (&cl.meta.track, to) {
+        (Some(branch), _) => Target::Branch(branch),
+        (None, Some(v)) => Target::Version(v),
+        (None, None) => Target::Latest,
+    };
+    let kind = Kind::Channel {
+        render_current: filter_new.is_some(),
+    };
+    let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind)?;
+    let me = SourceId::Channel(name.to_string());
+    let Some(rendered) = r.rendered.take() else {
+        r.messages.push(up_to_date_message(&r));
+        return Ok(Prepared {
+            plan: Plan::default(),
+            lock_new: cl.lock.clone(),
+            from: r.from.clone(),
+            to: r.from,
+            template: r.template,
+            instances: r.instances,
+            up_to_date: true,
+            messages: r.messages,
+            channel: Some(ChannelPrepared {
+                lock_new: cl.clone(),
+                sections: SectionPlan::default(),
+                claim: Claim::from_lock(me, &cl.lock, &cl.sections),
+            }),
+        });
+    };
+    let Rendered {
+        base,
+        theirs,
+        theirs_sections,
+        removes,
+    } = rendered;
+
+    // Filters: base as locked (stored filter), theirs with the new one; dropped paths are
+    // neither written nor locked, newly excluded locked paths are planned as gone.
+    if filter_new.is_some() {
+        let all: Vec<&str> = theirs
+            .keys()
+            .chain(theirs_sections.keys())
+            .map(String::as_str)
+            .collect();
+        r.messages.extend(filter.unused(&all));
+    }
+    let base = stored.apply_tree(base);
+    let mut theirs = filter.apply_tree(theirs);
+    let removes: Vec<String> = removes.into_iter().filter(|p| stored.keeps(p)).collect();
+    let hosts: Vec<String> = theirs_sections
+        .keys()
+        .filter(|h| filter.keeps(h))
+        .cloned()
+        .collect();
+
+    // One owner per path across every source; this channel's new claim goes last.
+    let claim = Claim::from_plan(me.clone(), &theirs, hosts.iter().cloned());
+    let claims = claims_last(others.to_vec(), claim.clone());
+    check_claims(&claims)?;
+    // G10: a seed path another source locks is dropped from this plan.
+    theirs.retain(|path, f| {
+        f.class != Class::Seed
+            || !claims
+                .iter()
+                .any(|c| c.source != me && c.files.contains(path))
+    });
+
+    let disk = Disk::snapshot(
+        repo,
+        base.keys()
+            .chain(theirs.keys())
+            .chain(removes.iter())
+            .chain(hosts.iter())
+            .chain(cl.sections.keys())
+            .map(String::as_str),
+    )?;
+    let plan = plan(&PlanInput {
+        base: &base,
+        theirs: &theirs,
+        disk: &disk,
+        lock: &cl.lock,
+        removes,
+        force,
+    });
+    let sections = plan_sections(&SectionInput {
+        channel: name,
+        theirs: &theirs_sections,
+        disk: &disk,
+        locked: &cl.sections,
+        filter: &filter,
+        removing: false,
+        force,
+    });
+    let mut meta = cl.meta.clone();
+    if let Some((only, exclude)) = filter_new {
+        meta.only = only.to_vec();
+        meta.exclude = exclude.to_vec();
+    }
+    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
+    let lock_new = ChannelLock {
+        meta,
+        lock: lock.clone(),
+        sections: sections.locked.clone(),
+    };
+    Ok(Prepared {
+        plan,
+        lock_new: lock,
+        from: r.from,
+        to: r.target.version,
+        template: r.template,
+        instances: r.instances,
+        up_to_date: false,
+        messages: r.messages,
+        channel: Some(ChannelPrepared {
+            lock_new,
+            sections,
+            claim,
+        }),
     })
 }
 
@@ -369,8 +644,8 @@ pub fn parse_to(to: Option<&str>) -> Result<Option<Version>> {
 }
 
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
-    if a.channel.is_some() || a.all {
-        return Err(super::channel::not_implemented("update --channel/--all"));
+    if a.all {
+        return Err(super::channel::not_implemented("update --all"));
     }
     let repo = g.dir.as_path();
 
@@ -381,12 +656,34 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
 
     let to = parse_to(a.to.as_deref())?;
     let data = super::new::parse_data(&a.data)?;
+    let sources = Sources::load(repo)?;
+    if let Some(name) = &a.channel {
+        if !data.is_empty() {
+            return usage(
+                "--data does not apply to `update --channel`: a channel's new variables take \
+                 their defaults (or prompts)"
+                    .into(),
+            );
+        }
+        return run_channel(g, a, &sources, name, to.as_ref());
+    }
+    if sources.main.is_none() && !sources.channels.is_empty() {
+        return usage(format!("no {LOCK_PATH}; use --channel NAME or --all"));
+    }
     let prep = prepare(g, to.as_ref(), &data, a.force)?;
 
     if prep.up_to_date {
         let mut report = Report::new("update");
         report.messages = prep.messages;
         return Ok(report);
+    }
+
+    // B4: one owner per path across the main template and every channel (no channels: M2).
+    if !sources.channels.is_empty() {
+        check_claims(&claims_last(
+            sources.claims(),
+            Claim::from_lock(SourceId::Main, &prep.lock_new, &BTreeMap::new()),
+        ))?;
     }
 
     // 6. Owned drift without --force: write nothing, list the files, exit 1.
@@ -403,7 +700,61 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         return Err(SpliceError::Drift(report));
     }
 
-    // 7. Apply: files, removals, migration steps, post, then the lock last.
+    let lock = LockOut::Main(prep.lock_new.clone());
+    apply_prepared(g, a, &prep, lock, &[])
+}
+
+/// `update --channel NAME`: spec §8.3 steps 2–8 on the channel lock, plus the claim check and
+/// the section planner; only this channel's lock is written (last).
+fn run_channel(
+    g: &GlobalArgs,
+    a: &UpdateArgs,
+    sources: &Sources,
+    name: &str,
+    to: Option<&Version>,
+) -> Result<Report> {
+    let cl = sources.channel(name)?;
+    let filter_new = (!a.only.is_empty() || !a.exclude.is_empty())
+        .then_some((a.only.as_slice(), a.exclude.as_slice()));
+    let prep = prepare_channel(g, cl, &sources.claims(), to, filter_new, a.force)?;
+    let ch = prep.channel.as_ref().expect("a channel update");
+    if prep.up_to_date {
+        let mut report = Report::new("update");
+        report.messages = prep.messages;
+        return Ok(report);
+    }
+
+    // Owned drift, section drift or broken markers: write nothing, exit 1.
+    let splan = &ch.sections;
+    if !prep.plan.drift.is_empty() || !splan.drift.is_empty() || !splan.broken.is_empty() {
+        let mut report = Report::new("update");
+        report.ok = false;
+        report.messages = prep.messages;
+        for path in prep.plan.drift.iter().chain(&splan.drift) {
+            report.msg(format!(
+                "`{path}` is owned by channel {name} but was edited locally"
+            ));
+        }
+        report.messages.extend(splan.broken.iter().cloned());
+        report.msg(
+            "nothing was written; revert the files above or pass --force to replace them \
+             (broken markers are fixed by hand)",
+        );
+        return Err(SpliceError::Drift(report));
+    }
+
+    let lock = LockOut::Channel(ch.lock_new.clone());
+    apply_prepared(g, a, &prep, lock, &splan.changes)
+}
+
+/// Step 7: files, sections, removals, migration steps, post, then `lock` last.
+fn apply_prepared(
+    g: &GlobalArgs,
+    a: &UpdateArgs,
+    prep: &Prepared,
+    lock: LockOut,
+    sections: &[SectionChange],
+) -> Result<Report> {
     let migrations = select(&prep.template.migrations, &prep.from, &prep.to);
     let steps = migrations
         .iter()
@@ -419,18 +770,18 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     }
     let messages = prep.messages.clone();
     let result = apply(ApplyCtx {
-        repo,
+        repo: g.dir.as_path(),
         plan: &prep.plan,
         steps,
         from: prep.from.clone(),
         to: prep.to.clone(),
-        lock: LockOut::Main(prep.lock_new.clone()),
+        lock,
         post,
         when: When::Update,
         no_post: a.no_post,
         json: g.json,
         command: "update",
-        sections: &[],
+        sections,
     });
     let prepend = |mut r: Report| {
         let mut all = messages.clone();

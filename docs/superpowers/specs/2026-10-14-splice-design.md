@@ -57,7 +57,8 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
 `--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
 working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
-until channels plan tasks 10 and 17 land.
+until their channels plan tasks land (`update --all`, `update --channel` on a tracked channel,
+`check`/`diff --channel`, `channel remove`).
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
@@ -250,6 +251,18 @@ the same `add` is safe because a file that already equals the new render is skip
    appears only once something was written (a refused target before the first write has none);
    a failed lock write says the lock still records the old version.
 8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
+
+Channels (channels spec §5, §8): with channel locks in `.splice/channels/`, plain `update` also
+runs the one-owner claim check, with the main target's owned/shared files checked last against
+every channel's lock: a path a channel already holds exits 2 (`path X is owned by channel NAME;
+…`) before anything is written. Without channel locks it behaves exactly as above. In a repo
+with channel locks but no `.splice/lock.toml`, plain `update` exits 2 with `no .splice/lock.toml;
+use --channel NAME or --all`. `update --channel NAME` runs steps 1–8 on that channel's lock (its
+own vars and pieces only; `--to` allowed, `--data` exit 2), with base filtered by the stored
+`--only`/`--exclude` and theirs by the new ones (either flag replaces both stored lists; a filter
+change alone also updates at the same version), the claim check, the section planner (section
+drift and broken markers refuse like owned drift, broken markers even with `--force`), and only
+that channel's lock written last; `.splice/lock.toml` is never touched.
 
 ### 8.4 Planner rules
 

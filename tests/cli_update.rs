@@ -386,3 +386,23 @@ fn update_refuses_a_target_that_adds_sections() {
     assert_eq!(lock_bytes(&repo), lock);
     assert_eq!(tree_snapshot(repo.path()), tree);
 }
+
+#[test]
+fn main_lock_identical_with_channels_present() {
+    // Guard: a channel lock next to the main lock does not change what `update` writes there.
+    let tpl = template_repo(&["v1", "v2"]);
+    let plain = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let with = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lock/channel-rig.toml");
+    let chan_path = with.path().join(".splice/channels/rig.toml");
+    std::fs::create_dir_all(chan_path.parent().unwrap()).unwrap();
+    std::fs::copy(&fixture, &chan_path).unwrap();
+    commit_all(with.path());
+    let chan_before = std::fs::read(&chan_path).unwrap();
+    update(&plain, &[]).success();
+    update(&with, &[]).success();
+    assert_eq!(lock(&plain).template.version.to_string(), "2.0.0");
+    assert_eq!(lock_bytes(&plain), lock_bytes(&with));
+    assert_eq!(std::fs::read(&chan_path).unwrap(), chan_before);
+}
