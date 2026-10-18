@@ -16,7 +16,7 @@ use crate::planner::{Disk, PlanInput, plan};
 use crate::render::{RenderInput, RenderedTree, render_sections, render_tree};
 use crate::sections::{SectionInput, plan_sections};
 use crate::source::TemplateSource;
-use crate::sources::{Claim, SourceId, Sources, check_claims, replace_claim};
+use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -97,7 +97,7 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
 
     // One owner per path, across main, every channel and this one; nothing written on conflict.
     let me = SourceId::Channel(name.clone());
-    let claims = replace_claim(
+    let claims = claims_last(
         sources.claims(),
         Claim::from_plan(me.clone(), &theirs, hosts.iter().cloned()),
     );

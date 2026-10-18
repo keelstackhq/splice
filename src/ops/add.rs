@@ -15,7 +15,7 @@ use crate::planner::{Disk, Plan, PlanInput, plan};
 use crate::render::{PieceInstance, RenderInput, render_sections, render_tree};
 use crate::sections::{SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
-use crate::sources::{Claim, SourceId, Sources, check_claims};
+use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -210,17 +210,6 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     report.changes = applied.changes;
     report.messages.extend(applied.messages);
     Ok(report)
-}
-
-/// The other sources' claims, then `new` last: `check_claims` names the earlier holder, so a
-/// conflict always names the source that already holds the path.
-fn claims_last(current: Vec<Claim>, new: Claim) -> Vec<Claim> {
-    let mut claims: Vec<Claim> = current
-        .into_iter()
-        .filter(|c| c.source != new.source)
-        .collect();
-    claims.push(new);
-    claims
 }
 
 /// Drift or conflicts (owned files, sections): the C3 refusal, nothing written, exit 1.

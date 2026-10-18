@@ -156,24 +156,16 @@ pub fn check_claims(claims: &[Claim]) -> Result<()> {
     Err(SpliceError::Usage(lines.join("\n")))
 }
 
-/// Swap the source's current claim for its planned one (appended when it had none).
-pub fn replace_claim(current: Vec<Claim>, new: Claim) -> Vec<Claim> {
-    let mut found = false;
-    let mut out: Vec<Claim> = current
+/// The other sources' claims, then `new` last (replacing the source's current claim):
+/// `check_claims` names the earlier holder, so a conflict always names the source that already
+/// holds the path, never the one being changed.
+pub fn claims_last(current: Vec<Claim>, new: Claim) -> Vec<Claim> {
+    let mut claims: Vec<Claim> = current
         .into_iter()
-        .map(|c| {
-            if c.source == new.source {
-                found = true;
-                new.clone()
-            } else {
-                c
-            }
-        })
+        .filter(|c| c.source != new.source)
         .collect();
-    if !found {
-        out.push(new);
-    }
-    out
+    claims.push(new);
+    claims
 }
 
 #[cfg(test)]
@@ -364,13 +356,16 @@ mod tests {
     }
 
     #[test]
-    fn replace_claim_swaps_in_place_or_appends() {
-        let cur = vec![claim(Main, &["a"], &[]), claim(ch("x"), &["b"], &[])];
-        let out = replace_claim(cur.clone(), claim(ch("x"), &["c"], &[]));
+    fn claims_last_puts_the_changed_source_last() {
+        let cur = vec![claim(ch("a"), &["x"], &[]), claim(ch("b"), &["y"], &[])];
+        let out = claims_last(cur.clone(), claim(ch("a"), &["y"], &[]));
         assert_eq!(out.len(), 2);
-        assert!(out[1].files.contains("c") && !out[1].files.contains("b"));
-        let out = replace_claim(cur, claim(ch("y"), &["d"], &[]));
+        assert_eq!(out[1].source, ch("a"));
+        assert!(out[1].files.contains("y") && !out[1].files.contains("x"));
+        let err = check_claims(&out).unwrap_err().to_string();
+        assert!(err.contains("path y is owned by channel b"), "{err}");
+        let out = claims_last(cur, claim(Main, &["z"], &[]));
         assert_eq!(out.len(), 3);
-        assert_eq!(out[2].source, ch("y"));
+        assert_eq!(out[2].source, Main);
     }
 }

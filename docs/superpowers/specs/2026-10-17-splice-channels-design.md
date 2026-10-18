@@ -241,6 +241,9 @@ In the host file the channel owns exactly the lines between
   files below `files/` right before they are read.
 - `check` reports a section as path `HOST#CHANNEL` with action `update`, class `owned` in
   `changes` (contract §8 shape; `#` cannot occur in a rendered path).
+- `add --channel` refusing on section drift lists it in `changes` as path `HOST#CHANNEL`,
+  action `conflict`, class `owned` (like owned-file drift, as main `add`) and writes nothing;
+  `channel add` names drifted paths (files and `HOST#CHANNEL`) in `messages` only, as `update`.
 
 Sections are deliberately owned, not 3-way merged: the user edits everything outside the block,
 the source edits everything inside it. This is what `adopt.sh` step 3 does today, made lockable.

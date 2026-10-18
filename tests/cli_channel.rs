@@ -688,3 +688,54 @@ fn add_channel_names_the_other_holder() {
     );
     assert_eq!(status(r), "");
 }
+
+const SEED_PIECE: &str =
+    "id = \"s\"\ndescription = \"d\"\nmultiple = false\n[files]\nseed = [\".editorconfig\"]\n";
+
+/// main_repo() with `.editorconfig` (locked by main) deleted and committed: a channel seed at that
+/// path would be created if the G10 drop were missing.
+fn main_repo_without_editorconfig() -> (TempDir, TempDir) {
+    let (tpl, repo) = main_repo();
+    std::fs::remove_file(repo.path().join(".editorconfig")).unwrap();
+    commit_all(repo.path());
+    (tpl, repo)
+}
+
+#[test]
+fn channel_add_seed_at_main_locked_path_not_created() {
+    let t = inline_channel(
+        SEED_PIECE.replace("\"s\"", "\"core\"").as_str(),
+        &[(".editorconfig", "root = false\n")],
+    );
+    let (_tpl, repo) = main_repo_without_editorconfig();
+    let r = repo.path();
+    chan(r, &["channel", "add", t.path().to_str().unwrap()]).success();
+    assert!(!r.join(".editorconfig").exists());
+    assert!(!rig(r, "t").lock.files.contains_key(".editorconfig"));
+}
+
+#[test]
+fn add_channel_seed_at_main_locked_path_not_created() {
+    let t = inline_template(&[
+        (
+            "core",
+            "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"t.txt\"]\n",
+            &[("t.txt", "t\n")],
+        ),
+        ("s", SEED_PIECE, &[(".editorconfig", "root = false\n")]),
+    ]);
+    git(
+        t.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    commit_tag(t.path(), "v1", "v1.0.0");
+    let (_tpl, repo) = main_repo_without_editorconfig();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    chan(r, &["add", "s", "--channel", "t"]).success();
+    assert!(!r.join(".editorconfig").exists());
+    let cl = rig(r, "t");
+    assert!(!cl.lock.files.contains_key(".editorconfig"));
+    assert!(cl.lock.pieces.iter().any(|p| p.id == "s"));
+}
