@@ -927,3 +927,136 @@ fn remove_dirty() {
     chan(r, &["channel", "remove", "rig", "--allow-dirty"]).success();
     assert!(!r.join(".splice/channels/rig.toml").exists());
 }
+
+const SHARED_NOTES: &str = "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nshared = [\"notes.txt\"]\n[merge]\n\"notes.txt\" = \"text\"\n";
+
+#[test]
+fn remove_overlapping_lock_refused() {
+    for (extra, path) in [
+        (
+            "\"docs/agents/rules.md\" = { class = \"owned\", sha256 = \"00\" }\n",
+            "docs/agents/rules.md",
+        ),
+        (
+            "\"AGENTS.md\" = { class = \"owned\", sha256 = \"00\" }\n",
+            "AGENTS.md",
+        ),
+    ] {
+        let (_tpl, repo, _ch) = rig_added();
+        let r = repo.path();
+        let main = read(r, ".splice/lock.toml");
+        std::fs::write(
+            r.join(".splice/lock.toml"),
+            main.replacen("[files]\n", &format!("[files]\n{extra}"), 1),
+        )
+        .unwrap();
+        commit_all(r);
+        let v = stdout_json(chan(r, &["channel", "remove", "rig"]).code(3));
+        let m = v["messages"].to_string();
+        assert!(
+            m.contains("main") && m.contains("channel rig") && m.contains(path),
+            "{m}"
+        );
+        assert!(
+            m.contains("fix the lock by hand or re-add the channel"),
+            "{m}"
+        );
+        assert_eq!(status(r), "");
+        assert!(r.join(".splice/channels/rig.toml").is_file());
+        assert!(r.join("docs/agents/rules.md").is_file());
+    }
+}
+
+#[test]
+fn remove_edited_shared_file_kept_with_message() {
+    for force in [false, true] {
+        let t = inline_channel(SHARED_NOTES, &[("notes.txt", "theirs\n")]);
+        let repo = bare_repo();
+        let r = repo.path();
+        chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+        std::fs::write(r.join("notes.txt"), "mine\n").unwrap();
+        commit_all(r);
+        let mut args = vec!["channel", "remove", "t"];
+        if force {
+            args.push("--force");
+        }
+        let v = stdout_json(chan(r, &args).success());
+        assert_eq!(read(r, "notes.txt"), "mine\n");
+        assert!(
+            v["messages"]
+                .to_string()
+                .contains("`notes.txt` was edited locally; kept"),
+            "{v}"
+        );
+        assert!(!r.join(".splice/channels/t.toml").exists());
+    }
+}
+
+#[test]
+fn remove_keeps_other_channels_block() {
+    let t = inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[sections]\n\"AGENTS.md\" = \"sections/x.md\"\n",
+        &[("sections/x.md", "- from t\n")],
+    );
+    let ch = channel_repo(&["v1"]);
+    let repo = bare_repo();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    chan(r, &["channel", "remove", "rig"]).success();
+    let agents = read(r, "AGENTS.md");
+    assert!(
+        agents.contains("splice:t:begin") && agents.contains("- from t"),
+        "{agents}"
+    );
+    assert!(!agents.contains("splice:rig:"), "{agents}");
+    assert!(r.join(".splice/channels/t.toml").is_file());
+}
+
+#[test]
+fn remove_keeps_created_host_with_user_content() {
+    let ch = channel_repo(&["v1"]);
+    let repo = bare_repo();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    assert!(rig(r, "rig").sections["AGENTS.md"].created);
+    let mut agents = read(r, "AGENTS.md");
+    agents.push_str("\n# My notes\n");
+    std::fs::write(r.join("AGENTS.md"), agents).unwrap();
+    commit_all(r);
+    chan(r, &["channel", "remove", "rig"]).success();
+    let agents = read(r, "AGENTS.md");
+    assert!(
+        agents.contains("# My notes") && !agents.contains("splice:rig"),
+        "{agents}"
+    );
+}
+
+#[test]
+fn remove_rerun_after_partial_removal_converges() {
+    let ch = channel_repo(&["v1"]);
+    let repo = bare_repo();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    std::fs::remove_file(r.join("docs/agents/rules.md")).unwrap();
+    std::fs::remove_file(r.join("AGENTS.md")).unwrap();
+    commit_all(r);
+    chan(r, &["channel", "remove", "rig"]).success();
+    assert!(!r.join(".splice/channels").exists());
+}
+
+#[test]
+fn remove_broken_markers_refusal_does_not_offer_force() {
+    let ch = channel_repo(&["v1"]);
+    let repo = bare_repo();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    let broken = read(r, "AGENTS.md").replace("<!-- splice:rig:end -->", "");
+    std::fs::write(r.join("AGENTS.md"), broken).unwrap();
+    commit_all(r);
+    let v = stdout_json(chan(r, &["channel", "remove", "rig"]).code(1));
+    let m = v["messages"].to_string();
+    assert!(!m.contains("pass --force"), "{m}");
+    assert!(m.contains("fixed by hand"), "{m}");
+    assert_eq!(status(r), "");
+}

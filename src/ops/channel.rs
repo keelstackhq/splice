@@ -21,11 +21,6 @@ use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
-/// The usage error of a flag or command whose behaviour lands in a later task.
-pub fn not_implemented(what: &str) -> SpliceError {
-    SpliceError::Usage(format!("splice {what}: not implemented yet"))
-}
-
 fn usage<T>(msg: String) -> Result<T> {
     Err(SpliceError::Usage(msg))
 }
@@ -224,6 +219,26 @@ pub fn remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report> {
     let name = a.name.as_str();
     let lock_path = cl.path();
 
+    // A corrupt state where another source also tracks one of our paths: deleting would take a
+    // file that source relies on. Sources::load does not check claims, so do it here.
+    let mine = Claim::from_lock(SourceId::Channel(name.to_string()), &cl.lock, &cl.sections);
+    for other in sources.claims().iter().filter(|c| c.source != mine.source) {
+        let clash = |a: &std::collections::BTreeSet<String>,
+                     b: &std::collections::BTreeSet<String>| {
+            a.intersection(b).next().cloned()
+        };
+        let path = clash(&mine.files, &other.files)
+            .or_else(|| clash(&mine.files, &other.hosts))
+            .or_else(|| clash(&mine.hosts, &other.files));
+        if let Some(path) = path {
+            return Err(SpliceError::Env(format!(
+                "path {path} is tracked by both {} and {}; nothing was removed; fix the lock by \
+                 hand or re-add the channel",
+                other.source, mine.source
+            )));
+        }
+    }
+
     let sections_theirs = RenderedSections::new();
     let disk = Disk::snapshot(
         repo,
@@ -291,10 +306,16 @@ pub fn remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report> {
             ));
         }
         report.messages.extend(splan.broken.iter().cloned());
-        report.msg(
-            "nothing was removed; revert the files above or pass --force to keep them and \
-             remove the rest (broken markers are fixed by hand)",
-        );
+        let mut hint = String::from("nothing was removed");
+        if !drift.is_empty() {
+            hint.push_str(
+                "; revert the files above or pass --force to keep them and remove the rest",
+            );
+        }
+        if !splan.broken.is_empty() {
+            hint.push_str("; broken markers must be fixed by hand (--force does not help)");
+        }
+        report.msg(hint);
         return Err(SpliceError::Drift(report));
     }
 
@@ -335,6 +356,15 @@ pub fn remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report> {
              restores the previous state"
         ))
     })?;
-    let _ = std::fs::remove_dir(repo.join(".splice/channels"));
+    let dir = ".splice/channels";
+    match fsio::check_target(repo, dir).and_then(|()| Ok(std::fs::remove_dir(repo.join(dir))?)) {
+        Ok(()) => {}
+        Err(SpliceError::Io(e))
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+            ) => {}
+        Err(e) => report.msg(format!("could not remove {dir}: {e}")),
+    }
     Ok(report)
 }

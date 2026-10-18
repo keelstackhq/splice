@@ -56,8 +56,7 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
 `--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
-working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
-until their channels plan tasks land (`check`/`diff --channel`).
+working without `--channel` (main template). All channel commands are implemented.
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
