@@ -100,7 +100,6 @@ fn all_rejects_data_only_exclude() {
 #[test]
 fn channel_flags_on_other_commands_are_not_implemented_yet() {
     for args in [
-        vec!["update", "--all"],
         vec!["check", "--channel", "rig"],
         vec!["diff", "--channel", "rig"],
     ] {

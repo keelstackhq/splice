@@ -57,8 +57,7 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
 `--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
 working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
-until their channels plan tasks land (`update --all`, `check`/`diff --channel`, `channel
-remove`).
+until their channels plan tasks land (`check`/`diff --channel`, `channel remove`).
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
@@ -274,6 +273,22 @@ change alone also updates at the same version), the claim check, the section pla
 drift and broken markers refuse like owned drift, broken markers even with `--force`), and only
 that channel's lock written last; `.splice/lock.toml` is never touched. Tracked channels and
 the subtree compare: §4.
+
+`update --all` (G12, channels spec §8) runs step 1 once, then plans the main template (if
+locked; latest target) and every channel (by name) in memory; each later plan sees the earlier
+sources' planned writes, so a section host another source seeds in the same run is planned
+against that seed (`created = false`) and two channels' blocks in one host both survive. Then,
+in order: the claim check on all planned results (exit 2); drift or broken markers in any source
+→ nothing written, exit 1, each line prefixed `main: ` / `channel NAME: `; every changed source's
+files, sections, removals and steps (main first); the `[[post]]` commands (`when` ∋ `update`) of
+all changed sources once, deduplicated by exact `run` (first occurrence), skipped on conflicts
+or `--no-post`; every changed lock last, each atomically (§8.6). A failure before the locks
+writes none: the message names the source (`main: `, `channel NAME: `) or the post command,
+says "no lock was written, every lock still records its old version" and gives the
+`git checkout -- . && git clean -fd` recovery. A failed lock write names
+the locks written, the one not confirmed and those not written; a re-run converges. An
+up-to-date main lock is not rewritten. The report has a `source=…` message per changed source,
+`NAME: up to date …` per unchanged one.
 
 ### 8.4 Planner rules
 

@@ -118,7 +118,7 @@ impl Git {
         let mut cmd = command();
         cmd.arg("--git-dir")
             .arg(git_dir)
-            .args(["rev-parse", "--verify", "--quiet"])
+            .args(["rev-parse", "--verify", "--quiet", "--end-of-options"])
             .arg(&rev);
         let out = cmd.output().map_err(|e| {
             SpliceError::Env(format!(

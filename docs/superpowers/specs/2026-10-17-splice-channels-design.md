@@ -173,7 +173,8 @@ together, then applied. Seed vs seed: the first writer wins (seeds are written o
 no error. A section host must not be in any lock's `[files]` (exit 2, same message). Main
 `update` and `add` run the same check when `.splice/channels/` has locks (no channels: M2
 behaviour). In `update --all`, a section host that an earlier source creates as a seed is planned
-against that seed's bytes (`created = false`).
+against that seed's bytes (`created = false`); every later plan sees the earlier sources' planned
+writes (seeds, section host edits), so two channels' blocks in one host both survive.
 
 **Filters.** `--only`/`--exclude` globs (globset, `literal_separator`, as main spec §7) match
 **repo-root paths after `target`**, and section host paths. A path is kept if it matches some

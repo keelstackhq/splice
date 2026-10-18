@@ -6,7 +6,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use semver::Version;
 
-use crate::apply::{ApplyCtx, LockOut, apply};
+use crate::apply::{ApplyCtx, LockOut, apply, apply_files, write_locks};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
 use crate::fetch::{Fetcher, ResolvedTemplate};
@@ -14,9 +14,10 @@ use crate::filter::Filter;
 use crate::git::Git;
 use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
-use crate::migrate::select;
-use crate::output::{Class, Report};
+use crate::migrate::{Step, select};
+use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
+use crate::post::run_post;
 use crate::render::{
     PieceInstance, RenderInput, RenderedSections, RenderedTree, render_sections, render_tree,
 };
@@ -26,6 +27,9 @@ use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
+
+/// Planned writes by path (`None`: deleted), see [`prepare_channel`].
+pub type Written = BTreeMap<String, Option<Vec<u8>>>;
 
 /// Everything an update would do, computed without writing (spec §8.3 steps 1–6, without the
 /// dirty-tree check). `plan` may hold drift and conflicts: callers decide what to do with them.
@@ -521,7 +525,11 @@ pub fn prepare(
 /// base filtered with the stored filter and theirs with `filter_new` (or the stored one), the
 /// claim check against `others` (every current source; this channel's claim is replaced and
 /// checked last), the G10 seed drop, then the file and section plans. A new filter is stored in
-/// the new lock's `[channel]` and replaces both lists (G16).
+/// the new lock's `[channel]` and replaces both lists (G16). `earlier` holds the planned writes
+/// of the sources applied before this one in the same run (`update --all`; `None` deletes): the
+/// plans see them instead of the disk, so a host another source seeds is planned against that
+/// seed (`created = false`, G17), a seed it writes is not written twice and its section edits are
+/// kept.
 pub fn prepare_channel(
     g: &GlobalArgs,
     cl: &ChannelLock,
@@ -529,6 +537,7 @@ pub fn prepare_channel(
     to: Option<&Version>,
     filter_new: Option<(&[String], &[String])>,
     force: bool,
+    earlier: &Written,
 ) -> Result<Prepared> {
     let repo = g.dir.as_path();
     let name = cl.meta.name.as_str();
@@ -611,7 +620,7 @@ pub fn prepare_channel(
                 .any(|c| c.source != me && c.files.contains(path))
     });
 
-    let disk = Disk::snapshot(
+    let mut disk = Disk::snapshot(
         repo,
         base.keys()
             .chain(theirs.keys())
@@ -620,6 +629,11 @@ pub fn prepare_channel(
             .chain(cl.sections.keys())
             .map(String::as_str),
     )?;
+    for (path, bytes) in earlier {
+        if let Some(slot) = disk.files.get_mut(path) {
+            slot.clone_from(bytes);
+        }
+    }
     let plan = plan(&PlanInput {
         base: &base,
         theirs: &theirs,
@@ -695,7 +709,7 @@ pub fn parse_to(to: Option<&str>) -> Result<Option<Version>> {
 
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     if a.all {
-        return Err(super::channel::not_implemented("update --all"));
+        return run_all(g, a);
     }
     let repo = g.dir.as_path();
 
@@ -766,7 +780,15 @@ fn run_channel(
     let cl = sources.channel(name)?;
     let filter_new = (!a.only.is_empty() || !a.exclude.is_empty())
         .then_some((a.only.as_slice(), a.exclude.as_slice()));
-    let prep = prepare_channel(g, cl, &sources.claims(), to, filter_new, a.force)?;
+    let prep = prepare_channel(
+        g,
+        cl,
+        &sources.claims(),
+        to,
+        filter_new,
+        a.force,
+        &Written::new(),
+    )?;
     let ch = prep.channel.as_ref().expect("a channel update");
     if prep.up_to_date {
         let mut report = Report::new("update");
@@ -805,32 +827,15 @@ fn apply_prepared(
     lock: LockOut,
     sections: &[SectionChange],
 ) -> Result<Report> {
-    let migrations = if prep.tracked {
-        Vec::new()
-    } else {
-        select(&prep.template.migrations, &prep.from, &prep.to)
-    };
-    let steps = migrations
-        .iter()
-        .flat_map(|m| m.steps.iter().map(move |s| (&m.version, s)))
-        .collect();
-    let mut post: Vec<PostCmd> = Vec::new();
-    let mut seen: Vec<&str> = Vec::new();
-    for inst in &prep.instances {
-        if !seen.contains(&inst.id.as_str()) {
-            seen.push(&inst.id);
-            post.extend(prep.template.pieces[&inst.id].post.iter().cloned());
-        }
-    }
     let messages = prep.messages.clone();
     let result = apply(ApplyCtx {
         repo: g.dir.as_path(),
         plan: &prep.plan,
-        steps,
+        steps: steps_of(prep),
         from: prep.from.clone(),
         to: prep.to.clone(),
         lock,
-        post,
+        post: post_of(prep),
         when: When::Update,
         no_post: a.no_post,
         json: g.json,
@@ -849,5 +854,269 @@ fn apply_prepared(
         Err(SpliceError::Drift(r)) => Err(SpliceError::Drift(prepend(r))),
         Err(SpliceError::Applied(r)) => Err(SpliceError::Applied(prepend(r))),
         Err(e) => Err(e),
+    }
+}
+
+/// The migration steps between `from` and `to`, each with its migration's version (none for a
+/// tracked head, B5).
+fn steps_of(prep: &Prepared) -> Vec<(&Version, &Step)> {
+    if prep.tracked {
+        return Vec::new();
+    }
+    select(&prep.template.migrations, &prep.from, &prep.to)
+        .into_iter()
+        .flat_map(|m| m.steps.iter().map(move |s| (&m.version, s)))
+        .collect()
+}
+
+/// The `[[post]]` commands of every piece in the update, once per piece id.
+fn post_of(prep: &Prepared) -> Vec<PostCmd> {
+    let mut post: Vec<PostCmd> = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for inst in &prep.instances {
+        if !seen.contains(&inst.id.as_str()) {
+            seen.push(&inst.id);
+            post.extend(prep.template.pieces[&inst.id].post.iter().cloned());
+        }
+    }
+    post
+}
+
+/// One source of `update --all` with its prepared update.
+struct AllSource {
+    id: SourceId,
+    prep: Prepared,
+}
+
+impl AllSource {
+    fn sections(&self) -> &[SectionChange] {
+        self.prep
+            .channel
+            .as_ref()
+            .map_or(&[][..], |c| c.sections.changes.as_slice())
+    }
+
+    fn lock_out(&self) -> LockOut {
+        match &self.prep.channel {
+            None => LockOut::Main(self.prep.lock_new.clone()),
+            Some(c) => LockOut::Channel(c.lock_new.clone()),
+        }
+    }
+
+    /// What this source writes, by path, for the plans of the sources after it.
+    fn record_writes(&self, written: &mut Written) {
+        for c in &self.prep.plan.changes {
+            match (&c.bytes, c.action) {
+                (Some(b), _) => {
+                    written.insert(c.path.clone(), Some(b.clone()));
+                }
+                (None, Action::Delete) => {
+                    written.insert(c.path.clone(), None);
+                }
+                _ => {}
+            }
+        }
+        for s in self.sections() {
+            match (&s.bytes, s.action) {
+                (Some(b), _) => {
+                    written.insert(s.host.clone(), Some(b.clone()));
+                }
+                (None, Action::Delete) => {
+                    written.insert(s.host.clone(), None);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+const RESTORE: &str = "`git checkout -- . && git clean -fd` restores the previous state";
+
+/// A failure after the first write of `update --all`: no lock was written. `done` holds the
+/// changes applied so far; the error lists them (`Applied`) when there are any.
+fn all_failed(mut done: Report, what: &str, e: SpliceError) -> SpliceError {
+    let mut text = e.to_string();
+    if let SpliceError::Applied(r) = e {
+        done.changes.extend(r.changes);
+    }
+    if let Some(t) = text.strip_suffix(&format!("; {RESTORE}")) {
+        text = t.to_string();
+    }
+    let msg = format!(
+        "{what}{text}; no lock was written, every lock still records its old version; {RESTORE}"
+    );
+    if done.changes.is_empty() {
+        return SpliceError::Env(msg);
+    }
+    done.ok = false;
+    done.msg(msg);
+    SpliceError::Applied(done)
+}
+
+/// `update --all` (channels spec §8, G12): plan the main template (if any) and every channel
+/// (by name) in memory, check claims, refuse drift; then every source's files, sections,
+/// removals and steps, the deduplicated post commands once, and every lock last.
+fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
+    let repo = g.dir.as_path();
+    if !a.allow_dirty {
+        require_clean(repo, "update")?;
+    }
+    let sources = Sources::load(repo)?;
+    if sources.main.is_none() && sources.channels.is_empty() {
+        return usage(format!(
+            "{} has no {LOCK_PATH} and no channel locks; run `splice new` or `splice channel \
+             add` first",
+            repo.display()
+        ));
+    }
+
+    // 1. Plan every source. `planned` holds the new claims in source order; a channel is checked
+    // against them and the current claims of the channels after it.
+    let current = sources.claims();
+    let mut planned: Vec<Claim> = Vec::new();
+    let mut written = Written::new();
+    let mut all: Vec<AllSource> = Vec::new();
+    if sources.main.is_some() {
+        let prep = prepare(g, None, &IndexMap::new(), a.force)?;
+        planned.push(Claim::from_lock(
+            SourceId::Main,
+            &prep.lock_new,
+            &BTreeMap::new(),
+        ));
+        let src = AllSource {
+            id: SourceId::Main,
+            prep,
+        };
+        src.record_writes(&mut written);
+        all.push(src);
+    }
+    for cl in &sources.channels {
+        let id = SourceId::Channel(cl.meta.name.clone());
+        let others: Vec<Claim> = planned
+            .iter()
+            .chain(
+                current
+                    .iter()
+                    .filter(|c| !planned.iter().any(|p| p.source == c.source)),
+            )
+            .cloned()
+            .collect();
+        let prep = prepare_channel(g, cl, &others, None, None, a.force, &written)?;
+        let ch = prep.channel.as_ref().expect("a channel update");
+        planned.push(ch.claim.clone());
+        let src = AllSource { id, prep };
+        src.record_writes(&mut written);
+        all.push(src);
+    }
+
+    // 2. One owner per path across the planned results.
+    check_claims(&planned)?;
+
+    // 3. Drift or broken markers in any source: write nothing, exit 1.
+    let prefixed = |id: &SourceId, msgs: &[String]| -> Vec<String> {
+        msgs.iter().map(|m| format!("{id}: {m}")).collect()
+    };
+    let mut refused = Report::new("update");
+    for s in &all {
+        let (drift, broken) = match &s.prep.channel {
+            None => (s.prep.plan.drift.clone(), Vec::new()),
+            Some(c) => (
+                s.prep
+                    .plan
+                    .drift
+                    .iter()
+                    .chain(&c.sections.drift)
+                    .cloned()
+                    .collect(),
+                c.sections.broken.clone(),
+            ),
+        };
+        let owner = match &s.id {
+            SourceId::Main => "the template".to_string(),
+            id => id.to_string(),
+        };
+        let mut lines: Vec<String> = drift
+            .iter()
+            .map(|p| format!("`{p}` is owned by {owner} but was edited locally"))
+            .collect();
+        lines.extend(broken);
+        refused.messages.extend(prefixed(&s.id, &lines));
+    }
+    if !refused.messages.is_empty() {
+        refused.ok = false;
+        refused.msg(
+            "nothing was written; revert the files above or pass --force to replace them \
+             (broken markers are fixed by hand)",
+        );
+        return Err(SpliceError::Drift(refused));
+    }
+
+    // 4. Files, sections, removals and steps of every source; no post, no lock.
+    let mut report = Report::new("update");
+    let changed: Vec<&AllSource> = all.iter().filter(|s| !s.prep.up_to_date).collect();
+    for s in &all {
+        if s.prep.up_to_date {
+            report.messages.extend(prefixed(&s.id, &s.prep.messages));
+        }
+    }
+    let mut conflicts: Vec<String> = Vec::new();
+    for s in &changed {
+        let ctx = ApplyCtx {
+            repo,
+            plan: &s.prep.plan,
+            steps: steps_of(&s.prep),
+            from: s.prep.from.clone(),
+            to: s.prep.to.clone(),
+            lock: s.lock_out(),
+            post: Vec::new(),
+            when: When::Update,
+            no_post: true,
+            json: g.json,
+            command: "update",
+            sections: s.sections(),
+        };
+        report.msg(s.id.tag());
+        report.messages.extend(prefixed(&s.id, &s.prep.messages));
+        match apply_files(&ctx) {
+            Ok(r) => {
+                report.changes.extend(r.changes);
+                report.messages.extend(prefixed(&s.id, &r.messages));
+            }
+            Err(e) => return Err(all_failed(report, &format!("{}: ", s.id), e)),
+        }
+        conflicts.extend(s.prep.plan.conflicts.iter().cloned());
+    }
+
+    // 5. The post commands of every changed source once (first occurrence wins), before any
+    // lock: post sees the old locks.
+    if conflicts.is_empty() && !a.no_post {
+        let post: Vec<PostCmd> = changed.iter().flat_map(|s| post_of(&s.prep)).collect();
+        if let Err(e) = run_post(repo, &post, When::Update, g.json) {
+            return Err(all_failed(report, "", e));
+        }
+    }
+
+    // 6. Every lock last, each atomically.
+    let locks: Vec<LockOut> = changed.iter().map(|s| s.lock_out()).collect();
+    if let Err(e) = write_locks(repo, &locks.iter().collect::<Vec<_>>()) {
+        report.ok = false;
+        report.msg(e.to_string());
+        return Err(if report.changes.is_empty() {
+            e
+        } else {
+            SpliceError::Applied(report)
+        });
+    }
+
+    report.changes.sort_by(|x, y| x.path.cmp(&y.path));
+    if conflicts.is_empty() {
+        Ok(report)
+    } else {
+        report.ok = false;
+        report.msg(format!(
+            "conflicts in {}: resolve the diff3 markers",
+            conflicts.join(", ")
+        ));
+        Err(SpliceError::Conflict(report))
     }
 }

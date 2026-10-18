@@ -536,3 +536,372 @@ fn tagged_channel_same_subtree_is_up_to_date() {
     assert_eq!(bytes(r, RIG_TOML), before);
     assert_eq!(status(r), "");
 }
+
+// ---- update --all (channels spec §8, main spec §8.3) ----
+
+fn update_all(repo: &Path) -> assert_cmd::assert::Assert {
+    chan(repo, &["update", "--all"])
+}
+
+fn update_all_env(repo: &Path, key: &str, val: &str) -> assert_cmd::assert::Assert {
+    splice_cmd()
+        .arg("-C")
+        .arg(repo)
+        .args(["--yes", "--json", "update", "--all"])
+        .env(key, val)
+        .assert()
+}
+
+fn main_version(repo: &Path) -> String {
+    splice::lock::Lock::read(repo)
+        .unwrap()
+        .expect("main lock")
+        .template
+        .version
+        .to_string()
+}
+
+fn chan_version(repo: &Path, name: &str) -> String {
+    ChannelLock::read(repo, name)
+        .unwrap()
+        .expect("channel lock")
+        .lock
+        .template
+        .version
+        .to_string()
+}
+
+const RIGB_TOML: &str = ".splice/channels/rigb.toml";
+
+fn chb_v1_v2() -> TempDir {
+    channel_repo_tagged("channel-b", &[("v1", "v1.0.0"), ("v2", "v2.0.0")])
+}
+
+/// Main repo at v1 (template `main_versions`), rig (full pieces) and rigb, both at v1 with v2
+/// available, committed.
+fn setup_two(main_versions: &[&str]) -> (TempDir, TempDir, TempDir, TempDir) {
+    let tpl = template_repo(main_versions);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo(&["v1", "v2"]);
+    let chb = chb_v1_v2();
+    add_full(repo.path(), &ch);
+    chan_commit(
+        repo.path(),
+        &["channel", "add", &src(&chb), "--ref", "v1.0.0"],
+    );
+    (tpl, repo, ch, chb)
+}
+
+fn lines_eq(text: &str, line: &str) -> usize {
+    text.lines().filter(|l| *l == line).count()
+}
+
+#[test]
+fn all_updates_main_then_channels() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo(&["v1", "v2"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    let log_before = read(r, ".rig-post.log").lines().count();
+    let v = stdout_json(update_all(r).success());
+    assert_eq!(v["command"], "update");
+    assert_eq!(v["ok"], true);
+    assert_eq!(main_version(r), "2.0.0");
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+    assert_eq!(read(r, ".rig-post.log").lines().count(), log_before + 1);
+    assert!(r.join(".post-ran").exists());
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("source=main"), "{msg}");
+    assert!(msg.contains("source=channel:rig"), "{msg}");
+    assert!(r.join("CHANGELOG.md").is_file());
+    assert_eq!(
+        read(r, ".claude/agents/reviewer.md"),
+        "# reviewer\n\nReview read-only, v2.\n"
+    );
+    let paths: Vec<&str> = v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["path"].as_str().unwrap())
+        .collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths, sorted);
+    assert!(paths.contains(&"AGENTS.md#rig"), "{paths:?}");
+    assert!(paths.contains(&"CHANGELOG.md"), "{paths:?}");
+}
+
+#[test]
+fn all_one_drifted_source_writes_nothing() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo(&["v1", "v2"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    std::fs::write(r.join(".claude/agents/reviewer.md"), "# mine\n").unwrap();
+    commit_all(r);
+    let main_before = bytes(r, MAIN_LOCK);
+    let rig_before = bytes(r, RIG_TOML);
+    let v = stdout_json(update_all(r).code(1));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("channel rig: "), "{msg}");
+    assert!(msg.contains(".claude/agents/reviewer.md"), "{msg}");
+    assert!(msg.contains("nothing was written"), "{msg}");
+    assert_eq!(status(r), "");
+    assert_eq!(bytes(r, MAIN_LOCK), main_before);
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+}
+
+#[test]
+fn all_claim_conflict_across_new_versions() {
+    let tpl = template_repo_tagged(&[("v1", "v1.0.0"), ("v2-x", "v2.0.0")]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo_tagged("channel", &[("v1", "v1.0.0"), ("v2-x", "v2.0.0")]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch), "--ref", "v1.0.0"]);
+    let main_before = bytes(r, MAIN_LOCK);
+    let rig_before = bytes(r, RIG_TOML);
+    let v = stdout_json(update_all(r).code(2));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("path x.txt is owned by main"), "{msg}");
+    assert_eq!(status(r), "");
+    assert_eq!(bytes(r, MAIN_LOCK), main_before);
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+}
+
+#[test]
+fn all_post_dedup_and_before_locks() {
+    let (_tpl, repo, _ch, _chb) = setup_two(&["v1"]);
+    let r = repo.path();
+    let log = read(r, ".rig-post.log");
+    let (posts, old) = (lines_eq(&log, "rig-post"), lines_eq(&log, "old-lock"));
+    stdout_json(update_all(r).success());
+    let log = read(r, ".rig-post.log");
+    assert_eq!(lines_eq(&log, "rig-post"), posts + 1, "{log}");
+    assert_eq!(lines_eq(&log, "old-lock"), old + 1, "{log}");
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+    assert_eq!(chan_version(r, "rigb"), "2.0.0");
+    assert_eq!(main_version(r), "1.0.0");
+}
+
+#[test]
+fn all_failure_in_second_source_writes_no_lock() {
+    // Main stays at v1 (its own v2 step would fail first under the same env).
+    let (_tpl, repo, _ch, _chb) = setup_two(&["v1"]);
+    let r = repo.path();
+    let before: Vec<Vec<u8>> = [MAIN_LOCK, RIG_TOML, RIGB_TOML]
+        .iter()
+        .map(|p| bytes(r, p))
+        .collect();
+    let v = stdout_json(update_all_env(r, "SPLICE_FIXTURE_FAIL", "1").code(3));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("channel rigb: "), "{msg}");
+    assert!(msg.contains("no lock was written"), "{msg}");
+    assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
+    for (p, b) in [MAIN_LOCK, RIG_TOML, RIGB_TOML].iter().zip(&before) {
+        assert_eq!(&bytes(r, p), b, "{p}");
+    }
+    // rig's files were written before rigb failed.
+    assert!(read(r, ".claude/agents/reviewer.md").contains("v2."));
+    let out = std::process::Command::new("sh")
+        .args(["-c", "git checkout -- . && git clean -fdq"])
+        .current_dir(r)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(status(r), "");
+    update_all(r).success();
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+    assert_eq!(chan_version(r, "rigb"), "2.0.0");
+}
+
+#[test]
+fn all_failed_post_writes_no_lock() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo(&["v1", "v2"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    std::fs::remove_file(r.join(".rig-post.log")).unwrap();
+    std::fs::create_dir(r.join(".rig-post.log")).unwrap();
+    std::fs::write(r.join(".rig-post.log/keep"), "").unwrap();
+    commit_all(r);
+    let main_before = bytes(r, MAIN_LOCK);
+    let rig_before = bytes(r, RIG_TOML);
+    let v = stdout_json(update_all(r).code(3));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("echo rig-post >> .rig-post.log"), "{msg}");
+    assert!(msg.contains("no lock was written"), "{msg}");
+    assert_eq!(bytes(r, MAIN_LOCK), main_before);
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+}
+
+#[test]
+fn all_seed_then_section_same_host() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let chb = chb_v1_v2();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&chb), "--ref", "v1.0.0"]);
+    assert!(!r.join("CHANGELOG.md").exists());
+    update_all(r).success();
+    let seed = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/template/v2/pieces/base/files/CHANGELOG.md"),
+    )
+    .unwrap();
+    let block = "<!-- splice:rigb:begin — managed by `splice update --channel rigb`; edit the source -->\n\
+                 - rigb 2.0.0 changed the notes.\n<!-- splice:rigb:end -->\n";
+    assert_eq!(read(r, "CHANGELOG.md"), format!("{seed}\n{block}"));
+    let cl = ChannelLock::read(r, "rigb").unwrap().unwrap();
+    assert!(!cl.sections["CHANGELOG.md"].created, "{:?}", cl.sections);
+    assert_eq!(main_version(r), "2.0.0");
+}
+
+#[test]
+fn all_in_channel_only_repo() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1", "v2"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch), "--ref", "v1.0.0"]);
+    let v = stdout_json(update_all(r).success());
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+    assert!(!r.join(MAIN_LOCK).exists());
+    assert!(
+        v["messages"].to_string().contains("source=channel:rig"),
+        "{v}"
+    );
+    assert!(!v["messages"].to_string().contains("source=main"), "{v}");
+}
+
+#[test]
+fn all_up_to_date() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    let v = stdout_json(update_all(r).success());
+    let msgs: Vec<&str> = v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert!(
+        msgs.iter()
+            .any(|m| m.starts_with("main: ") && m.contains("up to date")),
+        "{msgs:?}"
+    );
+    assert!(
+        msgs.iter()
+            .any(|m| m.starts_with("channel rig: ") && m.contains("up to date")),
+        "{msgs:?}"
+    );
+    assert_eq!(status(r), "");
+}
+
+#[test]
+fn all_dirty_tree_refused() {
+    let (_tpl, repo, _ch) = setup();
+    let r = repo.path();
+    std::fs::write(r.join("scratch.txt"), "x\n").unwrap();
+    let before = status(r);
+    let v = stdout_json(update_all(r).code(2));
+    assert!(v["messages"].to_string().contains("--allow-dirty"), "{v}");
+    assert_eq!(status(r), before);
+}
+
+#[test]
+fn all_lock_write_failure_names_groups_and_converges() {
+    // Channel `t` sorts after `rig`; its post (with the env set) puts a directory where its lock
+    // goes, so rig.toml is written and t.toml is not.
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let ch = channel_repo(&["v1", "v2"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    let toml = "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"a.txt\"]\n\
+                [[post]]\nrun = \"test -z \\\"$SPLICE_FIXTURE_BREAK\\\" || { rm .splice/channels/t.toml && mkdir .splice/channels/t.toml && touch .splice/channels/t.toml/x; }\"\nwhen = [\"update\"]\n";
+    let t = inline_template(&[("core", toml, &[("a.txt", "a\n")])]);
+    git(
+        t.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    commit_tag(t.path(), "v1", "v1.0.0");
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    std::fs::write(t.path().join("pieces/core/files/a.txt"), "a2\n").unwrap();
+    commit_tag(t.path(), "v2", "v2.0.0");
+
+    let v = stdout_json(update_all_env(r, "SPLICE_FIXTURE_BREAK", "1").code(3));
+    let msg = v["messages"].to_string();
+    assert!(
+        msg.contains("locks written: .splice/lock.toml, .splice/channels/rig.toml"),
+        "{msg}"
+    );
+    assert!(
+        msg.contains("not confirmed written: .splice/channels/t.toml"),
+        "{msg}"
+    );
+    assert!(msg.contains("locks not written: none"), "{msg}");
+    assert_eq!(main_version(r), "2.0.0");
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+
+    // Restore the old t.toml and re-run: everything converges on the targets.
+    std::fs::remove_dir_all(r.join(".splice/channels/t.toml")).unwrap();
+    git(
+        r,
+        "2026-03-01T00:00:00+00:00",
+        &["checkout", "--", ".splice/channels/t.toml"],
+    );
+    assert_eq!(chan_version(r, "t"), "1.0.0");
+    commit_all(r);
+    stdout_json(update_all(r).success());
+    assert_eq!(main_version(r), "2.0.0");
+    assert_eq!(chan_version(r, "rig"), "2.0.0");
+    assert_eq!(chan_version(r, "t"), "2.0.0");
+    assert_eq!(read(r, "a.txt"), "a2\n");
+}
+
+#[test]
+fn subtree_equal_commit_with_filter_change_applies() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    std::fs::write(ch.path().join("README.md"), "# changed outside\n").unwrap();
+    commit_tag(ch.path(), "readme only", "v3.0.0");
+    let before = bytes(r, RIG_TOML);
+    update_rig(r, &["--exclude", CAVEMAN_GLOB]).success();
+    assert!(!r.join(CAVEMAN).exists());
+    assert_ne!(bytes(r, RIG_TOML), before);
+    let cl = rig(r);
+    assert_eq!(cl.meta.exclude, [CAVEMAN_GLOB]);
+    assert!(!cl.lock.files.contains_key(CAVEMAN));
+}
+
+#[test]
+fn all_two_channels_one_host_keep_both_blocks() {
+    // Channels `a` and `b` (one source, `--as`) both host a section in HOST.md; --all writes
+    // both new bodies (the second plan sees the first one's host write).
+    let toml = "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[sections]\n\"HOST.md\" = \"s.md\"\n";
+    let t = inline_template(&[("core", toml, &[("s.md", "- one\n")])]);
+    git(
+        t.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    commit_tag(t.path(), "v1", "v1.0.0");
+    let repo = bare_repo();
+    let r = repo.path();
+    let spec = t.path().to_str().unwrap();
+    chan_commit(r, &["channel", "add", spec, "--as", "a"]);
+    chan_commit(r, &["channel", "add", spec, "--as", "b"]);
+    std::fs::write(t.path().join("pieces/core/files/s.md"), "- two\n").unwrap();
+    commit_tag(t.path(), "v2", "v2.0.0");
+    update_all(r).success();
+    let host = read(r, "HOST.md");
+    assert!(!host.contains("- one"), "{host}");
+    assert_eq!(host.matches("- two\n").count(), 2, "{host}");
+}
