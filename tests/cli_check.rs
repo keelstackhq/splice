@@ -428,3 +428,64 @@ mod channels {
         assert_eq!(tree_snapshot(repo.path()), before);
     }
 }
+
+mod channel_paths {
+    use super::{check, messages};
+    use crate::common::*;
+
+    fn rig_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                &format!("{}//channel", ch.path().display()),
+                "--piece",
+                "claude",
+            ],
+        );
+        (repo, ch)
+    }
+
+    #[test]
+    fn unsafe_channel_lock_path_is_refused_and_names_the_lock() {
+        let (repo, _ch) = rig_repo();
+        let lock = repo.path().join(".splice/channels/rig.toml");
+        let text = std::fs::read_to_string(&lock).unwrap();
+        std::fs::write(
+            &lock,
+            text.replace(".claude/agents/reviewer.md", "../evil.md"),
+        )
+        .unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 3, "{v}");
+        let m = messages(&v);
+        assert!(
+            m.contains(".splice/channels/rig.toml") && m.contains("unsafe path"),
+            "{m}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_section_host_is_refused() {
+        let (repo, _ch) = rig_repo();
+        std::fs::remove_file(repo.path().join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink("README.md", repo.path().join("AGENTS.md")).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 3, "{v}");
+        assert!(messages(&v).contains(".splice/channels/rig.toml"), "{v}");
+    }
+
+    #[test]
+    fn non_utf8_section_host_is_drift_with_a_message() {
+        let (repo, _ch) = rig_repo();
+        std::fs::write(repo.path().join("AGENTS.md"), [0xff, 0xfe, 0x00, b'x']).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1, "{v}");
+        assert_eq!(v["changes"][0]["path"], "AGENTS.md#rig");
+        assert!(messages(&v).contains("not valid UTF-8"), "{v}");
+    }
+}

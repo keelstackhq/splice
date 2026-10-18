@@ -25,15 +25,24 @@ fn newer_stable(lock: &Lock) -> Result<Option<semver::Version>> {
         .filter(|v| *v > lock.template.version))
 }
 
+/// Every path a lock lists (files, and for a channel its section hosts) is checked before any is
+/// read: no `..`, no absolute path, no symlink. Exit 3 naming the lock file `label`.
+fn check_paths<'a>(
+    repo: &Path,
+    label: &str,
+    paths: impl Iterator<Item = &'a String>,
+) -> Result<()> {
+    for path in paths {
+        check_target(repo, path)
+            .map_err(|e| SpliceError::Template(format!("{label} lists an unsafe path: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Owned drift and conflict markers of one lock's files. `prefix` is `""` for the main lock and
 /// `channel NAME: ` for a channel, so main messages stay exactly as in M2. Returns the number of
 /// drifted owned files.
 fn check_files(repo: &Path, lock: &Lock, prefix: &str, report: &mut Report) -> Result<usize> {
-    // Every lock path is checked before any is read: no `..`, no absolute path, no symlink.
-    for path in lock.files.keys() {
-        check_target(repo, path)
-            .map_err(|e| SpliceError::Template(format!("{LOCK_PATH} lists an unsafe path: {e}")))?;
-    }
     let mut drifted = 0;
     for (path, file) in &lock.files {
         let bytes = read_opt(repo, path)?;
@@ -64,9 +73,6 @@ fn check_sections(repo: &Path, cl: &ChannelLock, report: &mut Report) -> Result<
     let name = cl.meta.name.as_str();
     let mut drifted = 0;
     for (host, locked) in &cl.sections {
-        check_target(repo, host).map_err(|e| {
-            SpliceError::Template(format!("{} lists an unsafe path: {e}", cl.path()))
-        })?;
         let path = format!("{host}#{name}");
         let drift = match read_opt(repo, host)? {
             None => true,
@@ -161,6 +167,18 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
     }
     let mut report = Report::new("check");
     let mut update_available = false;
+
+    // Every path of every lock is validated before any file is read.
+    if let Some(lock) = main {
+        check_paths(repo, LOCK_PATH, lock.files.keys())?;
+    }
+    for cl in &channels {
+        check_paths(
+            repo,
+            &cl.path(),
+            cl.lock.files.keys().chain(cl.sections.keys()),
+        )?;
+    }
 
     if let Some(lock) = main {
         check_files(repo, lock, "", &mut report)?;

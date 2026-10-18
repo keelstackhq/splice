@@ -98,26 +98,6 @@ fn all_rejects_data_only_exclude() {
 }
 
 #[test]
-fn channel_flags_on_other_commands_are_not_implemented_yet() {
-    let args = ["diff", "--channel", "rig"];
-    let out = splice_cmd()
-        .arg("--json")
-        .args(args)
-        .assert()
-        .code(2)
-        .get_output()
-        .stdout
-        .clone();
-    let v: serde_json::Value = serde_json::from_slice(&out)
-        .unwrap_or_else(|e| panic!("{args:?}: stdout is not one JSON object: {e}"));
-    assert_eq!(v["ok"], false, "{args:?}");
-    assert!(
-        v["messages"].to_string().contains("not implemented yet"),
-        "{args:?}: {v}"
-    );
-}
-
-#[test]
 fn update_to_alone_is_valid() {
     // B3: `--to` needs no `--channel`; the failure is the missing lock, not clap.
     let dir = tempfile::tempdir().unwrap();

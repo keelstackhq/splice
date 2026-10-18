@@ -366,8 +366,10 @@ messages are exactly as above, with no prefix. Per channel: owned drift and conf
 for the main lock (messages prefixed `channel NAME: `, plus one summary line); section drift
 (a locked block edited, deleted, missing its host or with broken markers, or a non-UTF-8 host)
 as the change `HOST#NAME`, `update`, `owned` (broken markers also give a message that says how
-to fix them). Section drift is reported only as a change, in `check`, `channel add` and
-`add --channel` alike. Update available (skipped with `--offline`; a lookup failure is a
+to fix them). Section drift is a change only in `check`
+(`update`/`owned`, the gate fails); in `channel add` and `add --channel` it is `conflict`/`owned` and
+blocks the write; `update --channel` and `diff --channel` name it in a message (`update` refuses
+it without `--force`, `diff` exits 0). Update available (skipped with `--offline`; a lookup failure is a
 message): a newer stable tag, or for a tracked channel a branch head, whose template subtree
 differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)`, or
 `… <old7> → <new7> (BRANCH)` with short shas. Read-only, one JSON object.
@@ -382,6 +384,11 @@ owned drift go to stderr as messages. `--json` returns the planned `changes` (eq
 `update --json`'s on the same repo when `update` would not refuse) and the messages. Drift and conflicts are reported, not
 failures: exit 0; a downgrade `--to` is exit 2 as on `update`.
 
+`diff --channel NAME` runs the same on that channel's lock: file patches plus one patch per
+section host (labels `a/HOST`, `b/HOST`; `delete HOST` when the host goes), nothing written. Its
+`--json` changes (files, and `HOST#NAME` per section) equal those of `update --channel NAME
+--json` when `update` would not refuse. Drift, section drift and broken markers are messages.
+
 ### 8.9 `explain`
 
 Re-renders the lock state from the cached tree (offline after the first fetch) and prints
@@ -391,6 +398,13 @@ Re-renders the lock state from the cached tree (offline after the first fetch) a
 unmanaged path → ok, no changes, message `unmanaged`. `merge=` is the `[merge]` strategy for
 shared files and `none` for owned and seed files. Paths are normalised first (`./` prefix, `\`
 separators); absolute paths and `..` are a usage error.
+
+With channels, `explain` searches the main lock, then every channel by name (the first hit owns
+the path; one owner per path) and adds the message `source=main` or `source=channel:NAME` (the
+human line gains a trailing `source=` column; `source=` and `section=` appear as messages only
+with `--json`, like `piece=`). A path that is a section host in a channel's `[sections]` also
+gets `section=NAME` per channel (a human line `PATH  section=NAME`); if no source owns the file
+it is `unmanaged` plus those lines. A channel-only repo works (no main lock needed).
 
 ## 9. JSON output (contract §8)
 

@@ -120,3 +120,117 @@ fn human_mode_prints_each_line_once() {
         assert_eq!(stderr, "", "{p}: the stdout line is not repeated on stderr");
     }
 }
+
+mod channels {
+    use crate::common::*;
+    use tempfile::TempDir;
+
+    fn src(ch: &TempDir) -> String {
+        format!("{}//channel", ch.path().display())
+    }
+
+    fn explain(repo: &std::path::Path, path: &str, json: bool) -> (i32, String) {
+        let mut cmd = splice_cmd();
+        cmd.current_dir(repo).args(["explain", path]);
+        if json {
+            cmd.arg("--json");
+        }
+        let out = cmd.output().unwrap();
+        (
+            out.status.code().unwrap(),
+            String::from_utf8(out.stdout).unwrap(),
+        )
+    }
+
+    fn msgs(stdout: &str) -> Vec<String> {
+        let v: serde_json::Value = serde_json::from_str(stdout).unwrap();
+        v["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn setup() -> (TempDir, TempDir, TempDir) {
+        let tpl = template_repo(&["v1"]);
+        let repo = new_repo_at(&tpl, "v1.0.0");
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                &src(&ch),
+                "--ref",
+                "v1.0.0",
+                "--piece",
+                "claude",
+            ],
+        );
+        (tpl, repo, ch)
+    }
+
+    #[test]
+    fn explain_channel_file() {
+        let (_t, repo, _c) = setup();
+        let (code, out) = explain(repo.path(), ".claude/agents/reviewer.md", true);
+        assert_eq!(code, 0, "{out}");
+        let m = msgs(&out);
+        assert_eq!(m[0], "piece=claude/claude", "{m:?}");
+        assert!(m[1].starts_with("glob="), "{m:?}");
+        assert_eq!(m[2], "merge=none", "{m:?}");
+        assert_eq!(m[3], "source=channel:rig", "{m:?}");
+        assert_eq!(m.len(), 4, "{m:?}");
+    }
+
+    #[test]
+    fn explain_section_host() {
+        let (_t, repo, _c) = setup();
+        let (code, out) = explain(repo.path(), "AGENTS.md", true);
+        assert_eq!(code, 0, "{out}");
+        assert_eq!(msgs(&out), ["unmanaged", "section=rig"]);
+        let (_, human) = explain(repo.path(), "AGENTS.md", false);
+        assert!(
+            human.contains("unmanaged") && human.contains("section=rig"),
+            "{human}"
+        );
+    }
+
+    #[test]
+    fn explain_main_file_has_source_main() {
+        let (_t, repo, _c) = setup();
+        let (_, out) = explain(repo.path(), ".editorconfig", true);
+        let m = msgs(&out);
+        assert!(m[0].starts_with("piece="), "{m:?}");
+        assert_eq!(m.last().unwrap(), "source=main", "{m:?}");
+        assert_eq!(m.len(), 4, "{m:?}");
+    }
+
+    #[test]
+    fn explain_human_has_source_column() {
+        let (_t, repo, _c) = setup();
+        let (code, out) = explain(repo.path(), ".editorconfig", false);
+        assert_eq!(code, 0);
+        assert_eq!(out.lines().count(), 1, "{out}");
+        assert!(out.contains("source=main"), "{out}");
+        let (_, out) = explain(repo.path(), ".claude/agents/reviewer.md", false);
+        assert!(out.contains("source=channel:rig"), "{out}");
+    }
+
+    #[test]
+    fn explain_channel_only_repo_and_unmanaged() {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &["channel", "add", &src(&ch), "--piece", "claude"],
+        );
+        let (code, out) = explain(repo.path(), ".claude/agents/reviewer.md", true);
+        assert_eq!(code, 0, "{out}");
+        assert!(msgs(&out).contains(&"source=channel:rig".to_string()));
+        let (code, out) = explain(repo.path(), "README.md", true);
+        assert_eq!(code, 0);
+        assert_eq!(msgs(&out), ["unmanaged"]);
+    }
+}
