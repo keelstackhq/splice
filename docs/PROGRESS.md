@@ -27,6 +27,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T9 · 7e9d0d5 · splice diff (update plan as unified diff or --json changes, writes nothing, exit 0 on drift/conflict); add on the full planner (merges shared files, --allow-dirty, C3 writes nothing on drift/conflict, reduced planner deleted); check uses a local update-available flag, CRLF marker case; cli_diff 3, cli_add 16 passing
 - 2026-10-17 · 02/final · 7288d7f · final-review fixes ([[remove]] paths see `template`, check preflights lock paths and reports the lock class, wrap_whole CRLF, TOML fallback guard, exit 3 after writes lists applied changes, prerelease-only template is up to date, explain human mode quiet on stderr, failed-post rerun converges); cargo test 243 passing, fmt and clippy -D warnings clean
 - 2026-10-17 · 04/T5 · piece `[sections]`, fragment rendering, main refusal; hull's Nunjucks corpus run must pick up the new conformance case `section-fragment` (C2)
+- 2026-10-18 · 04/T21 · splice 0.2.0 (Cargo.toml, Cargo.lock) · `cargo fmt --check` and `clippy --all-targets --locked -D warnings` clean; `cargo nextest run`: 461 tests run, 461 passed, 0 skipped; no `.snap.new` (snapshots redact the version); node tests: n/a (plan 03 not landed); npm package versions: after plan 03
 
 ## Blocked
 
@@ -38,7 +39,13 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
 - SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
+- **Plan 03:** not executed. Task 19's SKILL.md part, Task 20 (bot channel scope), Task 21's npm part (`npm/**/package.json` to 0.2.0 plus node tests), C2's dogfood step and C3 wait for it.
+- **Release 0.2.0 (npm):** after plan 03's release workflow exists: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
+- **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
+- **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
+- **Bot tokens:** each adopting repo needs the bot workflow enabled and a token that can read `keelstackhq/decisions` and `keelstackhq/hull` if they are private (repo secret, e.g. a GitHub App token passed as `token`).
+- **hull release** removing the four agent files (C2 last step): tag a hull version.
 
 ## Status
 
-Milestone 2 done.
+Milestone 2 done. Milestone 4 (channels) code complete at 0.2.0; the npm release, bot scope, skill file and cross-repo tasks (C1–C3) are Blocked above.
