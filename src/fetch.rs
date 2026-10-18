@@ -135,6 +135,20 @@ impl Fetcher {
         self.checkout_from(src, &git_dir, &commit, version)
     }
 
+    /// The head of `branch` (`refs/heads/<branch>`), version `0.0.0+g<sha7>`. Tags are ignored.
+    /// An unknown branch is exit 3 naming it.
+    pub fn branch_head(&self, src: &TemplateSource, branch: &str) -> Result<ResolvedTemplate> {
+        let (git_dir, _) = self.repo(src)?;
+        let commit = Git::rev_parse(&git_dir, &format!("refs/heads/{branch}")).map_err(|_| {
+            SpliceError::Template(format!(
+                "template `{}` has no branch `{branch}`; pass an existing branch to --track",
+                src.spec
+            ))
+        })?;
+        let version = Version::parse(&format!("0.0.0+g{}", &commit[..7])).expect("valid semver");
+        self.checkout_from(src, &git_dir, &commit, version)
+    }
+
     /// The template at tag `v<version>`.
     pub fn resolve_version(
         &self,

@@ -76,7 +76,10 @@ today (contract §9.14 keeps its meaning; `--to V` works alone for the main temp
 `channel add` behaves like `update` with an empty base: it refuses a dirty tree (exit 2) unless
 `--allow-dirty`, and plans every rendered file with base = absent (main spec §8.4 row "T only"):
 owned → create, or drift if a different file is there (refused unless `--force`); shared → merge
-with base = empty; seed → skip if present.
+with base = empty; seed → skip if present. A shared-file conflict gets diff3 markers and the lock
+is still written (exit 1, as `update`). A failed post command exits 3 with no channel lock
+written (the message says `no .splice/channels/NAME.toml was written`). `--track` with a branch
+the source does not have is exit 3 naming the branch.
 
 **Tracking a branch.** `--track BRANCH` pins the channel to the branch head at add time and makes
 `update` move to the current head (main spec §4 records version `0.0.0+g<sha7>`; the lock's

@@ -17,7 +17,7 @@ use crate::output::Report;
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
 use crate::render::{PieceInstance, RenderInput, render_tree};
 use crate::source::TemplateSource;
-use crate::vars::{VarSource, interactive, resolve_vars};
+use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -41,6 +41,97 @@ pub struct Prepared {
 
 fn usage<T>(msg: String) -> Result<T> {
     Err(SpliceError::Usage(msg))
+}
+
+/// `base` first, then each `--piece ID[:NAME]`; checks ids, `multiple` and `requires`.
+pub(crate) fn select_pieces(
+    t: &Template,
+    base: &str,
+    specs: &[String],
+) -> Result<Vec<(String, Option<String>)>> {
+    let mut picked: Vec<(String, Option<String>)> = vec![(base.to_string(), None)];
+    for spec in specs {
+        let (id, name) = match spec.split_once(':') {
+            Some((id, name)) if !name.is_empty() => (id, Some(name.to_string())),
+            Some(_) => return usage(format!("--piece `{spec}`: the name after `:` is empty")),
+            None => (spec.as_str(), None),
+        };
+        let Some(piece) = t.pieces.get(id) else {
+            let known: Vec<&str> = t.pieces.keys().map(String::as_str).collect();
+            return usage(format!(
+                "unknown piece `{id}`; the template has: {}",
+                known.join(", ")
+            ));
+        };
+        if name.is_some() && !piece.multiple {
+            return usage(format!(
+                "piece `{id}` is not `multiple`; it cannot be named (`--piece {spec}`)"
+            ));
+        }
+        if !piece.multiple && picked.iter().any(|(p, _)| p == id) {
+            return usage(format!(
+                "piece `{id}` is not `multiple` and is listed twice"
+            ));
+        }
+        picked.push((id.to_string(), name));
+    }
+    for (id, _) in &picked {
+        for req in &t.pieces[id].requires {
+            if !picked.iter().any(|(p, _)| p == req) {
+                return usage(format!(
+                    "piece `{id}` requires piece `{req}`; add `--piece {req}`"
+                ));
+            }
+        }
+    }
+    Ok(picked)
+}
+
+/// The template vars and piece instances of a fresh render (`new`, `channel add`): `base` plus
+/// each `--piece ID[:NAME]`, `--data` checked against the template and the selected pieces,
+/// then every var resolved (flags, prompts or defaults).
+pub(crate) fn instances_for(
+    template: &Template,
+    base: &str,
+    pieces: &[String],
+    data: &IndexMap<String, String>,
+    g: &GlobalArgs,
+) -> Result<(IndexMap<String, String>, Vec<PieceInstance>)> {
+    let picked = select_pieces(template, base, pieces)?;
+    let known_keys = template.manifest.vars.keys().chain(
+        picked
+            .iter()
+            .flat_map(|(id, _)| template.pieces[id].vars.keys()),
+    );
+    if let Some(key) = data.keys().find(|k| !known_keys.clone().any(|n| n == *k)) {
+        return usage(format!(
+            "--data `{key}`: no such variable in the template or the selected pieces"
+        ));
+    }
+    let source = VarSource {
+        data,
+        interactive: interactive(g),
+    };
+    let template_vars = resolve_vars(&template.manifest.vars, &IndexMap::new(), &source)?;
+    let mut instances: Vec<PieceInstance> = Vec::new();
+    for (id, explicit) in &picked {
+        let piece = &template.pieces[id];
+        let mut known = IndexMap::new();
+        if let Some(name) = explicit {
+            known.insert("name".to_string(), name.clone());
+        }
+        let vars = resolve_vars(&piece.vars, &known, &source)?;
+        let name = instance_name(piece, explicit.as_deref(), &vars);
+        if instances.iter().any(|i| i.id == *id && i.name == name) {
+            return usage(format!("piece `{id}` has two instances named `{name}`"));
+        }
+        instances.push(PieceInstance {
+            id: id.clone(),
+            name,
+            vars,
+        });
+    }
+    Ok((template_vars, instances))
 }
 
 /// Spec §8.3 steps 1–6 except the dirty check: read the lock, pick the target, fetch both trees,

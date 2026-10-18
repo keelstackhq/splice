@@ -13,9 +13,8 @@ use crate::lock::{LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
 use crate::output::{Action, Class, Report};
 use crate::post::run_post;
-use crate::render::{PieceInstance, RenderInput, render_tree};
+use crate::render::{RenderInput, render_tree};
 use crate::source::TemplateSource;
-use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -35,46 +34,6 @@ pub(crate) fn parse_data(flags: &[String]) -> Result<IndexMap<String, String>> {
         }
     }
     Ok(data)
-}
-
-/// `base` first, then each `--piece ID[:NAME]`; checks ids, `multiple` and `requires`.
-fn select_pieces(t: &Template, specs: &[String]) -> Result<Vec<(String, Option<String>)>> {
-    let mut picked: Vec<(String, Option<String>)> = vec![(t.manifest.base.clone(), None)];
-    for spec in specs {
-        let (id, name) = match spec.split_once(':') {
-            Some((id, name)) if !name.is_empty() => (id, Some(name.to_string())),
-            Some(_) => return usage(format!("--piece `{spec}`: the name after `:` is empty")),
-            None => (spec.as_str(), None),
-        };
-        let Some(piece) = t.pieces.get(id) else {
-            let known: Vec<&str> = t.pieces.keys().map(String::as_str).collect();
-            return usage(format!(
-                "unknown piece `{id}`; the template has: {}",
-                known.join(", ")
-            ));
-        };
-        if name.is_some() && !piece.multiple {
-            return usage(format!(
-                "piece `{id}` is not `multiple`; it cannot be named (`--piece {spec}`)"
-            ));
-        }
-        if !piece.multiple && picked.iter().any(|(p, _)| p == id) {
-            return usage(format!(
-                "piece `{id}` is not `multiple` and is listed twice"
-            ));
-        }
-        picked.push((id.to_string(), name));
-    }
-    for (id, _) in &picked {
-        for req in &t.pieces[id].requires {
-            if !picked.iter().any(|(p, _)| p == req) {
-                return usage(format!(
-                    "piece `{id}` requires piece `{req}`; add `--piece {req}`"
-                ));
-            }
-        }
-    }
-    Ok(picked)
 }
 
 /// Spec §8.1 step 2: no lock yet, and the destination is empty (apart from `.git`) unless forced.
@@ -118,42 +77,11 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     check_dest(&dest, a.force)?;
 
     // 3. Instances, then 4. variables.
-    let picked = select_pieces(&template, &a.pieces)?;
+    let picked = super::update::select_pieces(&template, &template.manifest.base, &a.pieces)?;
     template.ensure_no_sections(&picked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>())?;
     let data = parse_data(&a.data)?;
-    let known_keys = template.manifest.vars.keys().chain(
-        picked
-            .iter()
-            .flat_map(|(id, _)| template.pieces[id].vars.keys()),
-    );
-    if let Some(key) = data.keys().find(|k| !known_keys.clone().any(|n| n == *k)) {
-        return usage(format!(
-            "--data `{key}`: no such variable in the template or the selected pieces"
-        ));
-    }
-    let source = VarSource {
-        data: &data,
-        interactive: interactive(g),
-    };
-    let template_vars = resolve_vars(&template.manifest.vars, &IndexMap::new(), &source)?;
-    let mut instances: Vec<PieceInstance> = Vec::new();
-    for (id, explicit) in &picked {
-        let piece = &template.pieces[id];
-        let mut known = IndexMap::new();
-        if let Some(name) = explicit {
-            known.insert("name".to_string(), name.clone());
-        }
-        let vars = resolve_vars(&piece.vars, &known, &source)?;
-        let name = instance_name(piece, explicit.as_deref(), &vars);
-        if instances.iter().any(|i| i.id == *id && i.name == name) {
-            return usage(format!("piece `{id}` has two instances named `{name}`"));
-        }
-        instances.push(PieceInstance {
-            id: id.clone(),
-            name,
-            vars,
-        });
-    }
+    let (template_vars, instances) =
+        super::update::instances_for(&template, &template.manifest.base, &a.pieces, &data, g)?;
 
     // 5. Render everything before touching the destination.
     let tree = render_tree(
