@@ -1,19 +1,20 @@
-//! `splice channel add|remove` (channels spec §3). `remove` is a stub until Task 17.
+//! `splice channel add|remove` (channels spec §3).
 
 use std::collections::BTreeMap;
 
 use semver::Version;
 
-use crate::apply::{ApplyCtx, LockOut, apply};
+use crate::apply::{ApplyCtx, LockOut, apply, apply_files};
 use crate::cli::{ChannelAddArgs, ChannelRemoveArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
 use crate::filter::Filter;
+use crate::fsio;
 use crate::lock::{ChannelLock, ChannelMeta, Lock, valid_channel_name};
 use crate::manifest::{PostCmd, Template, When};
 use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, PlanInput, plan};
-use crate::render::{RenderInput, RenderedTree, render_sections, render_tree};
+use crate::render::{RenderInput, RenderedSections, RenderedTree, render_sections, render_tree};
 use crate::sections::{SectionInput, plan_sections};
 use crate::source::TemplateSource;
 use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
@@ -208,6 +209,132 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
     }
 }
 
-pub fn remove(_g: &GlobalArgs, _a: &ChannelRemoveArgs) -> Result<Report> {
-    Err(not_implemented("channel remove"))
+/// `splice channel remove`: every locked file and section is planned as "B only" (channels spec
+/// §8). Unedited owned/shared files are deleted, edited ones are kept (owned drift refuses with
+/// exit 1 unless `--force`; `--force` keeps them and says so, it never deletes them), seeds are
+/// never touched, blocks are stripped (an edited block is kept the same way). The channel lock is
+/// deleted last, so a failure leaves it and a re-run converges.
+pub fn remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report> {
+    let repo = g.dir.as_path();
+    if !a.allow_dirty {
+        super::update::require_clean(repo, "channel remove")?;
+    }
+    let sources = Sources::load(repo)?;
+    let cl = sources.channel(&a.name)?;
+    let name = a.name.as_str();
+    let lock_path = cl.path();
+
+    let sections_theirs = RenderedSections::new();
+    let disk = Disk::snapshot(
+        repo,
+        cl.lock
+            .files
+            .keys()
+            .chain(cl.sections.keys())
+            .map(String::as_str),
+    )?;
+
+    // Files: an edited owned file is drift; an edited shared file is simply kept (shared files
+    // are meant to be edited). Only the unedited ones go to the planner as "gone".
+    let mut drift: Vec<String> = Vec::new();
+    let mut kept: Vec<String> = Vec::new();
+    let mut removes: Vec<String> = Vec::new();
+    for (path, locked) in &cl.lock.files {
+        let Some(bytes) = disk.files.get(path).and_then(|o| o.as_deref()) else {
+            continue; // already gone
+        };
+        if fsio::sha256_hex(bytes) == locked.sha256 {
+            removes.push(path.clone());
+        } else if locked.class == Class::Owned && !a.force {
+            drift.push(path.clone());
+        } else {
+            kept.push(format!("`{path}` was edited locally; kept"));
+        }
+    }
+    let empty = RenderedTree::new();
+    let fplan = plan(&PlanInput {
+        base: &empty,
+        theirs: &empty,
+        disk: &disk,
+        lock: &cl.lock,
+        removes,
+        force: a.force,
+    });
+
+    // Sections: an edited block is kept by the planner; without --force that is a refusal.
+    let filter = Filter::new(&[], &[])?;
+    let splan = plan_sections(&SectionInput {
+        channel: name,
+        theirs: &sections_theirs,
+        disk: &disk,
+        locked: &cl.sections,
+        filter: &filter,
+        removing: true,
+        force: a.force,
+    });
+    let edited_blocks: Vec<String> = splan
+        .changes
+        .iter()
+        .filter(|c| c.action == Action::Skip)
+        .map(|c| c.report_path(name))
+        .collect();
+    if !a.force {
+        drift.extend(edited_blocks);
+    }
+
+    if !drift.is_empty() || !splan.broken.is_empty() {
+        let mut report = Report::new("channel remove");
+        report.ok = false;
+        for path in &drift {
+            report.msg(format!(
+                "`{path}` is owned by channel {name} but was edited locally"
+            ));
+        }
+        report.messages.extend(splan.broken.iter().cloned());
+        report.msg(
+            "nothing was removed; revert the files above or pass --force to keep them and \
+             remove the rest (broken markers are fixed by hand)",
+        );
+        return Err(SpliceError::Drift(report));
+    }
+
+    // Skipped (edited) blocks are reported as messages, not written.
+    let sections: Vec<_> = splan
+        .changes
+        .iter()
+        .filter(|c| c.action != Action::Skip)
+        .cloned()
+        .collect();
+    let lock_out = LockOut::Channel(cl.clone());
+    let version = lock_out.version().clone();
+    let mut report = apply_files(&ApplyCtx {
+        repo,
+        plan: &fplan,
+        steps: Vec::new(),
+        from: version.clone(),
+        to: version,
+        lock: lock_out,
+        post: Vec::new(),
+        when: When::Update,
+        no_post: true,
+        json: g.json,
+        command: "channel remove",
+        sections: &sections,
+    })?;
+    report.messages.extend(kept);
+    report
+        .messages
+        .extend(splan.changes.iter().filter_map(|c| c.note.clone()));
+
+    // The lock goes last; the directory only when nothing else lives there.
+    fsio::check_target(repo, &lock_path)?;
+    fsio::remove_file(repo, &lock_path).map_err(|e| {
+        SpliceError::Env(format!(
+            "cannot delete {lock_path}: {e}; files and sections are already removed; re-run \
+             `splice channel remove {name}` to finish, or `git checkout -- . && git clean -fd` \
+             restores the previous state"
+        ))
+    })?;
+    let _ = std::fs::remove_dir(repo.join(".splice/channels"));
+    Ok(report)
 }

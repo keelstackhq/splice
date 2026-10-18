@@ -146,19 +146,3 @@ fn help_lists_channel() {
         .clone();
     assert!(String::from_utf8_lossy(&out).contains("channel"));
 }
-
-#[test]
-fn channel_remove_is_a_stub_until_implemented() {
-    let out = splice_cmd()
-        .args(["--json", "channel", "remove", "rig"])
-        .assert()
-        .code(2)
-        .get_output()
-        .stdout
-        .clone();
-    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert!(
-        v["messages"].to_string().contains("not implemented yet"),
-        "{v}"
-    );
-}

@@ -803,3 +803,127 @@ fn add_channel_section_drift_is_host_hash_name() {
     assert!(v["messages"].to_string().contains("`AGENTS.md#rig`"), "{v}");
     assert_eq!(status(r), "");
 }
+
+// ---- channel remove (Task 17) ----
+
+/// A main repo with a pre-existing `CLAUDE.md`, plus channel `rig` added and committed.
+fn rig_added() -> (TempDir, TempDir, TempDir) {
+    let (tpl, repo) = main_repo();
+    std::fs::write(repo.path().join("CLAUDE.md"), "# Mine\n").unwrap();
+    commit_all(repo.path());
+    let ch = channel_repo(&["v1"]);
+    chan_commit(repo.path(), &full_args(&src(&ch)));
+    (tpl, repo, ch)
+}
+
+#[test]
+fn remove_deletes_unedited_and_strips_sections() {
+    let (_tpl, repo, _ch) = rig_added();
+    let r = repo.path();
+    let lock_before = std::fs::read(r.join(".splice/lock.toml")).unwrap();
+    assert!(read(r, "AGENTS.md").contains("splice:rig:begin"));
+    let v = stdout_json(chan(r, &["channel", "remove", "rig"]).success());
+    assert_eq!(v["command"], "channel remove");
+    assert_eq!(v["ok"], true);
+    for f in [
+        ".claude/agents/explorer.md",
+        ".claude/agents/reviewer.md",
+        ".claude/skills/caveman/SKILL.md",
+        "docs/agents/rules.md",
+        "AGENTS.md",
+        ".splice/channels/rig.toml",
+    ] {
+        assert!(!r.join(f).exists(), "{f} should be gone");
+    }
+    assert!(!r.join(".splice/channels").exists());
+    assert_eq!(read(r, "CLAUDE.md"), "# Mine\n");
+    assert!(r.join("docs/agents/notes.md").is_file(), "seeds stay");
+    assert_eq!(
+        std::fs::read(r.join(".splice/lock.toml")).unwrap(),
+        lock_before
+    );
+    let paths: Vec<String> = changes(&v).into_iter().map(|(p, _)| p).collect();
+    assert!(paths.contains(&"AGENTS.md#rig".to_string()), "{paths:?}");
+    assert!(paths.contains(&"CLAUDE.md#rig".to_string()), "{paths:?}");
+}
+
+#[test]
+fn remove_refuses_owned_drift() {
+    let (_tpl, repo, _ch) = rig_added();
+    let r = repo.path();
+    std::fs::write(r.join(".claude/agents/reviewer.md"), "# mine\n").unwrap();
+    commit_all(r);
+    let lock = read(r, ".splice/channels/rig.toml");
+    let v = stdout_json(chan(r, &["channel", "remove", "rig"]).code(1));
+    assert_eq!(v["ok"], false);
+    assert!(v["changes"].as_array().unwrap().is_empty(), "{v}");
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains(".claude/agents/reviewer.md"),
+        "{v}"
+    );
+    assert_eq!(status(r), "");
+    assert_eq!(read(r, ".splice/channels/rig.toml"), lock);
+    assert!(r.join(".claude/agents/explorer.md").is_file());
+
+    let v = stdout_json(chan(r, &["channel", "remove", "rig", "--force"]).success());
+    assert_eq!(read(r, ".claude/agents/reviewer.md"), "# mine\n");
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("`.claude/agents/reviewer.md` was edited locally; kept"),
+        "{v}"
+    );
+    assert!(!r.join(".claude/agents/explorer.md").exists());
+    assert!(!r.join("AGENTS.md").exists());
+    assert!(!r.join(".splice/channels/rig.toml").exists());
+}
+
+#[test]
+fn remove_keeps_edited_section() {
+    let (_tpl, repo, _ch) = rig_added();
+    let r = repo.path();
+    let edited = read(r, "AGENTS.md").replace("- Keep files small.", "- Keep files tiny.");
+    assert_ne!(edited, read(r, "AGENTS.md"));
+    std::fs::write(r.join("AGENTS.md"), &edited).unwrap();
+    commit_all(r);
+    let v = stdout_json(chan(r, &["channel", "remove", "rig"]).code(1));
+    assert!(v["messages"].to_string().contains("AGENTS.md#rig"), "{v}");
+    assert_eq!(status(r), "");
+    assert!(r.join(".splice/channels/rig.toml").is_file());
+
+    let v = stdout_json(chan(r, &["channel", "remove", "rig", "--force"]).success());
+    assert_eq!(
+        read(r, "AGENTS.md"),
+        edited,
+        "an edited block is never deleted"
+    );
+    assert!(v["messages"].to_string().contains("kept"), "{v}");
+    assert!(!r.join(".splice/channels/rig.toml").exists());
+    assert_eq!(read(r, "CLAUDE.md"), "# Mine\n");
+}
+
+#[test]
+fn remove_unknown() {
+    let repo = bare_repo();
+    let v = stdout_json(chan(repo.path(), &["channel", "remove", "nope"]).code(2));
+    assert!(
+        v["messages"].to_string().contains("unknown channel `nope`"),
+        "{v}"
+    );
+}
+
+#[test]
+fn remove_dirty() {
+    let (_tpl, repo, _ch) = rig_added();
+    let r = repo.path();
+    std::fs::write(r.join("scratch.txt"), "x\n").unwrap();
+    let before = status(r);
+    let v = stdout_json(chan(r, &["channel", "remove", "rig"]).code(2));
+    assert!(v["messages"].to_string().contains("--allow-dirty"), "{v}");
+    assert_eq!(status(r), before);
+    assert!(r.join(".splice/channels/rig.toml").is_file());
+    chan(r, &["channel", "remove", "rig", "--allow-dirty"]).success();
+    assert!(!r.join(".splice/channels/rig.toml").exists());
+}

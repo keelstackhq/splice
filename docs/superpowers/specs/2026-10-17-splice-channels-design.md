@@ -60,7 +60,7 @@ New and extended commands (global flags `--json`, `--yes`, `-C` as in main spec 
 | Command | Purpose |
 |---|---|
 | `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only G]… [--exclude G]… [--allow-dirty] [--force] [--no-post]` | Render the channel's base + listed pieces into the current repo, write `.splice/channels/NAME.toml`. |
-| `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited owned/shared files, strip its sections, delete its lock. |
+| `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited owned/shared files, strip its sections, delete its lock last. |
 | `splice add <piece-id> --channel NAME [--name N] [--data K=V]…` | Add a piece instance to a channel (e.g. a second harness). |
 | `splice update --channel NAME [--to V] [--only G]… [--exclude G]…` | Update one channel. Any `--only`/`--exclude` given replaces **both** stored lists (`--only '**'` alone keeps everything). |
 | `splice update --all [--allow-dirty] [--force] [--no-post]` | Update the main template (if any) to its latest version and every channel (§8). |
@@ -305,8 +305,14 @@ when the channel template is written (they move; a channel release fixes them fo
   3f2c1ab → 9e01d2c (main)`. Exit 1 if any source has a finding.
 - `explain <path>`: checks every lock (and re-renders as main spec §8.9); adds message
   `source=main` or `source=channel:NAME`; a section host also lists `section=NAME` per block.
-- `channel remove`: plan = every locked file and section as "B only"; refuses owned drift
-  without `--force`; deletes the lock last.
+- `channel remove`: plan = every locked file and section as "B only". Unedited owned/shared files
+  are deleted; seeds are never touched; a host splice created is deleted only when nothing else
+  is left in it. Dirty tree → exit 2 unless `--allow-dirty`. An edited owned file or edited block
+  is drift: exit 1, nothing written, drift in `messages` with empty `changes` (the `update`
+  family); broken markers also refuse. `--force` keeps edited files and blocks and says so in
+  `messages` (it never deletes them) and removes the rest. An edited shared file is kept with a
+  message (no refusal). The channel lock is deleted last (and `.splice/channels/` when empty), so
+  a failure leaves it and a re-run converges; the main lock is never touched.
 
 JSON stays contract §8 (`ok`, `command`, `changes`, `messages`); `command` is `channel add`,
 `channel remove`, `update`, etc. Source attribution travels in `messages`, never extra fields.

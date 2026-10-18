@@ -52,12 +52,12 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | `splice diff [--to VERSION] [--channel NAME]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 | `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only GLOB]… [--exclude GLOB]… [--allow-dirty] [--force] [--no-post]` | Render a template source into the repo as a named channel (channels spec §3). |
-| `splice channel remove <name> [--allow-dirty] [--force]` | Stop tracking a channel and delete its lock. |
+| `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited files, strip its sections, then delete its lock last (channels spec §8). |
 
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
 `--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
 working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
-until their channels plan tasks land (`check`/`diff --channel`, `channel remove`).
+until their channels plan tasks land (`check`/`diff --channel`).
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
