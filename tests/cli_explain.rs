@@ -63,6 +63,9 @@ fn explains_classes() {
     let msgs = v["messages"].as_array().unwrap();
     assert!(msgs.iter().any(|m| m == "glob=src/**"), "{msgs:?}");
     assert!(msgs.iter().any(|m| m == "piece=app/web"), "{msgs:?}");
+    // No channel locks: explain stays exactly M2 (no `source=` message or column).
+    assert_eq!(msgs.len(), 3, "{msgs:?}");
+    assert!(!out.contains("source="), "{out}");
 }
 
 #[test]

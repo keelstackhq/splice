@@ -213,14 +213,17 @@ In the host file the channel owns exactly the lines between
   only the block; host present without markers → block appended after one blank line.
 - **Update:** region body sha (LF-normalised) equals `[sections]` sha → replace the body;
   differs → drift (owned rules: refuse with exit 1 unless `--force`). Fragment unchanged → skip.
+  Body already equals the new fragment (a rerun after a failed step, post or lock write) →
+  record the new sha, nothing written, so the rerun converges without a restore.
 - **Missing markers** for a locked section → drift (user deleted it; `--force` re-appends).
   Duplicate or unbalanced markers for one channel → exit 1 with the line numbers.
 - **Removal** (section gone from target, filtered out, or `channel remove`): delete the block if
   unedited, else keep and report. A host left empty (whitespace only) by a removal is deleted
   only if splice created it (recorded as `created = true` in `[sections]`).
 - **Body rules.** A fragment body is normalised to LF and ends in a newline (empty stays empty);
-  a CRLF host gets CRLF back. A body line equal to the channel's own end marker, or matching its
-  begin marker, is refused (exit 3, naming the channel and fragment): it would corrupt the host.
+  a CRLF host gets CRLF back. A body line that parses as a begin or end marker of any channel
+  (`<!-- splice:<name>:begin …-->` or `<!-- splice:<name>:end -->`) is refused (exit 3, naming
+  the channel and the line): it would corrupt this or another channel's block in the host.
   The begin marker matches exactly (`<!-- splice:<channel>:begin` then whitespace, ending in
   `-->`; `:beginX` does not), so a reworded tail still parses. A UTF-8 BOM before a marker on line
   1 is recognised and kept. Removing a block also drops the blank line insert added; a host that
@@ -283,7 +286,9 @@ when the channel template is written (they move; a channel release fixes them fo
   the tracked branch head.
 - `update --all`: plan main + every channel (sorted by name) in memory; run the claim check on the
   combined result; if any source has owned drift or broken markers without `--force`, write
-  nothing (exit 1). Then, in that order: (1) every source's files, sections, removals and
+  nothing (exit 1). Every write target of every source (files, section hosts, lock paths) is
+  checked before the first write of any source; an unsafe one (symlink, `..`) exits 3 naming the
+  source, with nothing written. Then, in that order: (1) every source's files, sections, removals and
   migration steps (main first, then channels by name); (2) the `[[post]]` commands of all sources
   **once**, deduplicated by exact `run` string, skipped if any source conflicted or `--no-post`;
   (3) every lock (main + channels), each written atomically, **last**. Post therefore sees the old
@@ -304,7 +309,8 @@ when the channel template is written (they move; a channel release fixes them fo
   does not report noise. Messages name the source: `channel decisions: update available
   3f2c1ab → 9e01d2c (main)`. Exit 1 if any source has a finding.
 - `explain <path>`: checks every lock (and re-renders as main spec §8.9); adds message
-  `source=main` or `source=channel:NAME`; a section host also lists `section=NAME` per block.
+  `source=main` or `source=channel:NAME` when the repo has channel locks (a repo without
+  channels explains exactly as M2); a section host also lists `section=NAME` per block.
 - `channel remove`: plan = every locked file and section as "B only". Unedited owned/shared files
   are deleted; seeds are never touched; a host splice created is deleted only when nothing else
   is left in it. Dirty tree → exit 2 unless `--allow-dirty`. An edited owned file or edited block

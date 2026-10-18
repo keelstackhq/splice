@@ -181,7 +181,12 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     }
     // Drift or a conflict (only without `--force`): write nothing, no files and no lock (C3).
     if !plan.drift.is_empty() || !plan.conflicts.is_empty() {
-        return Err(refuse(report, &plan, &SectionPlan::default()));
+        return Err(refuse(
+            report,
+            &plan,
+            &SectionPlan::default(),
+            "the template",
+        ));
     }
 
     // 5. Apply: files, removals, post of every piece present after the add, then the lock last.
@@ -212,12 +217,13 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
     Ok(report)
 }
 
-/// Drift or conflicts (owned files, sections): the C3 refusal, nothing written, exit 1.
-fn refuse(mut report: Report, plan: &Plan, sections: &SectionPlan) -> SpliceError {
+/// Drift or conflicts (owned files, sections): the C3 refusal, nothing written, exit 1. `owner`
+/// is `the template` (main, M2 text) or `channel NAME`.
+fn refuse(mut report: Report, plan: &Plan, sections: &SectionPlan, owner: &str) -> SpliceError {
     for path in plan.drift.iter().chain(&sections.drift) {
         report.push(path, Action::Conflict, Class::Owned);
         report.msg(format!(
-            "`{path}` is owned by the template but was edited locally"
+            "`{path}` is owned by {owner} but was edited locally"
         ));
     }
     report.messages.extend(sections.broken.iter().cloned());
@@ -311,7 +317,7 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
         || !splan.drift.is_empty()
         || !splan.broken.is_empty()
     {
-        return Err(refuse(report, &plan, &splan));
+        return Err(refuse(report, &plan, &splan, &format!("channel {name}")));
     }
 
     let mut post: Vec<PostCmd> = Vec::new();

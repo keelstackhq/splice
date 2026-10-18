@@ -175,18 +175,28 @@ fn readme_channel_flags_exist() {
             .clone();
         help.push_str(&String::from_utf8_lossy(&out));
     }
-    let flag = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
-    let mut seen = 0;
-    for m in flag.find_iter(section) {
-        seen += 1;
-        assert!(
-            help.contains(m.as_str()),
-            "README Channels names unknown flag {}",
-            m.as_str()
-        );
-    }
+    let unknown = unknown_flags(section, &help);
     assert!(
-        seen >= 8,
+        unknown.is_empty(),
+        "README Channels names unknown flags {unknown:?}"
+    );
+    assert!(
+        flags(section).len() >= 8,
         "the Channels section should show the channel flags"
     );
+    // Whole flag words: a prefix of a real flag is not a flag.
+    assert_eq!(unknown_flags("use --chan", &help), ["--chan"]);
+}
+
+fn flags(text: &str) -> Vec<&str> {
+    let flag = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
+    flag.find_iter(text).map(|m| m.as_str()).collect()
+}
+
+fn unknown_flags<'a>(section: &'a str, help: &str) -> Vec<&'a str> {
+    let known: std::collections::BTreeSet<&str> = flags(help).into_iter().collect();
+    flags(section)
+        .into_iter()
+        .filter(|f| !known.contains(f))
+        .collect()
 }

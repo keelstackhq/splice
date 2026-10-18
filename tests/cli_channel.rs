@@ -800,7 +800,12 @@ fn add_channel_section_drift_is_host_hash_name() {
         )),
         "{v}"
     );
-    assert!(v["messages"].to_string().contains("`AGENTS.md#rig`"), "{v}");
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("`AGENTS.md#rig` is owned by channel rig but was edited locally"),
+        "{v}"
+    );
     assert_eq!(status(r), "");
 }
 

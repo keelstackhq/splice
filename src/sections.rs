@@ -177,6 +177,9 @@ pub fn plan_sections(input: &SectionInput) -> SectionPlan {
             (Some(l), Some(b)) => {
                 if sha == l.sha256 {
                     keep_lock(&mut plan); // G8: fragment unchanged
+                } else if body_sha(&b.body) == sha {
+                    // Already the new body (a rerun after a failed step, post or lock write).
+                    plan.locked.insert(host.clone(), new_lock(l.created));
                 } else if input.force || body_sha(&b.body) == l.sha256 {
                     let r = replace(disk_text.unwrap_or_default(), input.channel, b, &body);
                     apply(&mut plan, r, Action::Update, l.created, None);
@@ -276,23 +279,30 @@ fn is_begin(text: &str, channel: &str) -> bool {
     rest.ends_with("-->") && (rest.starts_with(char::is_whitespace) || rest.starts_with("-->"))
 }
 
-/// LF body ending in a newline (empty stays empty); refuses a line that would parse as this
+/// LF body ending in a newline (empty stays empty); refuses a line that would parse as any
 /// channel's marker, which would corrupt the host on the next read.
 fn clean_body(channel: &str, body: &str) -> Result<String, SpliceError> {
     let mut body = body.replace("\r\n", "\n");
     if !body.is_empty() && !body.ends_with('\n') {
         body.push('\n');
     }
-    let end = end_marker(channel);
-    if body
-        .lines()
-        .any(|l| is_begin(l.trim_end(), channel) || l.trim_end() == end)
-    {
+    if let Some(line) = body.lines().find(|l| is_any_marker(l.trim_end())) {
         return Err(SpliceError::Template(format!(
-            "channel {channel}: fragment text contains a splice:{channel} marker line; remove it from the source"
+            "channel {channel}: fragment text contains a splice marker line `{line}`; remove it from the source"
         )));
     }
     Ok(body)
+}
+
+/// A begin or end marker line of any channel (`<!-- splice:<name>:begin|end`).
+fn is_any_marker(text: &str) -> bool {
+    let Some(rest) = text.strip_prefix("<!-- splice:") else {
+        return false;
+    };
+    let Some((name, _)) = rest.split_once(':') else {
+        return false;
+    };
+    !name.is_empty() && (is_begin(text, name) || text == end_marker(name))
 }
 
 fn to_eol(text: &str, eol: &str) -> String {
@@ -589,8 +599,19 @@ mod tests {
             let b = find_block(&host, "rig").unwrap().unwrap();
             assert!(replace(&host, "rig", &b, &body).is_err());
         }
-        // other channels' markers and mere mentions are fine
-        let ok = "<!-- splice:other:end -->\nsee <!-- splice:rig:end --> inline\n";
+        // another channel's marker lines would corrupt that channel's block: refused too
+        for body in [
+            "<!-- splice:other:end -->\n".to_string(),
+            format!("x\n{}\n", begin_marker("other-ch")),
+            "<!-- splice:b2:begin -->  \n".to_string(),
+        ] {
+            let err = insert(None, "rig", &body).unwrap_err();
+            assert_eq!(err.exit_code(), 3);
+            assert!(err.to_string().contains("marker line"), "{err}");
+        }
+        // mere mentions and look-alikes are fine
+        let ok =
+            "see <!-- splice:rig:end --> inline\n<!-- splice:x:beginX -->\n<!-- splice::end -->\n";
         assert!(insert(None, "rig", ok).is_ok());
     }
 

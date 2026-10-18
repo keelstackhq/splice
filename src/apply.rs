@@ -128,6 +128,19 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
     }
 }
 
+/// Check every write target of `ctx` (the lock path, every change, every section host) without
+/// writing. `update --all` runs it for every source before the first write of any source.
+pub fn check_targets(ctx: &ApplyCtx) -> Result<(), SpliceError> {
+    fsio::check_target(ctx.repo, &ctx.lock.path())?;
+    for c in &ctx.plan.changes {
+        fsio::check_target(ctx.repo, &c.path)?;
+    }
+    for s in ctx.sections {
+        fsio::check_target(ctx.repo, &s.host)?;
+    }
+    Ok(())
+}
+
 /// [`apply_files`] plus whether anything may have been written (for the restore hint).
 fn write_phase(ctx: &ApplyCtx) -> Result<(Report, bool), SpliceError> {
     debug_assert!(
@@ -146,13 +159,7 @@ fn write_phase(ctx: &ApplyCtx) -> Result<(Report, bool), SpliceError> {
         return Err(SpliceError::Drift(report));
     }
 
-    fsio::check_target(ctx.repo, &ctx.lock.path())?;
-    for c in &plan.changes {
-        fsio::check_target(ctx.repo, &c.path)?;
-    }
-    for s in ctx.sections {
-        fsio::check_target(ctx.repo, &s.host)?;
-    }
+    check_targets(ctx)?;
 
     // From here on a failure may leave files written: say how to restore (only then), and list
     // the changes already applied (spec §9). `wrote` is set before each write attempt: a write

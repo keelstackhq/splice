@@ -132,6 +132,8 @@ fn section_drift_refused_then_forced() {
     let msg = v["messages"].to_string();
     assert!(msg.contains("AGENTS.md#rig"), "{msg}");
     assert!(msg.contains("--force"), "{msg}");
+    // `update` family (per-family ruling): drift in messages only, changes empty (as M2).
+    assert_eq!(v["changes"], serde_json::json!([]), "{v}");
     assert_eq!(status(r), "");
     assert_eq!(bytes(r, RIG_TOML), rig_before);
 
@@ -945,5 +947,111 @@ fn all_earlier_delete_feeds_later_seed() {
     update_all(r).success();
     assert_eq!(read(r, "tool.config.mts"), "// seeded by t\n");
     assert_eq!(main_version(r), "2.0.0");
+    assert_eq!(chan_version(r, "t"), "2.0.0");
+}
+
+#[test]
+fn rerun_after_failed_post_converges_without_restore() {
+    // v1 -> v2 changes the AGENTS.md#rig fragment; the post fails after the block is written.
+    let (_tpl, repo, _ch) = setup();
+    let r = repo.path();
+    std::fs::remove_file(r.join(".rig-post.log")).unwrap();
+    std::fs::create_dir(r.join(".rig-post.log")).unwrap();
+    std::fs::write(r.join(".rig-post.log/keep"), "").unwrap();
+    commit_all(r);
+    let rig_before = bytes(r, RIG_TOML);
+    stdout_json(update_rig(r, &[]).code(3));
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+    assert!(read(r, "AGENTS.md").contains("- Keep files small and focused."));
+    // Fix the post, no restore: the rerun must converge, not report the new block as drift.
+    std::fs::remove_dir_all(r.join(".rig-post.log")).unwrap();
+    let v = stdout_json(update_rig(r, &["--allow-dirty"]).success());
+    let msg = v["messages"].to_string();
+    assert!(!msg.contains("AGENTS.md#rig"), "{msg}");
+    let cl = rig(r);
+    assert_eq!(cl.lock.template.version.to_string(), "2.0.0");
+    let agents = read(r, "AGENTS.md");
+    let body = agents
+        .split_inclusive('\n')
+        .skip_while(|l| !l.starts_with("<!-- splice:rig:begin"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("<!-- splice:rig:end"))
+        .collect::<String>();
+    assert_eq!(
+        cl.sections["AGENTS.md"].sha256,
+        splice::sections::body_sha(&body)
+    );
+    stdout_json(chan(r, &["check", "--channel", "rig"]).success());
+}
+
+#[test]
+fn all_symlinked_target_in_later_channel_writes_nothing() {
+    // rig (earlier) has file changes; the lock path of rigb (later) is a symlink. Every source's
+    // targets (files, hosts, lock) are checked before the first write: nothing is written.
+    let (_tpl, repo, _ch, _chb) = setup_two(&["v1"]);
+    let r = repo.path();
+    std::fs::rename(r.join(RIGB_TOML), r.join(".splice/rigb-real.toml")).unwrap();
+    std::os::unix::fs::symlink("../rigb-real.toml", r.join(RIGB_TOML)).unwrap();
+    commit_all(r);
+    let (main_before, rig_before) = (bytes(r, MAIN_LOCK), bytes(r, RIG_TOML));
+    let v = stdout_json(update_all(r).code(3));
+    assert!(v["messages"].to_string().contains("rigb.toml"), "{v}");
+    assert_eq!(status(r), "", "{v}");
+    assert_eq!(bytes(r, MAIN_LOCK), main_before);
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+}
+
+#[test]
+fn all_symlinked_host_in_later_channel_writes_nothing() {
+    // rigb (later) v2 adds a section in CHANGELOG.md, a symlink: refused before any write.
+    let (_tpl, repo, _ch, _chb) = setup_two(&["v1"]);
+    let r = repo.path();
+    std::fs::write(r.join("elsewhere.md"), "# elsewhere\n").unwrap();
+    std::os::unix::fs::symlink("elsewhere.md", r.join("CHANGELOG.md")).unwrap();
+    commit_all(r);
+    let (rig_before, rigb_before) = (bytes(r, RIG_TOML), bytes(r, RIGB_TOML));
+    let v = stdout_json(update_all(r).code(3));
+    assert!(v["messages"].to_string().contains("CHANGELOG.md"), "{v}");
+    assert_eq!(status(r), "", "{v}");
+    assert_eq!(bytes(r, "elsewhere.md"), b"# elsewhere\n");
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+    assert_eq!(bytes(r, RIGB_TOML), rigb_before);
+}
+
+#[test]
+fn all_channel_conflict_line_names_the_channel() {
+    // A diff3 conflict in a channel's shared file: the summary is the channel's, not main's.
+    let toml = "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nshared = [\"chan-notes.txt\"]\n[merge]\n\"chan-notes.txt\" = \"text\"\n";
+    let t = inline_template(&[("core", toml, &[("chan-notes.txt", "a\nb\nc\n")])]);
+    git(
+        t.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    commit_tag(t.path(), "v1", "v1.0.0");
+    let (_tpl, repo) = main_repo();
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    std::fs::write(r.join("chan-notes.txt"), "a\nmine\nc\n").unwrap();
+    commit_all(r);
+    std::fs::write(
+        t.path().join("pieces/core/files/chan-notes.txt"),
+        "a\ntheirs\nc\n",
+    )
+    .unwrap();
+    commit_tag(t.path(), "v2", "v2.0.0");
+    let v = stdout_json(update_all(r).code(1));
+    let msgs: Vec<String> = v["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap().to_string())
+        .collect();
+    let summary: Vec<_> = msgs.iter().filter(|m| m.contains("conflicts in")).collect();
+    assert_eq!(summary.len(), 1, "{msgs:?}");
+    assert!(
+        summary[0].starts_with("channel t: conflicts in chan-notes.txt"),
+        "{msgs:?}"
+    );
     assert_eq!(chan_version(r, "t"), "2.0.0");
 }

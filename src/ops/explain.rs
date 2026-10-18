@@ -123,19 +123,24 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
             } else {
                 "none"
             };
+            // `source=` only when channels exist: a repo without channels explains as M2.
             let source = match source {
-                SourceId::Main => "main".to_string(),
-                SourceId::Channel(n) => format!("channel:{n}"),
+                _ if sources.channels.is_empty() => None,
+                SourceId::Main => Some("source=main".to_string()),
+                SourceId::Channel(n) => Some(format!("source=channel:{n}")),
             };
             report.push(&path, Action::Skip, file.class);
             if g.json {
                 report.msg(format!("piece={piece}"));
                 report.msg(format!("glob={glob}"));
                 report.msg(format!("merge={merge}"));
-                report.msg(format!("source={source}"));
+                if let Some(s) = &source {
+                    report.msg(s.clone());
+                }
             }
+            let column = source.map(|s| format!("  {s}")).unwrap_or_default();
             report.lines.push(format!(
-                "{path}  {}  {piece}  glob={glob}  merge={merge}  source={source}",
+                "{path}  {}  {piece}  glob={glob}  merge={merge}{column}",
                 file.class.as_str()
             ));
         }

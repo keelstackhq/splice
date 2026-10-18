@@ -6,7 +6,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use semver::Version;
 
-use crate::apply::{ApplyCtx, LockOut, apply, apply_files, write_locks};
+use crate::apply::{ApplyCtx, LockOut, apply, apply_files, check_targets, write_locks};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
 use crate::fetch::{Fetcher, ResolvedTemplate};
@@ -859,6 +859,24 @@ fn apply_prepared(
 
 /// The migration steps between `from` and `to`, each with its migration's version (none for a
 /// tracked head, B5).
+/// The write-phase context of one `update --all` source: no post, no lock (written last).
+fn all_ctx<'a>(repo: &'a Path, s: &'a AllSource, json: bool) -> ApplyCtx<'a> {
+    ApplyCtx {
+        repo,
+        plan: &s.prep.plan,
+        steps: steps_of(&s.prep),
+        from: s.prep.from.clone(),
+        to: s.prep.to.clone(),
+        lock: s.lock_out(),
+        post: Vec::new(),
+        when: When::Update,
+        no_post: true,
+        json,
+        command: "update",
+        sections: s.sections(),
+    }
+}
+
 fn steps_of(prep: &Prepared) -> Vec<(&Version, &Step)> {
     if prep.tracked {
         return Vec::new();
@@ -1062,22 +1080,20 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             report.messages.extend(prefixed(&s.id, &s.prep.messages));
         }
     }
+    let ctx_of = |s| all_ctx(repo, s, g.json);
+    // Every source's targets before the first write of any source: a bad target in a later
+    // source must not leave an earlier source's files written.
+    for s in &changed {
+        if let Err(e) = check_targets(&ctx_of(s)) {
+            return Err(SpliceError::Env(format!(
+                "{}: {e}; nothing was written",
+                s.id
+            )));
+        }
+    }
     let mut conflicts: Vec<(&SourceId, &Vec<String>)> = Vec::new();
     for s in &changed {
-        let ctx = ApplyCtx {
-            repo,
-            plan: &s.prep.plan,
-            steps: steps_of(&s.prep),
-            from: s.prep.from.clone(),
-            to: s.prep.to.clone(),
-            lock: s.lock_out(),
-            post: Vec::new(),
-            when: When::Update,
-            no_post: true,
-            json: g.json,
-            command: "update",
-            sections: s.sections(),
-        };
+        let ctx = ctx_of(s);
         report.msg(s.id.tag());
         report.messages.extend(prefixed(&s.id, &s.prep.messages));
         match apply_files(&ctx) {

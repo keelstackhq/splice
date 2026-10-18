@@ -101,6 +101,9 @@ fn golden_main_and_channel_v1_to_v2() {
     assert!(read(r, "docs/agents/notes.md").contains("my seed note"));
     assert!(!r.join(".claude/agents/explorer.md").exists());
     assert_eq!(read(r, "README.md"), USER_README);
+    // `channel add` and `add --channel` each ran the post once; the conflicted --all skips it.
+    let log = read(r, ".rig-post.log");
+    assert_eq!(log.lines().count(), 2, "{log}");
 }
 
 #[test]
@@ -121,6 +124,11 @@ fn golden_forced_section_variant() {
     let before = tree_snapshot(r);
     let refused = all_json(&repo, &[], 1);
     assert_eq!(refused["ok"], false);
+    let msgs = refused["messages"].to_string();
+    assert!(
+        msgs.contains("`AGENTS.md#rig` is owned by channel rig but was edited locally"),
+        "{msgs}"
+    );
     assert_eq!(tree_snapshot(r), before, "drift writes nothing");
 
     let v = all_json(&repo, &["--force"], 1);
