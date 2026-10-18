@@ -326,3 +326,53 @@ pub fn inline_template(pieces: &[(&str, &str, FileSpec)]) -> TempDir {
     }
     dir
 }
+
+pub const USER_README: &str = "# demo\n\nMy own words, edited by the user.\n";
+
+pub fn edit(repo: &TempDir, rel: &str, f: impl FnOnce(String) -> String) {
+    let path = repo.path().join(rel);
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(path, f(text)).unwrap();
+}
+
+/// The "User edit" column of the plan's fixture table (never the owned tsconfig: owned drift
+/// refuses the update, covered in cli_update).
+pub fn apply_user_edits(repo: &TempDir) {
+    edit(repo, "package.json", |t| {
+        t.replace(
+            "  \"private\": true,\n",
+            "  \"private\": true,\n  \"dependencies\": {\n    \"left-pad\": \"1.3.0\"\n  },\n",
+        )
+    });
+    edit(repo, "config/settings.toml", |t| {
+        format!("# local note\n{t}\n[local]\nx = 1\n")
+    });
+    edit(repo, ".github/workflows/ci.yml", |t| {
+        t.replace("ubuntu-latest", "macos-latest")
+    });
+    edit(repo, "notes.txt", |t| {
+        t.replace("line five", "line 5, mine")
+    });
+    std::fs::write(repo.path().join("README.md"), USER_README).unwrap();
+    commit_all(repo.path());
+}
+
+/// Hide what depends on the machine: the lock's source path, commit and splice version.
+pub fn redact(snapshot: &str) -> String {
+    let mut out = snapshot.to_string();
+    for (re, to) in [
+        (r#"source = ".*""#, r#"source = "[source]""#),
+        (r#"commit = ".*""#, r#"commit = "[commit]""#),
+        (r#"splice = ".*""#, r#"splice = "[splice]""#),
+        (
+            r"\.splice/(lock|channels/[a-z-]+)\.toml [0-9a-f]{64}",
+            ".splice/$1.toml [sha]",
+        ),
+    ] {
+        out = regex::Regex::new(re)
+            .unwrap()
+            .replace_all(&out, to)
+            .into_owned();
+    }
+    out
+}

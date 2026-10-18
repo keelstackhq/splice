@@ -1062,7 +1062,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             report.messages.extend(prefixed(&s.id, &s.prep.messages));
         }
     }
-    let mut conflicts: Vec<String> = Vec::new();
+    let mut conflicts: Vec<(&SourceId, &Vec<String>)> = Vec::new();
     for s in &changed {
         let ctx = ApplyCtx {
             repo,
@@ -1087,7 +1087,9 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             }
             Err(e) => return Err(all_failed(report, &format!("{}: ", s.id), e)),
         }
-        conflicts.extend(s.prep.plan.conflicts.iter().cloned());
+        if !s.prep.plan.conflicts.is_empty() {
+            conflicts.push((&s.id, &s.prep.plan.conflicts));
+        }
     }
 
     // 5. The post commands of every changed source once (first occurrence wins), before any
@@ -1116,10 +1118,13 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         Ok(report)
     } else {
         report.ok = false;
-        report.msg(format!(
-            "conflicts in {}: resolve the diff3 markers",
-            conflicts.join(", ")
-        ));
+        // One line per source: a global line after the last source's tag would read as its own.
+        for (id, paths) in conflicts {
+            report.msg(format!(
+                "{id}: conflicts in {}: resolve the diff3 markers",
+                paths.join(", ")
+            ));
+        }
         Err(SpliceError::Conflict(report))
     }
 }

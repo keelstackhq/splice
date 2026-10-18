@@ -2,59 +2,12 @@
 
 mod common;
 
-use common::{commit_all, new_repo_at, splice_cmd, template_repo, tree_snapshot};
+use common::{
+    USER_README, apply_user_edits, commit_all, edit, new_repo_at, redact, splice_cmd,
+    template_repo, tree_snapshot,
+};
 use splice::lock::Lock;
 use tempfile::TempDir;
-
-const USER_README: &str = "# demo\n\nMy own words, edited by the user.\n";
-
-/// Hide what depends on the machine: the lock's source path, commit and splice version.
-fn redact(snapshot: &str) -> String {
-    let mut out = snapshot.to_string();
-    for (re, to) in [
-        (r#"source = ".*""#, r#"source = "[source]""#),
-        (r#"commit = ".*""#, r#"commit = "[commit]""#),
-        (r#"splice = ".*""#, r#"splice = "[splice]""#),
-        (
-            r"\.splice/lock\.toml [0-9a-f]{64}",
-            ".splice/lock.toml [sha]",
-        ),
-    ] {
-        out = regex::Regex::new(re)
-            .unwrap()
-            .replace_all(&out, to)
-            .into_owned();
-    }
-    out
-}
-
-fn edit(repo: &TempDir, rel: &str, f: impl FnOnce(String) -> String) {
-    let path = repo.path().join(rel);
-    let text = std::fs::read_to_string(&path).unwrap();
-    std::fs::write(path, f(text)).unwrap();
-}
-
-/// The "User edit" column of the plan's fixture table (never the owned tsconfig: owned drift
-/// refuses the update, covered in cli_update).
-fn apply_user_edits(repo: &TempDir) {
-    edit(repo, "package.json", |t| {
-        t.replace(
-            "  \"private\": true,\n",
-            "  \"private\": true,\n  \"dependencies\": {\n    \"left-pad\": \"1.3.0\"\n  },\n",
-        )
-    });
-    edit(repo, "config/settings.toml", |t| {
-        format!("# local note\n{t}\n[local]\nx = 1\n")
-    });
-    edit(repo, ".github/workflows/ci.yml", |t| {
-        t.replace("ubuntu-latest", "macos-latest")
-    });
-    edit(repo, "notes.txt", |t| {
-        t.replace("line five", "line 5, mine")
-    });
-    std::fs::write(repo.path().join("README.md"), USER_README).unwrap();
-    commit_all(repo.path());
-}
 
 fn update_cmd(repo: &TempDir) -> assert_cmd::Command {
     let mut cmd = splice_cmd();
