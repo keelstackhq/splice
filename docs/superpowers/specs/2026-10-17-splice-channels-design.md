@@ -291,6 +291,12 @@ when the channel template is written (they move; a channel release fixes them fo
   records its old version; the message names the source (or the post command) and the
   `git checkout -- . && git clean -fd` recovery (main spec §8.3, §8.6). Conflicts: locks are
   still written (they record the targets), exit 1.
+  Rulings: the claim check is conservative — each channel is checked against the earlier
+  sources' planned claims plus the later sources' current claims, so moving a path between
+  channels in one `--all` run exits 2 (do it with two `update --channel` runs, the releasing
+  channel first). Each later plan sees the earlier sources' planned writes (files, seeds, section
+  hosts, deletes), but migration steps run after all planning, so later plans do not see what
+  steps change.
 - `check`: union over sources of main spec §8.7 (owned drift, markers, update available) plus
   section drift. "Update available" for a channel: newer stable tag, or tracked head differs —
   and in both cases only if the channel's subdirectory tree differs

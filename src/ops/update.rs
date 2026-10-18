@@ -992,6 +992,9 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     }
     for cl in &sources.channels {
         let id = SourceId::Channel(cl.meta.name.clone());
+        // Not `claims_last`: that takes one source's new claim, but here every earlier source
+        // already has a planned claim (replacing its current one) and later ones keep theirs;
+        // `prepare_channel` puts this channel's claim last itself.
         let others: Vec<Claim> = planned
             .iter()
             .chain(
@@ -1098,6 +1101,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
 
     // 6. Every lock last, each atomically.
     let locks: Vec<LockOut> = changed.iter().map(|s| s.lock_out()).collect();
+    report.changes.sort_by(|x, y| x.path.cmp(&y.path));
     if let Err(e) = write_locks(repo, &locks.iter().collect::<Vec<_>>()) {
         report.ok = false;
         report.msg(e.to_string());
@@ -1108,7 +1112,6 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         });
     }
 
-    report.changes.sort_by(|x, y| x.path.cmp(&y.path));
     if conflicts.is_empty() {
         Ok(report)
     } else {

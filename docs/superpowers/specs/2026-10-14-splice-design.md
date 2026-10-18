@@ -288,7 +288,8 @@ says "no lock was written, every lock still records its old version" and gives t
 `git checkout -- . && git clean -fd` recovery. A failed lock write names
 the locks written, the one not confirmed and those not written; a re-run converges. An
 up-to-date main lock is not rewritten. The report has a `source=…` message per changed source,
-`NAME: up to date …` per unchanged one.
+`NAME: up to date …` per unchanged one. The conservative claim check and the steps-after-planning
+rule: channels spec §8 (`update --all` rulings).
 
 ### 8.4 Planner rules
 

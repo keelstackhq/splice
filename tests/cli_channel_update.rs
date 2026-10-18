@@ -676,7 +676,18 @@ fn all_post_dedup_and_before_locks() {
     let r = repo.path();
     let log = read(r, ".rig-post.log");
     let (posts, old) = (lines_eq(&log, "rig-post"), lines_eq(&log, "old-lock"));
+    // Main is up to date: its lock is neither changed nor rewritten.
+    let main_before = bytes(r, MAIN_LOCK);
+    let mtime = || {
+        std::fs::metadata(r.join(MAIN_LOCK))
+            .unwrap()
+            .modified()
+            .unwrap()
+    };
+    let main_mtime = mtime();
     stdout_json(update_all(r).success());
+    assert_eq!(bytes(r, MAIN_LOCK), main_before);
+    assert_eq!(mtime(), main_mtime, "main lock rewritten");
     let log = read(r, ".rig-post.log");
     assert_eq!(lines_eq(&log, "rig-post"), posts + 1, "{log}");
     assert_eq!(lines_eq(&log, "old-lock"), old + 1, "{log}");
@@ -904,4 +915,35 @@ fn all_two_channels_one_host_keep_both_blocks() {
     let host = read(r, "HOST.md");
     assert!(!host.contains("- one"), "{host}");
     assert_eq!(host.matches("- two\n").count(), 2, "{host}");
+}
+
+#[test]
+fn all_earlier_delete_feeds_later_seed() {
+    // Main v2 deletes tool.config.mts; channel `t` v2 seeds the same path. The channel's plan
+    // sees the deletion, so the seed is created after main's delete.
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    let r = repo.path();
+    assert!(r.join("tool.config.mts").is_file());
+    let v1 = "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"a.txt\"]\n";
+    let t = inline_template(&[("core", v1, &[("a.txt", "a\n")])]);
+    git(
+        t.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    commit_tag(t.path(), "v1", "v1.0.0");
+    chan_commit(r, &["channel", "add", t.path().to_str().unwrap()]);
+    let v2 = format!("{v1}seed = [\"tool.config.mts\"]\n");
+    std::fs::write(t.path().join("pieces/core/piece.toml"), v2).unwrap();
+    std::fs::write(
+        t.path().join("pieces/core/files/tool.config.mts"),
+        "// seeded by t\n",
+    )
+    .unwrap();
+    commit_tag(t.path(), "v2", "v2.0.0");
+    update_all(r).success();
+    assert_eq!(read(r, "tool.config.mts"), "// seeded by t\n");
+    assert_eq!(main_version(r), "2.0.0");
+    assert_eq!(chan_version(r, "t"), "2.0.0");
 }
