@@ -125,8 +125,8 @@ tests/cli_new.rs  tests/cli_add.rs  tests/cli_explain.rs  tests/conformance.rs
 
 ```rust
 #[test] fn parses_sources() {
-    let s = TemplateSource::parse("gh:keelstack/hull//template").unwrap();
-    assert_eq!(s.kind, SourceKind::Git { url: "https://github.com/keelstack/hull.git".into() });
+    let s = TemplateSource::parse("gh:keelstackhq/hull//template").unwrap();
+    assert_eq!(s.kind, SourceKind::Git { url: "https://github.com/keelstackhq/hull.git".into() });
     assert_eq!(s.subdir.as_deref(), Some("template"));
     let s = TemplateSource::parse("https://example.com/x/y.git//a/b").unwrap();
     assert_eq!((s.kind, s.subdir.as_deref()), (SourceKind::Git { url: "https://example.com/x/y.git".into() }, Some("a/b")));

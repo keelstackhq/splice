@@ -1,0 +1,15 @@
+{
+  "name": "@{{ scope }}/{{ project }}",
+  "private": true,
+  "scripts": {
+    "check": "echo check",
+    "lint": "echo lint"
+  },
+  "devDependencies": {
+    "typescript": "5.4.0"
+  },
+  "keywords": [
+{% for p in pieces %}    "{{ p }}",
+{% endfor %}    "fixture"
+  ]
+}

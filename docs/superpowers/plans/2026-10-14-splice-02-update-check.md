@@ -1,10 +1,10 @@
 # splice Milestone 2 — `update`, `check`, `diff` — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Keep a generated repo current: 3-way `update` with per-class rules and json/yaml/toml/text merges, migrations, post commands and an atomic lock; `check` for drift, markers and new versions; `diff` as a dry run; `add` moved onto the full planner.
 
-**Architecture:** `update` renders base (lock commit) and theirs (target) into memory, a pure `planner` turns base/theirs/disk/lock into a list of `Planned` changes, and `apply` executes it in a fixed order (files → removals → migration steps → lock → post). Merges live in `src/merge/`, one module per strategy behind `merge3`. `diff` and `check` reuse the planner without writing.
+**Architecture:** `update` renders base (lock commit) and theirs (target) into memory, a pure `planner` turns base/theirs/disk/lock into a list of `Planned` changes, and `apply` executes it in a fixed order (files → removals → migration steps → post → lock). Merges live in `src/merge/`, one module per strategy behind `merge3`. `diff` and `check` reuse the planner without writing.
 
 **Tech Stack:** as plan 01, plus diffy 0.5 (text 3-way, `ConflictStyle::Diff3`, `create_patch`), yaml_serde 0.10 (maintained fork of the archived serde_yaml, by the YAML organisation; `Mapping` keeps insertion order), toml_edit 0.25 (format-preserving edits).
 
@@ -16,7 +16,7 @@
 - Diff3 markers exactly `<<<<<<< ours`, `||||||| base`, `=======`, `>>>>>>> template` (diffy's `||||||| original`/`>>>>>>> theirs` relabelled inside conflict hunks only).
 - Planner is pure (no I/O); disk reads go through a `Disk` snapshot built before planning.
 - Owned drift without `--force` → nothing written, exit 1.
-- Apply order: write files → removals → migration `[[step]]`s (A < v ≤ B, semver order) → lock (atomic) → `[[post]]`. A failed step exits 3 before the lock; a failed post exits 3 after it.
+- Apply order: write files → removals → migration `[[step]]`s (A < v ≤ B, semver order) → `[[post]]` → lock (atomic, last; spec §8.3 step 7, §8.6). A failed step or post exits 3 before the lock is written, with the restore hint.
 - Dirty git tree or no work tree → exit 2 unless `--allow-dirty`. Messages after a partial write say `git checkout -- . && git clean -fd` restores the previous state.
 - Structured merge rules exactly contract §5; any structured conflict ends as diff3 markers in the file (spec §8.5).
 - Downgrade (`--to` < lock version) → exit 2. Target `min_splice` > running → exit 3 before any write.
@@ -83,7 +83,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn select(all: &[Migration], from: &Version, to: &Version) -> Vec<&Migration>` (from < v ≤ to)
   - `Template { …, migrations: Vec<Migration> }`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn selects_range_in_semver_order() {
@@ -96,8 +96,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn fixture_v2_loads_with_migration() { /* Template::load(v2).migrations[0].removes[0].path == "tool.config.mts" */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: fixture v2/v3 and migration loading`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: fixture v2/v3 and migration loading`
 
 ---
 
@@ -114,7 +114,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn find_markers(text: &str) -> Vec<usize>` (1-based lines of `<<<<<<< ours` blocks; `=======`/`||||||| base` count only inside an open block; `>>>>>>> template` closes it)
   - `fn wrap_whole(base, ours, theirs) -> String` (one diff3 block)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn clean_merge() {
@@ -138,10 +138,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; walk the output tracking hunk state to relabel. Missing final newline on any side: use diffy's default incomplete-hunk handling and add a test if it surprises you.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: text 3-way merge with contract diff3 markers`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement** with `diffy::MergeOptions::new().set_conflict_style(ConflictStyle::Diff3).merge(base, ours, theirs)`; walk the output tracking hunk state to relabel. Missing final newline on any side: use diffy's default incomplete-hunk handling and add a test if it surprises you.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: text 3-way merge with contract diff3 markers`
 
 ---
 
@@ -157,7 +157,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn merge_json(b, o, t: &str) -> Result<Merged, ParseError>`, `fn merge_yaml(...)`, `fn merge_toml(...)`
   - `fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> Merged` — fast paths (O = B → T; T = B → O), parse error → text, structured conflicts → `merge_text`, and if that is clean → `wrap_whole`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn json_both_sides_kept_order_and_indent() {
@@ -186,10 +186,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn invalid_json_falls_back_to_text() { /* ours has a trailing comma → text merge result */ }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement.** JSON/YAML convert to `Tree` (non-map values are `Leaf`s compared by value), merge, convert back; JSON printed with `serde_json::ser::PrettyFormatter::with_indent(detected)` plus a final `\n` when ours had one. TOML: compute the set of key paths changed by theirs vs base with `keypath`, apply each to ours' `DocumentMut` (set / remove / append new tables at the end); conflicts as for others.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: structured json/yaml/toml 3-way merges`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement.** JSON/YAML convert to `Tree` (non-map values are `Leaf`s compared by value), merge, convert back; JSON printed with `serde_json::ser::PrettyFormatter::with_indent(detected)` plus a final `\n` when ours had one. TOML: compute the set of key paths changed by theirs vs base with `keypath`, apply each to ours' `DocumentMut` (set / remove / append new tables at the end); conflicts as for others.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: structured json/yaml/toml 3-way merges`
 
 ---
 
@@ -209,7 +209,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn plan(input: &PlanInput) -> Plan`
   - `fn render_removes(t: &Template, removes: &[&Remove], instances: &[PieceInstance], vars) -> Result<Vec<String>>`
 
-- [ ] **Step 1: Write failing tests** — table-driven, one case per cell:
+- [x] **Step 1: Write failing tests** — table-driven, one case per cell:
 
 ```rust
 #[test] fn table() {
@@ -241,10 +241,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn remove_list_deletes_unedited_and_ignores_still_rendered() { /* [[remove]] for a path theirs still renders → warning note, no delete */ }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement `plan`** exactly per spec §8.4; `Skip` changes carry a `note` that becomes a message. Paths in drift produce no change entry; `Plan.drift` lists them.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: pure update planner for all ownership classes`
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement `plan`** exactly per spec §8.4; `Skip` changes carry a `note` that becomes a message. Paths in drift produce no change entry; `Plan.drift` lists them.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: pure update planner for all ownership classes`
 
 ---
 
@@ -261,12 +261,12 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `struct ApplyCtx<'a> { repo: &'a Path, plan: &'a Plan, steps: Vec<(&'a Version, &'a Step)>, from: Version, to: Version, lock: Lock, post: Vec<PostCmd>, when: When, no_post: bool, json: bool }`
   - `fn apply(ctx: ApplyCtx) -> Result<Report>` — the fixed order from Global Constraints; returns a Report with every change; `Err(SpliceError::Conflict(report))` when `plan.conflicts` is non-empty (after the lock is written).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
-#[test] fn order_is_files_removals_steps_lock_post() {
+#[test] fn order_is_files_removals_steps_post_lock() {
     // step: `test -f new.txt && test ! -f old.txt && grep -q 'version = "1.0.0"' .splice/lock.toml && echo step >> order.log`
-    // post: `grep -q 'version = "2.0.0"' .splice/lock.toml && echo post >> order.log`
+    // post: `grep -q 'version = "1.0.0"' .splice/lock.toml && echo post >> order.log` (lock still old)
     apply(ctx_for(plan_creating("new.txt").deleting("old.txt"), step, post)).unwrap();
     assert_eq!(read(&repo, "order.log"), "step\npost\n");
 }
@@ -276,12 +276,12 @@ v3 = v2 with `min_splice = "99.0.0"`.
     assert!(e.to_string().contains("git checkout -- . && git clean -fd"));
     assert_eq!(read_lock(&repo).template.version, Version::parse("1.0.0").unwrap());
 }
-#[test] fn failing_post_keeps_new_lock() { /* post "exit 1" → exit 3, lock version is the target */ }
+#[test] fn failing_post_leaves_old_lock() { /* post "exit 1" → exit 3, lock version is still the old one, message has the restore hint */ }
 #[test] fn conflicts_still_write_lock_and_exit_1() { /* plan with one conflict → Err(Conflict), lock = target, file has markers */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: apply plans with migrations, atomic lock and post commands`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.**  **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: apply plans with migrations, atomic lock and post commands`
 
 ---
 
@@ -297,7 +297,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
   - `fn ops::update::prepare(g: &GlobalArgs, to: Option<&Version>, data, force: bool) -> Result<Prepared>` — steps 1–6 of spec §8.3 except the dirty check; `struct Prepared { plan: Plan, lock_new: Lock, from: Version, to: Version, template: Template, instances: Vec<PieceInstance>, up_to_date: bool }` (reused by `diff` and `check`).
   - `fn ops::update::run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn dirty_tree_refused() { /* new at v1, commit, touch x → update exit 2; --allow-dirty → proceeds */ }
@@ -312,8 +312,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn removed_piece_is_template_error() { /* v2 variant without `lib` while repo has lib → exit 3, nothing written */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice update`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice update`
 
 ---
 
@@ -326,7 +326,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 **Interfaces:**
 - Consumes: the binary; fixture table above.
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 ```rust
 #[test] fn golden_v1_to_v2_with_user_edits() {
@@ -347,10 +347,10 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn resolve_conflict_then_check_passes() { /* edit ci.yml to remove markers, commit → `splice check --offline` exit 0 */ }
 ```
 
-- [ ] **Step 2: Run, review the snapshots by hand against the fixture table, accept with `cargo insta accept`**
-- [ ] **Step 3: Fix any planner/merge bug the snapshot exposes (test first in the owning module)**
-- [ ] **Step 4: Run `cargo nextest run` — PASS**
-- [ ] **Step 5: Commit** — `test: golden v1 to v2 update with edits on every class`
+- [x] **Step 2: Run, review the snapshots by hand against the fixture table, accept with `cargo insta accept`**
+- [x] **Step 3: Fix any planner/merge bug the snapshot exposes (test first in the owning module)**
+- [x] **Step 4: Run `cargo nextest run` — PASS**
+- [x] **Step 5: Commit** — `test: golden v1 to v2 update with edits on every class`
 
 ---
 
@@ -364,7 +364,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 - Consumes: `Lock`, `find_markers`, `sha256_hex`, `Fetcher::available_versions`
 - Produces: `fn ops::check::run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn clean_repo_passes() { /* new at v2 → check --offline exit 0, changes [] */ }
@@ -377,8 +377,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 #[test] fn fetch_failure_is_message_not_error() { /* template dir removed → exit 0 with message when nothing else is wrong */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.7. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice check`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.7. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice check`
 
 ---
 
@@ -392,7 +392,7 @@ v3 = v2 with `min_splice = "99.0.0"`.
 - Consumes: `ops::update::prepare`, `planner::plan`, `apply`
 - Produces: `fn ops::diff::run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report>`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn diff_writes_nothing() {
@@ -406,8 +406,8 @@ v3 = v2 with `min_splice = "99.0.0"`.
 }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement**; update the v1 fixture's root `package.json.jinja` to list `{% for p in pieces %}` entries if not already there (and refresh plan 01 snapshots). **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice diff; add uses the full planner`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement**; update the v1 fixture's root `package.json.jinja` to list `{% for p in pieces %}` entries if not already there (and refresh plan 01 snapshots). **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice diff; add uses the full planner`
 
 ---
 
