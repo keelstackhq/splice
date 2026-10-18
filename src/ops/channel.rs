@@ -11,7 +11,7 @@ use crate::fetch::Fetcher;
 use crate::filter::Filter;
 use crate::lock::{ChannelLock, ChannelMeta, Lock, valid_channel_name};
 use crate::manifest::{PostCmd, Template, When};
-use crate::output::{Class, Report};
+use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, PlanInput, plan};
 use crate::render::{RenderInput, RenderedTree, render_sections, render_tree};
 use crate::sections::{SectionInput, plan_sections};
@@ -138,6 +138,8 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
         report.ok = false;
         report.messages = messages;
         for path in fplan.drift.iter().chain(&splan.drift) {
+            // Like `add`: a refused path is a `conflict`/`owned` change; sections are HOST#NAME.
+            report.push(path, Action::Conflict, Class::Owned);
             report.msg(format!(
                 "`{path}` differs from channel {name}'s version (edited locally)"
             ));

@@ -366,10 +366,11 @@ messages are exactly as above, with no prefix. Per channel: owned drift and conf
 for the main lock (messages prefixed `channel NAME: `, plus one summary line); section drift
 (a locked block edited, deleted, missing its host or with broken markers, or a non-UTF-8 host)
 as the change `HOST#NAME`, `update`, `owned` (broken markers also give a message that says how
-to fix them). Section drift is a change only in `check`
-(`update`/`owned`, the gate fails); in `channel add` and `add --channel` it is `conflict`/`owned` and
-blocks the write; `update --channel` and `diff --channel` name it in a message (`update` refuses
-it without `--force`, `diff` exits 0). Update available (skipped with `--offline`; a lookup failure is a
+to fix them). Section paths are always `HOST#NAME`. Drift follows each command family: `check` reports it as
+the change `update`/`owned` (the gate fails); the `add` family (`add`, `add --channel`, `channel
+add`) refuses with the change `conflict`/`owned` plus a message, nothing written; the `update`
+family (`update`, `update --channel`, `update --all`) refuses with messages only and no changes,
+as M2 `update`; `diff` names it in a message and exits 0. Update available (skipped with `--offline`; a lookup failure is a
 message): a newer stable tag, or for a tracked channel a branch head, whose template subtree
 differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)`, or
 `… <old7> → <new7> (BRANCH)` with short shas. Read-only, one JSON object.

@@ -739,3 +739,67 @@ fn add_channel_seed_at_main_locked_path_not_created() {
     assert!(!cl.lock.files.contains_key(".editorconfig"));
     assert!(cl.lock.pieces.iter().any(|p| p.id == "s"));
 }
+
+fn change_triples(v: &serde_json::Value) -> Vec<(String, String, String)> {
+    v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["path"].as_str().unwrap().to_string(),
+                c["action"].as_str().unwrap().to_string(),
+                c["class"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn channel_add_drift_is_conflict_owned_changes() {
+    // `add` family: drift → changes {conflict, owned} (sections as HOST#NAME) and messages.
+    let ch = channel_repo(&["v1"]);
+    let repo = bare_repo();
+    let r = repo.path();
+    std::fs::create_dir_all(r.join("docs/agents")).unwrap();
+    std::fs::write(r.join("docs/agents/rules.md"), "# Mine\n").unwrap();
+    let block = "<!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->\n\
+                 mine\n<!-- splice:rig:end -->\n";
+    std::fs::write(r.join("AGENTS.md"), block).unwrap();
+    commit_all(r);
+    let v = stdout_json(chan(r, &["channel", "add", &src(&ch)]).code(1));
+    let t = |p: &str| (p.to_string(), "conflict".to_string(), "owned".to_string());
+    assert_eq!(
+        change_triples(&v),
+        [t("AGENTS.md#rig"), t("docs/agents/rules.md")],
+        "{v}"
+    );
+    let m = v["messages"].to_string();
+    assert!(
+        m.contains("AGENTS.md#rig") && m.contains("docs/agents/rules.md"),
+        "{m}"
+    );
+    assert_eq!(status(r), "");
+}
+
+#[test]
+fn add_channel_section_drift_is_host_hash_name() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    let text = read(r, "AGENTS.md").replace("Test first", "EDITED");
+    std::fs::write(r.join("AGENTS.md"), text).unwrap();
+    commit_all(r);
+    let v = stdout_json(chan(r, &["add", "claude", "--channel", "rig"]).code(1));
+    assert!(
+        change_triples(&v).contains(&(
+            "AGENTS.md#rig".to_string(),
+            "conflict".to_string(),
+            "owned".to_string()
+        )),
+        "{v}"
+    );
+    assert!(v["messages"].to_string().contains("`AGENTS.md#rig`"), "{v}");
+    assert_eq!(status(r), "");
+}
