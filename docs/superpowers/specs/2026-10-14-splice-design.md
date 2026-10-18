@@ -469,8 +469,29 @@ into the contract at its next `format` bump.
     be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
     piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). `update --channel`
     takes no `--data` (exit 2): a channel's vars are set at `channel add`; vars new in a later
-    channel version take their defaults or prompts. Plan 04 task 19 extends this item with the
-    channel rulings.
+    channel version take their defaults or prompts.
+
+    Channel rulings (G1–G17; the channels spec has the detail, `docs/superpowers/specs/
+    2026-10-17-splice-channels-design.md`). Splice-only; offered to hull at the next `format`
+    bump, not required (G1; this item, not "item 10", records it).
+    - G1: the channel decision is recorded here as item 15.
+    - G2: every source reserves `.splice/lock.toml` and `.splice/channels/**`; other `.splice/` paths stay renderable.
+    - G3: `--track` follows the branch head, ignores tags, skips version comparisons and migrations; `--to` on a tracked channel is exit 2.
+    - G4: `update --channel` is "up to date" when the target subtree id equals the lock commit's.
+    - G5: a `[sections]` key is a host path (`.md`) relative to the piece `target`; the value is a fragment under `files/`, excluded from the tree.
+    - G6: section changes are reported as `HOST#CHANNEL`, class `owned`, in every command.
+    - G7: a block body is the fragment with one trailing newline, in the host's line ending; the lock hash is over the LF body.
+    - G8: an unchanged fragment is skipped even if the block was edited; an existing block equal to the fragment is adopted, else drift.
+    - G9: `--force` never fixes duplicate or unbalanced markers.
+    - G10: a seed path another source locks is dropped from this source's plan.
+    - G11: `channel add` follows `update` on shared conflicts (markers, lock written, exit 1); `add --channel` follows `add` (writes nothing).
+    - G12: `update --all` writes all sources' files, runs deduplicated post commands once, then writes every lock last.
+    - G13: a corrupt channel lock or a stray file in `.splice/channels/` is exit 3 naming the file; names starting with `.` are ignored.
+    - G14: only `--only`/`--exclude` need `--channel`; `--to` works alone; `--all` excludes `--channel`, `--to`, `--data`, `--only`, `--exclude`.
+    - G15: fixtures use `min_splice = "0.1.0"`; real channel templates using `[sections]` set `0.2.0` (the crate is 0.2.0).
+    - G16: `--only`/`--exclude` on `update --channel` replace both stored lists.
+    - G17: in `update --all`, a section host's disk view includes an earlier source's planned seed write.
+    - Drift reporting follows each command family (`add` family: `conflict`/`owned` changes; `update` family: messages; `check`: `update`/`owned`; `diff`: messages, exit 0).
 
 ## 11. Testing
 
@@ -536,3 +557,7 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
+4. **Channels** — extra templates next to the main one with their own locks, `[sections]`
+   blocks in shared Markdown files, filters, `--track`, `--channel`/`--all` on `update`, `add`,
+   `check`, `diff`, `explain`, `channel add|remove`, version 0.2.0 (channels spec; plan 04).
+   The npm release, the update-bot channel scope and the skill file follow plan 03.

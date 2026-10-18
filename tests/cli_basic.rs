@@ -146,3 +146,47 @@ fn help_lists_channel() {
         .clone();
     assert!(String::from_utf8_lossy(&out).contains("channel"));
 }
+
+/// The `## Channels` section of the README names only flags that exist.
+#[test]
+fn readme_channel_flags_exist() {
+    let readme = std::fs::read_to_string("README.md").unwrap();
+    let start = readme
+        .find("\n## Channels\n")
+        .expect("README has a ## Channels section");
+    let rest = &readme[start + 1..];
+    let end = rest[3..].find("\n## ").map_or(rest.len(), |i| i + 3);
+    let section = &rest[..end];
+    let mut help = String::new();
+    for args in [
+        vec!["channel", "add", "--help"],
+        vec!["channel", "remove", "--help"],
+        vec!["update", "--help"],
+        vec!["check", "--help"],
+        vec!["add", "--help"],
+        vec!["diff", "--help"],
+    ] {
+        let out = splice_cmd()
+            .args(&args)
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        help.push_str(&String::from_utf8_lossy(&out));
+    }
+    let flag = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
+    let mut seen = 0;
+    for m in flag.find_iter(section) {
+        seen += 1;
+        assert!(
+            help.contains(m.as_str()),
+            "README Channels names unknown flag {}",
+            m.as_str()
+        );
+    }
+    assert!(
+        seen >= 8,
+        "the Channels section should show the channel flags"
+    );
+}

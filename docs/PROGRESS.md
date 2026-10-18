@@ -37,6 +37,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
+- SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
 
 ## Status
 
