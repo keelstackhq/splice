@@ -174,7 +174,7 @@ Fixture variants (all created in Task 4):
   - `fetch::validate_commit(commit: &str, lock_path: &str) -> Result<()>` (callers in `Lock::read`/`ChannelLock::read` pass their path).
   - `paths::render_rel_path` rejects `.splice/lock.toml` (as today) and any path whose first two segments are `.splice/channels` (G2).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn channel_lock_round_trip() {
@@ -217,10 +217,10 @@ Fixture variants (all created in Task 4):
 }
 ```
 
-- [ ] **Step 2: Run `cargo nextest run -E 'test(lock) | test(paths)'` — FAIL**
-- [ ] **Step 3: Implement.** `ChannelLock::to_toml` builds the main document via a shared private `Lock::to_document()` and inserts `channel` after `splice` and `sections` after `files` (toml_edit `position`). `[sections]` entries are inline tables `{ sha256, created }`; `only`/`exclude` always written (empty arrays allowed). Update main spec §6's path rule.
-- [ ] **Step 4: Run — PASS; `cargo nextest run` all green (existing lock tests and snapshots unchanged)**
-- [ ] **Step 5: Commit** — `feat: channel lock type and reserved .splice/ paths`
+- [x] **Step 2: Run `cargo nextest run -E 'test(lock) | test(paths)'` — FAIL**
+- [x] **Step 3: Implement.** `ChannelLock::to_toml` builds the main document via a shared private `Lock::to_document()` and inserts `channel` after `splice` and `sections` after `files` (toml_edit `position`). `[sections]` entries are inline tables `{ sha256, created }`; `only`/`exclude` always written (empty arrays allowed). Update main spec §6's path rule.
+- [x] **Step 4: Run — PASS; `cargo nextest run` all green (existing lock tests and snapshots unchanged)**
+- [x] **Step 5: Commit** — `feat: channel lock type and reserved .splice/ paths`
 
 ---
 
@@ -236,7 +236,7 @@ Fixture variants (all created in Task 4):
   - `pub struct Filter { only: Vec<(String, GlobMatcher)>, exclude: Vec<(String, GlobMatcher)> }`
   - `impl Filter { pub fn new(only: &[String], exclude: &[String]) -> Result<Filter> /* bad glob → Usage, names the flag */; pub fn from_meta(m: &ChannelMeta, lock_path: &str) -> Result<Filter> /* bad stored glob → Template (exit 3) naming the lock file */; pub fn keeps(&self, path: &str) -> bool; pub fn apply_tree(&self, tree: RenderedTree) -> RenderedTree; pub fn unused(&self, paths: &[&str]) -> Vec<String> /* "filter `G` matches nothing" */ }`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn empty_filter_keeps_everything() { assert!(Filter::new(&[], &[]).unwrap().keeps("a/b.md")); }
@@ -258,8 +258,8 @@ Fixture variants (all created in Task 4):
 }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** (globs built like `classify::compile_one`, `literal_separator(true)`). **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: channel path filters`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** (globs built like `classify::compile_one`, `literal_separator(true)`). **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: channel path filters`
 
 ---
 
@@ -280,7 +280,7 @@ Fixture variants (all created in Task 4):
   - `pub fn check_claims(claims: &[Claim]) -> Result<()>` — Usage (exit 2); one message line per conflicting path, sorted.
   - `pub fn replace_claim(current: Vec<Claim>, new: Claim) -> Vec<Claim>` (swap the source's current claim for its planned one)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn disjoint_claims_pass() { check_claims(&[claim(Main, &["a"], &[]), claim(ch("x"), &["b"], &["AGENTS.md"])]).unwrap(); }
@@ -297,8 +297,8 @@ Fixture variants (all created in Task 4):
 #[test] fn unknown_channel_lists_known() { /* Sources.channel("zz") exit 2, message contains "a, b" */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** The message names the *other* source than the one being checked: claims are checked in order, and the earlier claim holder is named. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: source registry and one-owner claim check`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** The message names the *other* source than the one being checked: claims are checked in order, and the earlier claim holder is named. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: source registry and one-owner claim check`
 
 ---
 
@@ -322,9 +322,9 @@ Fixture variants (all created in Task 4):
   - `pub fn chan(repo: &Path, args: &[&str]) -> assert_cmd::assert::Assert` (`splice_cmd -C repo --yes --json` + args; no commit).
   - `pub fn chan_commit(repo: &Path, args: &[&str]) -> assert_cmd::assert::Assert` — `chan`, asserts exit 0, then `commit_all` so the next command sees a clean tree (D3).
 
-- [ ] **Step 1: Write failing tests** — `channel_fixture_v1_loads` (pieces `claude, collide, core, hooks, skills`; v2 migration removes `.claude/agents/explorer.md`; the only warnings are `unknown key \`sections\` ignored` until Task 5); `channel_b_fixture_loads` (name `rigb`, two `[[post]]`, v2 step); `channel_repo_has_subdir_and_tags` in `tests/git.rs` (`git tag` lists both; `channel/splice.toml` exists; `track_commit(_, false)` leaves `git rev-parse HEAD:channel` unchanged, `track_commit(_, true)` changes it); `chan_commit_leaves_clean_tree`.
-- [ ] **Step 2: Run `cargo nextest run --test manifest --test git` — FAIL.**  **Step 3: Write fixtures and helpers.** **Step 4: Run `cargo nextest run` — PASS (existing tests unchanged after the helper move).**
-- [ ] **Step 5: Commit** — `test: channel fixtures and helpers`
+- [x] **Step 1: Write failing tests** — `channel_fixture_v1_loads` (pieces `claude, collide, core, hooks, skills`; v2 migration removes `.claude/agents/explorer.md`; the only warnings are `unknown key \`sections\` ignored` until Task 5); `channel_b_fixture_loads` (name `rigb`, two `[[post]]`, v2 step); `channel_repo_has_subdir_and_tags` in `tests/git.rs` (`git tag` lists both; `channel/splice.toml` exists; `track_commit(_, false)` leaves `git rev-parse HEAD:channel` unchanged, `track_commit(_, true)` changes it); `chan_commit_leaves_clean_tree`.
+- [x] **Step 2: Run `cargo nextest run --test manifest --test git` — FAIL.**  **Step 3: Write fixtures and helpers.** **Step 4: Run `cargo nextest run` — PASS (existing tests unchanged after the helper move).**
+- [x] **Step 5: Commit** — `test: channel fixtures and helpers`
 
 ---
 
@@ -343,7 +343,7 @@ Fixture variants (all created in Task 4):
   - `pub fn render_sections(t: &Template, input: &RenderInput) -> Result<RenderedSections>`; `render_tree` skips every file that a piece lists as a fragment.
   - `new`, `add`, `update` (main) → Template error (exit 3) `piece \`X\` declares [sections]; sections are only applied by \`splice channel add\``.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn sections_parsed() { /* channel fixture v1 (Task 4) core: sections["AGENTS.md"] == "sections/rules.md.jinja"; no warnings (the Task 4 `unknown key` warning is gone) */ }
@@ -361,10 +361,10 @@ Fixture variants (all created in Task 4):
 #[test] fn conformance_section_fragment() { /* new corpus case: `{% if "claude" in pieces %}- Use the explorer agent.\n{% endif %}` */ }
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement.** Host keys render through `paths::render_rel_path(key, piece.target, …)` (G5); fragments render with `Renderer::render_str` in the instance context; empty-after-trim → no section. Add the corpus case to `CASES`. Note in PROGRESS that hull's Nunjucks corpus run must pick up the new case (C2).
-- [ ] **Step 4: Run — PASS (`cargo nextest run`)**
-- [ ] **Step 5: Commit** — `feat: piece [sections] and fragment rendering` (also adds `sections` to main spec §5's piece keys)
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement.** Host keys render through `paths::render_rel_path(key, piece.target, …)` (G5); fragments render with `Renderer::render_str` in the instance context; empty-after-trim → no section. Add the corpus case to `CASES`. Note in PROGRESS that hull's Nunjucks corpus run must pick up the new case (C2).
+- [x] **Step 4: Run — PASS (`cargo nextest run`)**
+- [x] **Step 5: Commit** — `feat: piece [sections] and fragment rendering` (also adds `sections` to main spec §5's piece keys)
 
 ---
 
@@ -384,7 +384,7 @@ Fixture variants (all created in Task 4):
   - `pub fn insert(host: Option<&str>, channel: &str, body: &str) -> String` (absent → block only; present → append after exactly one blank line)
   - `pub fn replace(host: &str, block: &Block, body: &str) -> String`; `pub fn remove(host: &str, block: &Block) -> String` (also drops the one blank line `insert` added)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->";
@@ -413,8 +413,8 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
 #[test] fn sha_ignores_crlf() { assert_eq!(body_sha("a\r\nb\r\n"), body_sha("a\nb\n")); }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: section markers and block edits`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: section markers and block edits`
 
 ---
 
@@ -433,7 +433,7 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
   - `pub fn plan_sections(input: &SectionInput) -> SectionPlan` (pure)
   - `pub fn host_paths(theirs: &RenderedSections, locked: &BTreeMap<String, SectionLock>) -> BTreeSet<String>` (for the disk snapshot)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn table() {
@@ -461,8 +461,8 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
 #[test] fn removing_plans_every_locked_section_as_gone() {}
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** per channels spec §6 and G7–G9. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: pure section planner`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** per channels spec §6 and G7–G9. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: pure section planner`
 
 ---
 
@@ -483,7 +483,7 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
   - `post::run_steps(repo, steps, from, to, still: &str, json)`: the restore text is `still` + the restore hint (the main caller passes `LockOut::still_records`, so M2 messages are unchanged).
   - Section changes are pushed to the report as `HOST#CHANNEL`/owned.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn section_written_before_removals_and_lock() {
@@ -502,8 +502,8 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
 #[test] fn command_name_in_report() { /* command "channel add" → report.command == "channel add" */ }
 ```
 
-- [ ] **Step 2: Run `cargo nextest run -E 'test(apply)'` — FAIL.**  **Step 3: Implement**; existing apply and post tests keep passing with `LockOut::Main`. **Step 4: Run `cargo nextest run` — PASS (all of `cli_update`, `cli_add`, `golden_update` unchanged).**
-- [ ] **Step 5: Commit** — `feat: apply channel locks, section writes and deferred locks`
+- [x] **Step 2: Run `cargo nextest run -E 'test(apply)'` — FAIL.**  **Step 3: Implement**; existing apply and post tests keep passing with `LockOut::Main`. **Step 4: Run `cargo nextest run` — PASS (all of `cli_update`, `cli_add`, `golden_update` unchanged).**
+- [x] **Step 5: Commit** — `feat: apply channel locks, section writes and deferred locks`
 
 (The CLI guard `main_lock_identical_with_channels_present` moved to Task 12, where main `update` first loads channel locks; D2.)
 
@@ -523,7 +523,7 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
   - `ChannelRemoveArgs { name: String, allow_dirty: bool, force: bool }`
   - `AddArgs.channel: Option<String>`; `UpdateArgs { …, channel: Option<String>, all: bool, only: Vec<String>, exclude: Vec<String> }`; `CheckArgs.channel: Option<String>`; `DiffArgs.channel: Option<String>`; conflicts per G14 (amended): `only`/`exclude` `requires = "channel"`; `to` has no requirement; `all` `conflicts_with_all = ["channel", "to", "data", "only", "exclude"]`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn ref_and_track_conflict() { splice_cmd().args(["--json", "channel", "add", "x", "--ref", "v1", "--track", "main"]).assert().code(2); }
@@ -541,8 +541,8 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
 #[test] fn help_lists_channel() { /* `splice --help` contains "channel" */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: channel command grammar`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: channel command grammar`
 
 ---
 
@@ -560,7 +560,7 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
   - `Fetcher::branch_head(&self, src: &TemplateSource, branch: &str) -> Result<ResolvedTemplate>` (rev-parse `refs/heads/<branch>` in the mirror/local repo; version `0.0.0+g<sha7>`; unknown branch → exit 3 naming it)
   - Name: `--as`, else the template's `name`; invalid → exit 2 (`use --as NAME`); already locked → exit 2 (`use splice update --channel NAME`).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn add_into_new_rendered_repo() {
@@ -594,10 +594,10 @@ const B: &str = "<!-- splice:rig:begin — managed by `splice update --channel r
 
 Multi-command tests use `chan_commit` between mutating calls (D3).
 
-- [ ] **Step 2: Run `cargo nextest run --test cli_channel` — FAIL**
-- [ ] **Step 3: Implement:** dirty check → `Sources::load` → resolve (`--ref`/`--track`/latest, `--pre`) → load, `check_min_splice` → name → instances (base + `--piece`) → `render_tree` + `render_sections` → filter → claims (`replace_claim` with `Claim::from_plan`) → drop seeds claimed elsewhere (G10) → disk snapshot (tree + hosts) → `plan` + `plan_sections` → drift/broken → refuse (exit 1, nothing written) → `apply` with `LockOut::Channel`, `When::Add`, `command = "channel add"`. Conflicts per G11.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `feat: splice channel add`
+- [x] **Step 2: Run `cargo nextest run --test cli_channel` — FAIL**
+- [x] **Step 3: Implement:** dirty check → `Sources::load` → resolve (`--ref`/`--track`/latest, `--pre`) → load, `check_min_splice` → name → instances (base + `--piece`) → `render_tree` + `render_sections` → filter → claims (`replace_claim` with `Claim::from_plan`) → drop seeds claimed elsewhere (G10) → disk snapshot (tree + hosts) → `plan` + `plan_sections` → drift/broken → refuse (exit 1, nothing written) → `apply` with `LockOut::Channel`, `When::Add`, `command = "channel add"`. Conflicts per G11.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `feat: splice channel add`
 
 ---
 
@@ -611,7 +611,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 - Consumes: `Sources::channel`, `Filter::from_meta`, `plan_sections`, claim check
 - Produces: `ops::add::run` handles `a.channel`: base = channel lock state, theirs = with the new instance, both at the channel's commit, through the stored filter; writes only that channel's lock; C3 refusal unchanged (G11). Main `add` (no `--channel`) loads `Sources` and runs `check_claims` when channel locks exist (B4); without channels it is byte-identical to M2.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn second_harness_instance() {
@@ -626,8 +626,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn add_channel_updates_section_with_new_piece() { /* add claude later → AGENTS.md block gains the claude-only line (update action on AGENTS.md#rig) */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: add pieces to a channel`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: add pieces to a channel`
 
 ---
 
@@ -648,7 +648,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
   - Main `update` loads `Sources` and runs `check_claims` with its planned claim when channel locks exist (B4): a main target rendering a channel-owned path → exit 2, nothing written.
   - Filter flags (G16): any of `--only`/`--exclude` replaces both stored lists.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn update_channel_v1_to_v2() {
@@ -680,8 +680,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn unknown_channel() { /* --channel zz → exit 2 */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3 steps 1–8 on the channel lock plus claims and sections (Rulings G3–G10). **Step 4: Run — PASS; all of `cli_update` unchanged and green.**
-- [ ] **Step 5: Commit** — `feat: splice update --channel`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement** spec §8.3 steps 1–8 on the channel lock plus claims and sections (Rulings G3–G10). **Step 4: Run — PASS; all of `cli_update` unchanged and green.**
+- [x] **Step 5: Commit** — `feat: splice update --channel`
 
 ---
 
@@ -700,7 +700,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
   - `prepare_channel`: tracked → `Target::Branch(track)`; `--to` with track → exit 2 (G3); subtree equal → up to date (G4).
   - `prepare_lock` with `Target::Branch`: no version comparison at all (skip the `target < from` downgrade check) and no migrations (`migrate::select` not called; steps and `[[remove]]` empty) (G3, B5).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn tree_id_of_subdir() { /* tests/git.rs on common::git: repo with a/x; tree_id(.., Some("a")) == `git rev-parse HEAD:a` */ }
@@ -715,8 +715,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn tagged_channel_same_subtree_is_up_to_date() { /* tag v3.0.0 on a commit changing only README.md → update exit 0, lock unchanged */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: tracked channels and subtree compare`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: tracked channels and subtree compare`
 
 ---
 
@@ -738,7 +738,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
   6. `write_locks(repo, [main?, channels…])` — every lock last (G12);
   7. one report: `changes` merged and sorted, `messages` with a `source=…` line per source that changed; conflicts in any source → exit 1 (locks written, as `update`).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn all_updates_main_then_channels() { /* main v1 + rig v1 → update --all: both at v2; .rig-post.log gains one line; messages contain source=main and source=channel:rig */ }
@@ -762,8 +762,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn all_up_to_date() { /* everything current → exit 0, message per source "up to date" */ }
 ```
 
-- [ ] **Step 2: Run `cargo nextest run --test cli_channel_update -E 'test(all)'` — FAIL.**  **Step 3: Implement.** **Step 4: Run `cargo nextest run` — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice update --all`
+- [x] **Step 2: Run `cargo nextest run --test cli_channel_update -E 'test(all)'` — FAIL.**  **Step 3: Implement.** **Step 4: Run `cargo nextest run` — PASS.**
+- [x] **Step 5: Commit** — `feat: splice update --all`
 
 ---
 
@@ -777,7 +777,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 **Interfaces:**
 - Produces: `ops::check::run`: without `--channel` → main (if present) + every channel; `--channel N` → that channel only. Per channel: owned drift, markers, section drift/broken markers (`HOST#CHANNEL`, `update`, `owned`), update available (newer stable tag or tracked head, only when `subtree_id` differs). Messages `channel NAME: update available A → B (BRANCH|tag)` with short shas for tracked. Main messages unchanged from M2 (no prefix) so existing tests and the bot keep parsing them.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn check_aggregates_sources() { /* main clean, rig owned drift → exit 1, change .claude/agents/reviewer.md update/owned, message names channel rig */ }
@@ -789,8 +789,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn check_main_messages_unchanged() { /* guard (D2): existing update_available test passes untouched */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice check covers channels and sections`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice check covers channels and sections`
 
 ---
 
@@ -806,7 +806,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
   - `diff --channel N [--to V]` runs `prepare_channel` and prints file patches plus section patches (host before/after, labels `a/HOST`, `b/HOST`); `--json` changes equal `update --channel N --json`'s.
   - `explain <path>` searches main then every channel: adds `source=main` / `source=channel:NAME`; a section host (in any channel's `[sections]`) adds `section=NAME` per block and, if no source owns the file, reports it `unmanaged` plus the section lines. A channel-only repo no longer exits 2 for `explain`. Start from `explain::run` at HEAD: `piece=`/`glob=` messages are emitted only with `--json` (C8); `source=`/`section=` follow the same rule, and the human line gains a `source=` column.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn diff_channel_writes_nothing() { /* rig at v1 → diff --channel rig shows "+" lines of reviewer.md and the AGENTS.md block; git status empty */ }
@@ -817,8 +817,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn explain_human_has_source_column() { /* without --json: one line, contains "source=main", no messages */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: diff and explain for channels`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: diff and explain for channels`
 
 ---
 
@@ -832,7 +832,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 **Interfaces:**
 - Produces: `pub fn ops::channel::remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report>` — plan = every locked file "B only" (base = render at the lock, theirs = empty) + `plan_sections` with `removing = true`; owned drift → exit 1 unless `--force` (then edited files are kept and reported, never deleted); apply without steps/post; delete `.splice/channels/NAME.toml` last (`fsio::remove_file`; remove `.splice/channels/` if empty).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[test] fn remove_deletes_unedited_and_strips_sections() {
@@ -845,8 +845,8 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn remove_dirty() { /* exit 2 unless --allow-dirty */ }
 ```
 
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `feat: splice channel remove`
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `feat: splice channel remove`
 
 ---
 
@@ -859,7 +859,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 **Interfaces:**
 - Consumes: the binary, both fixtures.
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 ```rust
 #[test] fn golden_main_and_channel_v1_to_v2() {
@@ -871,10 +871,10 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 #[test] fn contract_guard_golden() { /* the golden repo's .splice/lock.toml equals golden_update's snapshot lock text */ }
 ```
 
-- [ ] **Step 2: Run `cargo nextest run --test golden_channels`, read every `.snap.new` against the fixture table and Rulings, then accept with `INSTA_UPDATE=always cargo nextest run --test golden_channels` (`cargo insta` is not installed; never blind-accept)**
-- [ ] **Step 3: Fix any bug the snapshot exposes (test first in the owning module)**
-- [ ] **Step 4: Run `cargo nextest run` — PASS; fmt + clippy clean**
-- [ ] **Step 5: Commit** — `test: golden main plus channel update`
+- [x] **Step 2: Run `cargo nextest run --test golden_channels`, read every `.snap.new` against the fixture table and Rulings, then accept with `INSTA_UPDATE=always cargo nextest run --test golden_channels` (`cargo insta` is not installed; never blind-accept)**
+- [x] **Step 3: Fix any bug the snapshot exposes (test first in the owning module)**
+- [x] **Step 4: Run `cargo nextest run` — PASS; fmt + clippy clean**
+- [x] **Step 5: Commit** — `test: golden main plus channel update`
 
 ---
 
@@ -887,9 +887,9 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 
 **Interfaces:** none (docs). The other main-spec sections were updated by the tasks that changed them (B6); the channels spec was updated in the plan revision.
 
-- [ ] **Step 1: Write failing test** — every `--[a-z-]+` in the README Channels section appears in `splice channel add --help`, `splice update --help`, `splice check --help` or `splice add --help`.
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Write.** SKILL.md (after plan 03) gains ≤ 10 lines: channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source; never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel. **Step 4: Run — PASS.**
-- [ ] **Step 5: Commit** — `docs: channels in spec index and README`
+- [x] **Step 1: Write failing test** — every `--[a-z-]+` in the README Channels section appears in `splice channel add --help`, `splice update --help`, `splice check --help` or `splice add --help`.
+- [x] **Step 2: Run — FAIL.**  **Step 3: Write.** SKILL.md (after plan 03; not done — see PROGRESS Blocked) gains ≤ 10 lines: channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source; never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel. **Step 4: Run — PASS.**
+- [x] **Step 5: Commit** — `docs: channels in spec index and README`
 
 ---
 
@@ -917,10 +917,10 @@ Depends on plan 03 Task 4 (`action/action.yml`, `action/summary.mjs`), not start
 - **After plan 03:** the npm launcher and platform package versions (`npm/**/package.json`) move to `0.2.0` in the same kind of commit, and the node tests run.
 - Test: full suite
 
-- [ ] **Step 1:** Bump the version; run `cargo nextest run`; any `.snap.new` is a bug (snapshots are redacted) — investigate, do not accept.
-- [ ] **Step 2:** `cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo nextest run` — paste the summary into PROGRESS. Run `node --test` only on the paths that exist (`for p in npm/splice/test action/test scripts; do [ -e "$p" ] && …; done`); with none present record `node tests: n/a (plan 03 not landed)`. Never run `node --test` on missing paths (it exits 1).
-- [ ] **Step 3:** Add the Blocked items below to `docs/PROGRESS.md`.
-- [ ] **Step 4: Commit** — `chore: splice 0.2.0`
+- [x] **Step 1:** Bump the version; run `cargo nextest run`; any `.snap.new` is a bug (snapshots are redacted) — investigate, do not accept.
+- [x] **Step 2:** `cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo nextest run` — paste the summary into PROGRESS. Run `node --test` only on the paths that exist (`for p in npm/splice/test action/test scripts; do [ -e "$p" ] && …; done`); with none present record `node tests: n/a (plan 03 not landed)`. Never run `node --test` on missing paths (it exits 1).
+- [x] **Step 3:** Add the Blocked items below to `docs/PROGRESS.md`.
+- [x] **Step 4: Commit** — `chore: splice 0.2.0`
 
 ---
 

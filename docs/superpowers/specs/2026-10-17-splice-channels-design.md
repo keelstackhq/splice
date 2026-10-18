@@ -264,7 +264,8 @@ Rendering is main spec §6 unchanged, per source. A channel's context is its own
 rigging/ (example channel template)
   splice.toml        name = "rigging", base = "core", min_splice = "0.2.0"
   pieces/core/       harness-neutral: [sections] "AGENTS.md" = rules fragment
-  pieces/claude/     .claude/agents/{explorer,implementer,reviewer,ci-fixer}.md
+  pieces/claude/     .claude/agents/{explore,implementer,reviewer,ci-fixer}.md
+                     (explore.md declares `name: Explore`, as hull ships it)
                      (no CLAUDE.md section: hull owns CLAUDE.md, which imports AGENTS.md)
   pieces/skills/     multiple = true; target = ".{{ dir }}/skills";
                      vars: dir = { pattern = "^(claude|agents)$" }; files/<skill>/SKILL.md
@@ -360,8 +361,8 @@ Every message says how to fix it (e.g. the `--exclude` flag, the lock path, `--f
 **hull's agent layer → channel `rigging`.** Stack-specific files stay in hull's template because
 they depend on hull's `pieces` (`CLAUDE.md` lists pieces; `session-start.sh` branches on `docs`;
 skills `verify`, `add-piece`, `docs-lookup` run hull's commands; `settings.json` allows `pnpm`,
-`turbo`). The org-generic files move to the channel: `.claude/agents/{explorer,implementer,
-reviewer,ci-fixer}.md` (all four keelstackhq repos already use these names) plus harness-neutral
+`turbo`). The org-generic files move to the channel: `.claude/agents/{explore,implementer,
+reviewer,ci-fixer}.md` (hull's file names; `explore.md` has `name: Explore`) plus harness-neutral
 rules as an `AGENTS.md` section. Hull-side changes (inside the contract, hull's own PR, starting
 with a hull spec change the hull owner signs off; whether hull publishing `[sections]` needs a
 contract note is the owner's D-003 call):
