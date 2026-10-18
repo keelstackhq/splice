@@ -37,6 +37,45 @@ refuse a dirty git tree (exit 2) unless `--allow-dirty`.
 
 Template authors: see [`docs/template-format.md`](docs/template-format.md).
 
+## Channels
+
+A channel is a second format-1 template applied next to the main one (or alone), with its own
+lock in `.splice/channels/<name>.toml`. Use it for shared agent rules, skills or org decisions
+that should update on their own schedule. The main `.splice/lock.toml` is never changed by a
+channel. Details: `docs/superpowers/specs/2026-10-17-splice-channels-design.md`.
+
+```bash
+splice channel add gh:keelstackhq/decisions//channel --track main --piece import-project
+splice channel add <source> --as rig --piece claude --only 'docs/**' --exclude '.claude/hooks/**'
+splice add skills --channel rig --name agents --data dir=agents   # another piece instance
+splice update --channel rig            # one channel; --only/--exclude replace the stored filters
+splice update --all                    # main and every channel; files first, post once, locks last
+splice check                           # covers the main lock and every channel
+splice diff --channel rig              # what update --channel would change
+splice channel remove rig              # delete unedited files, strip its blocks, delete its lock
+```
+
+- **Filters.** `--only` and `--exclude` (globs) are stored in the channel lock. Dropped paths are
+  never written or locked.
+- **Tracking.** `--track BRANCH` follows a branch head instead of version tags; `update` then
+  reports "up to date" when the channel's subdirectory is unchanged. `--ref` pins a tag, branch
+  or sha. `--to` does not apply to a tracked channel.
+- **One owner per path.** A path owned by two sources, or a section host that is another
+  source's file, is refused (exit 2) with the path and the owner; fix it with `--exclude PATH`.
+- **Sections.** A channel can own a block inside a Markdown file nobody owns (for example
+  `AGENTS.md`), between `<!-- splice:NAME:begin ... -->` and `<!-- splice:NAME:end -->`. Edit
+  the channel source, not the block: `update` refuses an edited block unless `--force`, and
+  broken markers are fixed by hand. A report names a block as `HOST#NAME`.
+- **Drift reporting.** The `add` family (`add`, `add --channel`, `channel add`) lists drifted
+  paths as `conflict`/`owned` changes and writes nothing. The `update` family (`update`,
+  `update --channel`, `update --all`) lists drift in `messages` only. `check` reports
+  `update`/`owned`. `diff` prints messages and exits 0.
+- **Remove.** `channel remove` keeps edited files and blocks (`--force` keeps them and removes
+  the rest instead of refusing), never deletes seeds, and deletes the channel lock last.
+  `--allow-dirty` works as for `update`.
+- **Lock last.** Every command writes locks after all files, steps and post commands. A failure
+  leaves the old locks; the message says how to restore with git.
+
 ## Update bot
 
 ```yaml

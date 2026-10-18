@@ -8,6 +8,12 @@ type Result<T> = std::result::Result<T, SpliceError>;
 /// Path of `.splice/lock.toml`; never a rendered path.
 const LOCK_PATH: &str = ".splice/lock.toml";
 
+/// True for `.splice/channels` and everything below it (first two segments).
+fn is_channels_path(path: &str) -> bool {
+    let mut segs = path.split('/');
+    segs.next() == Some(".splice") && segs.next() == Some("channels")
+}
+
 fn bad(origin: &str, why: &str) -> SpliceError {
     SpliceError::Template(format!("unsafe path {origin}: {why}"))
 }
@@ -64,6 +70,9 @@ pub fn render_rel_path(
     if path == LOCK_PATH || key == LOCK_PATH {
         return Err(bad(src_rel, "`.splice/lock.toml` is reserved"));
     }
+    if is_channels_path(&path) || is_channels_path(&key) {
+        return Err(bad(src_rel, "`.splice/channels/` is reserved"));
+    }
     Ok((path, key))
 }
 
@@ -115,6 +124,27 @@ mod tests {
         ] {
             let e = render_rel_path(src, target, &r, &ctx).unwrap_err();
             assert_eq!(e.exit_code(), 3, "{src:?} {target:?}");
+        }
+    }
+
+    #[test]
+    fn reserved_splice_paths() {
+        let ctx = context! {};
+        let r = Renderer::new();
+        for (src, target) in [
+            (".splice/channels/a.toml", None),
+            ("channels/a.toml", Some(".splice")),
+            (".splice/lock.toml", None),
+        ] {
+            let e = render_rel_path(src, target, &r, &ctx).unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{src:?} {target:?}");
+        }
+        for ok in [
+            ".splice/migrations/x.mjs",
+            ".splicex/a",
+            ".splice/channelsx/a",
+        ] {
+            assert!(render_rel_path(ok, None, &r, &ctx).is_ok(), "{ok}");
         }
     }
 }

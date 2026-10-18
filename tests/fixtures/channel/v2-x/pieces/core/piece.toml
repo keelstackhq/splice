@@ -1,0 +1,10 @@
+id = "core"
+description = "Harness-neutral rules"
+multiple = false
+
+[files]
+owned = ["docs/agents/rules.md", "x.txt"]
+seed = ["docs/agents/notes.md"]
+
+[sections]
+"AGENTS.md" = "sections/rules.md.jinja"

@@ -1,0 +1,4 @@
+format = 1
+name = "rig"
+min_splice = "0.1.0"
+base = "core"

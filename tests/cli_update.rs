@@ -2,13 +2,13 @@
 
 mod common;
 
-use common::{amend_tip, git, splice_cmd, template_repo, template_repo_tagged};
+use common::{
+    amend_tip, commit_all, commit_tag, splice_cmd, template_repo, template_repo_tagged,
+    tree_snapshot,
+};
 use splice::lock::Lock;
-use std::path::Path;
 use std::process::Command as Proc;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
 
 /// `splice new` from `tpl` into a fresh repo, then commit everything so the tree is clean.
 fn new_repo(tpl: &TempDir, extra: &[&str]) -> TempDir {
@@ -25,11 +25,6 @@ fn new_repo(tpl: &TempDir, extra: &[&str]) -> TempDir {
         .success();
     commit_all(repo.path());
     repo
-}
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
 }
 
 fn update(repo: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
@@ -368,4 +363,46 @@ fn remove_paths_see_the_template_object() {
     );
     assert_eq!(read(&repo, "fixture-2.0.0.cfg"), "mine\n");
     assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
+}
+
+#[test]
+fn update_refuses_a_target_that_adds_sections() {
+    let tpl = template_repo(&["v1"]);
+    let repo = new_repo(&tpl, &[]);
+    let base = tpl.path().join("pieces/base");
+    let toml = std::fs::read_to_string(base.join("piece.toml")).unwrap();
+    std::fs::write(
+        base.join("piece.toml"),
+        format!("{toml}\n[sections]\n\"NOTES.md\" = \"frag.md\"\n"),
+    )
+    .unwrap();
+    std::fs::write(base.join("files/frag.md"), "hello\n").unwrap();
+    commit_tag(tpl.path(), "v2 with sections", "v2.0.0");
+    let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
+    let out = update(&repo, &[]).code(3).get_output().clone();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("piece `base` declares [sections]"), "{text}");
+    assert_eq!(lock_bytes(&repo), lock);
+    assert_eq!(tree_snapshot(repo.path()), tree);
+}
+
+#[test]
+fn main_lock_identical_with_channels_present() {
+    // Guard: a channel lock next to the main lock does not change what `update` writes there.
+    let tpl = template_repo(&["v1", "v2"]);
+    let plain = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let with = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/lock/channel-rig.toml");
+    let chan_path = with.path().join(".splice/channels/rig.toml");
+    std::fs::create_dir_all(chan_path.parent().unwrap()).unwrap();
+    std::fs::copy(&fixture, &chan_path).unwrap();
+    commit_all(with.path());
+    let chan_before = std::fs::read(&chan_path).unwrap();
+    update(&plain, &[]).success();
+    update(&with, &[]).success();
+    assert_eq!(lock(&plain).template.version.to_string(), "2.0.0");
+    assert_eq!(lock_bytes(&plain), lock_bytes(&with));
+    assert_eq!(std::fs::read(&chan_path).unwrap(), chan_before);
 }

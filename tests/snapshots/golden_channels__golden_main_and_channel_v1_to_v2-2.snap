@@ -1,0 +1,271 @@
+---
+source: tests/golden_channels.rs
+expression: redact(&tree_snapshot(r))
+---
+.agents/skills/caveman/SKILL.md fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4
+.agents/skills/verify/SKILL.md 69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b
+.claude/agents/reviewer.md 6c43c67cc5ae0e3fd3dafc92c240377a411775d9a2bda263bb51097e2cacc41a
+.claude/hooks/session-start.d/rig-sync.sh 5f0bc4f9d9df3ec111c4d6130fbf5cbb072d1229a11599d2304bc47555990599
+.claude/skills/caveman/SKILL.md fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4
+.claude/skills/verify/SKILL.md 69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b
+.editorconfig 5a36f7d5ebd96ceec93361ba60a452776dd483214e0921114667dd9eee2c3fe6
+.github/workflows/ci.yml 4983f2b3dfef3575ffda12d95188b9ddf9fac727f15e7b334af0311a14f6fa48
+.post-ran 8030404398e6639ff1395dd8e38c782bf6c9e00229adfc54408c967a2e981b51
+.rig-post.log 27191d49c9f64030e65fe5be6741ef5c725e35d5ea2b8a48d767f5b243e2bc48
+.splice/channels/rig.toml [sha]
+.splice/lock.toml [sha]
+.splice/migrated.txt b0a1de67696fb59a924cd5f5b1d51f7e5bcc1352ac47cb9866ee66689c05bb4b
+AGENTS.md b6cf77125f2c79164d9addc698ac3a67e88b24b3017121596ebb64baec159dff
+CHANGELOG.md 90d8090f7a103feaaca8b2c27c2f98812814ca8949ee4a276374c9ed1e353b15
+CLAUDE.md bf8ce5867e8d4f68f6221f842dfd61043d6ae685c96ba73673e123ea14b9caf1
+README.md f8dd1a2b2a4208093fbfdc0e73007e1937384f0b560b2f27103f2974ebdaf5a7
+apps/web/package.json 9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9
+apps/web/src/index.html edfac485a8f3748a30377c861db77d3fe0e2c50f18ce54120dfe0a4811c36efd
+apps/web/src/main.ts 507d4ecd8055c72487c552e0262c085e84f4295c886fdc332c92a9cc9075c217
+apps/web/tsconfig.json c083d8ec1a8a4a45d0090c057ace383ebb7b405e52ff9fcbe9e69571a4f6e5ba
+apps.txt 884510c07970579c8a57332902710121c6b27fc1036596110dd7f3759f50e08a
+config/settings.toml 5c116741d23f74ca3c6b298c4af1e1c9f948e9127db767488ecf6f70bda0a3be
+demo.code-workspace 9c132b8bf1b58b509194727e278e132b5a5311e705ba38a7803fd2e9c8e2f392
+docs/agents/notes.md 69ecc62a2b2aa4c93d08c2bb8a62683fd08aaa8d25a247368525cd05999f1443
+docs/agents/rules.md 084fbf145e0eea2a10b74cc57fc1c961bd853d8c8a2de3071d1c347db366b96c
+logo.png ca012dc90cd9e3f4ccd112f38d23d1b972561806c7eb6ae12ee9c3c0a5dabfd1
+notes.txt eaaf5c2cc319b8d437c2dbf8ec71c4e879ad982464785c94d71a77bf92966e81
+only-with-app.txt 03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c
+package.json 40d5faff3e87a46d9c47d490b00f8aa7ee6871b1521cf231ce06bc152484ce7f
+tool.config.ts 736b46bc12cd3743accd64d304c9e873ec2cc338e4e91d96ee1d9148d3d22225
+== .agents/skills/caveman/SKILL.md ==
+# caveman
+
+Short words.
+== .agents/skills/verify/SKILL.md ==
+# verify
+
+Run the checks, v2.
+== .claude/agents/reviewer.md ==
+# reviewer
+
+Review read-only, v2.
+== .claude/hooks/session-start.d/rig-sync.sh ==
+#!/bin/sh
+echo rig-sync
+== .claude/skills/caveman/SKILL.md ==
+# caveman
+
+Short words.
+== .claude/skills/verify/SKILL.md ==
+# verify
+
+Run the checks, v2.
+== .editorconfig ==
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+== .github/workflows/ci.yml ==
+name: ci
+on: [push]
+jobs:
+  test:
+<<<<<<< ours
+    runs-on: macos-latest
+||||||| base
+    runs-on: ubuntu-latest
+=======
+    runs-on: ubuntu-24.04
+>>>>>>> template
+    steps:
+      - run: echo demo
+== .post-ran ==
+post
+== .rig-post.log ==
+rig-post
+rig-post
+== .splice/channels/rig.toml ==
+format = 1
+splice = "[splice]"
+
+[channel]
+name = "rig"
+only = []
+exclude = []
+
+[template]
+source = "[source]"
+version = "2.0.0"
+commit = "[commit]"
+
+[vars]
+
+[[pieces]]
+id = "core"
+name = "core"
+vars = {}
+
+[[pieces]]
+id = "claude"
+name = "claude"
+vars = {}
+
+[[pieces]]
+id = "skills"
+name = "claude"
+vars = { dir = "claude" }
+
+[[pieces]]
+id = "hooks"
+name = "hooks"
+vars = {}
+
+[[pieces]]
+id = "skills"
+name = "agents"
+vars = { dir = "agents" }
+
+[files]
+".agents/skills/caveman/SKILL.md" = { class = "owned", sha256 = "fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4" }
+".agents/skills/verify/SKILL.md" = { class = "owned", sha256 = "69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b" }
+".claude/agents/reviewer.md" = { class = "owned", sha256 = "6c43c67cc5ae0e3fd3dafc92c240377a411775d9a2bda263bb51097e2cacc41a" }
+".claude/hooks/session-start.d/rig-sync.sh" = { class = "owned", sha256 = "5f0bc4f9d9df3ec111c4d6130fbf5cbb072d1229a11599d2304bc47555990599" }
+".claude/skills/caveman/SKILL.md" = { class = "owned", sha256 = "fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4" }
+".claude/skills/verify/SKILL.md" = { class = "owned", sha256 = "69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b" }
+"docs/agents/rules.md" = { class = "owned", sha256 = "084fbf145e0eea2a10b74cc57fc1c961bd853d8c8a2de3071d1c347db366b96c" }
+
+[sections]
+"AGENTS.md" = { sha256 = "1fc1cb208882591caf431c3eed82a91a269c0de6c6e490420d16c4459c5f3bca", created = true }
+"CLAUDE.md" = { sha256 = "5bfefe0d03193de021edb6dd64629bc0b9bbb3f5efe76fb488a6fd993e24cfd0", created = true }
+== .splice/lock.toml ==
+format = 1
+splice = "[splice]"
+
+[template]
+source = "[source]"
+version = "2.0.0"
+commit = "[commit]"
+
+[vars]
+license = "MIT"
+project = "demo"
+scope = "acme"
+
+[[pieces]]
+id = "base"
+name = "base"
+vars = {}
+
+[[pieces]]
+id = "app"
+name = "web"
+vars = { name = "web" }
+
+[files]
+".editorconfig" = { class = "owned", sha256 = "5a36f7d5ebd96ceec93361ba60a452776dd483214e0921114667dd9eee2c3fe6" }
+".github/workflows/ci.yml" = { class = "shared", sha256 = "2bc5cc8e0365350e16659f55dbd3e9332e55794fa825601ebaa62e22dd018fc6" }
+"apps.txt" = { class = "owned", sha256 = "884510c07970579c8a57332902710121c6b27fc1036596110dd7f3759f50e08a" }
+"apps/web/package.json" = { class = "shared", sha256 = "9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9" }
+"apps/web/tsconfig.json" = { class = "owned", sha256 = "c083d8ec1a8a4a45d0090c057ace383ebb7b405e52ff9fcbe9e69571a4f6e5ba" }
+"config/settings.toml" = { class = "shared", sha256 = "ac409798c168750b61d686d560f72356b45a37fb47d9ca59478d39f0b6b8f0fa" }
+"demo.code-workspace" = { class = "owned", sha256 = "9c132b8bf1b58b509194727e278e132b5a5311e705ba38a7803fd2e9c8e2f392" }
+"logo.png" = { class = "owned", sha256 = "ca012dc90cd9e3f4ccd112f38d23d1b972561806c7eb6ae12ee9c3c0a5dabfd1" }
+"notes.txt" = { class = "shared", sha256 = "1024a7235fc4f93c50dfa6e9cb54c8d3f439e0b711b4f162d73c9b239b5b014d" }
+"only-with-app.txt" = { class = "owned", sha256 = "03e720c3aedcbb59056a89b833736abfa4f366b34a57418adc46376ecc4e7a2c" }
+"package.json" = { class = "shared", sha256 = "411dce98e6fcf8f592830fb6407461e349108cb73bfb184264666c9abb35a794" }
+"tool.config.ts" = { class = "owned", sha256 = "736b46bc12cd3743accd64d304c9e873ec2cc338e4e91d96ee1d9148d3d22225" }
+== .splice/migrated.txt ==
+migrated
+== AGENTS.md ==
+# My rules
+
+<!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->
+- Test first.
+- Keep files small and focused.
+- Subagents live in `.claude/agents`.
+<!-- splice:rig:end -->
+
+My footer.
+== CHANGELOG.md ==
+# Changelog
+
+- 2.0.0: second release
+== CLAUDE.md ==
+<!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->
+See `AGENTS.md`, mine.
+<!-- splice:rig:end -->
+== README.md ==
+# demo
+
+My own words, edited by the user.
+== apps/web/package.json ==
+{
+  "name": "@acme/web",
+  "version": "0.0.0"
+}
+== apps/web/src/index.html ==
+<!doctype html>
+<title>app</title>
+== apps/web/src/main.ts ==
+
+const owner = "acme";
+console.log("WEB web", owner);
+== apps/web/tsconfig.json ==
+{ "compilerOptions": { "strict": true, "noUncheckedIndexedAccess": true } }
+== apps.txt ==
+pieces:
+- base
+- app
+
+== config/settings.toml ==
+# local note
+[settings]
+scope = "acme"
+project = "demo"
+
+[build]
+target = "es2022"
+
+[local]
+x = 1
+== demo.code-workspace ==
+{
+  "folders": []
+}
+== docs/agents/notes.md ==
+# Notes
+
+Seed, written once.
+my seed note
+== docs/agents/rules.md ==
+# Rules
+
+Test first.
+== notes.txt ==
+Notes for demo.
+Template fixture, second edition.
+line three
+line four
+line 5, mine
+== only-with-app.txt ==
+app is present
+
+== package.json ==
+{
+  "name": "@acme/demo",
+  "private": true,
+  "dependencies": {
+    "left-pad": "1.3.0"
+  },
+  "scripts": {
+    "check": "echo check",
+    "lint": "echo lint"
+  },
+  "devDependencies": {
+    "typescript": "5.4.0"
+  },
+  "keywords": [
+    "base",
+    "app",
+    "fixture"
+  ]
+}
+== tool.config.ts ==
+export default { name: "tool", version: 2 };

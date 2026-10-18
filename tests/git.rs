@@ -1,6 +1,9 @@
 mod common;
 
-use common::{template_repo, tree_snapshot};
+use common::{
+    bare_repo, chan_commit, channel_repo, git_stdout, new_repo_at, template_repo, track_commit,
+    tree_snapshot,
+};
 use splice::git::Git;
 use tempfile::tempdir;
 
@@ -58,4 +61,63 @@ fn template_repo_is_reproducible() {
     assert_eq!(tree_snapshot(a.path()), tree_snapshot(b.path()));
     let head = |p: &std::path::Path| Git::rev_parse(&p.join(".git"), "HEAD").unwrap();
     assert_eq!(head(a.path()), head(b.path()));
+}
+
+#[test]
+fn channel_repo_has_subdir_and_tags() {
+    let repo = channel_repo(&["v1", "v2"]);
+    let p = repo.path();
+    assert_eq!(git_stdout(p, &["tag"]), "v1.0.0\nv2.0.0");
+    assert!(p.join("channel/splice.toml").is_file());
+    assert!(p.join("README.md").is_file());
+    let tree = || git_stdout(p, &["rev-parse", "HEAD:channel"]);
+    let before = tree();
+    let outside = track_commit(p, false);
+    assert_eq!(outside.len(), 40);
+    assert_eq!(tree(), before);
+    let inside = track_commit(p, true);
+    assert_eq!(git_stdout(p, &["rev-parse", "HEAD"]), inside);
+    assert_ne!(tree(), before);
+}
+
+#[test]
+fn chan_commit_leaves_clean_tree() {
+    let tpl = template_repo(&["v1"]);
+    let repo = new_repo_at(&tpl, "v1.0.0");
+    assert_eq!(Git::is_clean(repo.path()).unwrap(), Some(true));
+    std::fs::write(repo.path().join("scratch.txt"), "x\n").unwrap();
+    chan_commit(repo.path(), &["check"]);
+    assert_eq!(Git::is_clean(repo.path()).unwrap(), Some(true));
+}
+
+#[test]
+fn bare_repo_has_one_commit_and_no_lock() {
+    let repo = bare_repo();
+    assert_eq!(
+        git_stdout(repo.path(), &["rev-list", "--count", "HEAD"]),
+        "1"
+    );
+    assert!(!repo.path().join(".splice").exists());
+}
+
+#[test]
+fn tree_id_of_subdir() {
+    let repo = channel_repo(&["v1"]);
+    let p = repo.path();
+    let git_dir = p.join(".git");
+    let head = git_stdout(p, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, Some("channel")).unwrap(),
+        git_stdout(p, &["rev-parse", "HEAD:channel"])
+    );
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, None).unwrap(),
+        git_stdout(p, &["rev-parse", "HEAD^{tree}"])
+    );
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, Some("nope"))
+            .unwrap_err()
+            .exit_code(),
+        3
+    );
 }

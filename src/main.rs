@@ -14,12 +14,20 @@ fn main() -> ExitCode {
             let wants_json = argv.iter().skip(1).any(|a| a == "--json");
             if wants_json && !matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion)
             {
-                let command = argv
+                let mut words = argv
                     .iter()
                     .skip(1)
-                    .find(|a| !a.starts_with('-') && Command::NAMES.contains(&a.as_str()))
-                    .map_or("", String::as_str);
-                let mut report = Report::new(command);
+                    .map(String::as_str)
+                    .filter(|a| !a.starts_with('-'))
+                    .skip_while(|a| !Command::NAMES.contains(a));
+                let command = match (words.next(), words.next()) {
+                    (Some("channel"), Some(sub @ ("add" | "remove"))) => {
+                        format!("channel {sub}")
+                    }
+                    (Some(name), _) => name.to_string(),
+                    _ => String::new(),
+                };
+                let mut report = Report::new(&command);
                 report.ok = false;
                 report.msg(e.render().to_string().trim_end());
                 report.print(true);

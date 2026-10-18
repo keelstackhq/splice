@@ -120,6 +120,21 @@ fn sync_dir(_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// True when `rel` below `root` is a regular file and neither `root` nor any directory on the way
+/// nor the file itself is a symlink (the template may not reach outside itself).
+pub fn is_plain_file_below(root: &Path, rel: &str) -> bool {
+    let mut cur = root.to_path_buf();
+    let mut meta = std::fs::symlink_metadata(&cur);
+    for seg in rel.split('/') {
+        if !meta.as_ref().is_ok_and(|m| m.is_dir()) {
+            return false;
+        }
+        cur.push(seg);
+        meta = std::fs::symlink_metadata(&cur);
+    }
+    meta.is_ok_and(|m| m.is_file())
+}
+
 /// Read `rel` below `root`; `None` when it does not exist.
 pub fn read_opt(root: &Path, rel: &str) -> io::Result<Option<Vec<u8>>> {
     match std::fs::read(root.join(rel)) {

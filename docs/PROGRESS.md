@@ -26,6 +26,28 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 02/T8 · 7662b3a · splice check (owned drift, conflict markers, update available; --offline; fetch failure is a message); un-ignored resolve_conflict_then_check_passes, strengthened rerun_after_restore_succeeds; cli_check 7 passing, golden_update 3 passing
 - 2026-10-17 · 02/T9 · 7e9d0d5 · splice diff (update plan as unified diff or --json changes, writes nothing, exit 0 on drift/conflict); add on the full planner (merges shared files, --allow-dirty, C3 writes nothing on drift/conflict, reduced planner deleted); check uses a local update-available flag, CRLF marker case; cli_diff 3, cli_add 16 passing
 - 2026-10-17 · 02/final · 7288d7f · final-review fixes ([[remove]] paths see `template`, check preflights lock paths and reports the lock class, wrap_whole CRLF, TOML fallback guard, exit 3 after writes lists applied changes, prerelease-only template is up to date, explain human mode quiet on stderr, failed-post rerun converges); cargo test 243 passing, fmt and clippy -D warnings clean
+- 2026-10-17 · 04/T1 · 8298140 · channel lock types (`[channel]`, `[sections]`), corruption checks, reserved `.splice/` paths; main lock byte-identical guard; review clean
+- 2026-10-17 · 04/T2 · 351ba2c..44f1fa7 · channel path filters (`--only`/`--exclude`, stored meta); fix round 1: apply_tree and stored-meta tests (RED via reviewer mutations)
+- 2026-10-17 · 04/T3 · c97c056 · source registry and one-owner claim check; lib tests green (RED 10 failed on stubs); review clean
+- 2026-10-17 · 04/T4 · 839efab · channel fixtures (`channel`, `channel-b`) and helpers (`channel_repo*`, `chan_commit`); test-only
+- 2026-10-17 · 04/T5 · 403f92f..f3e2450 · piece `[sections]`, fragment rendering, main refusal; fix round 1: symlinked fragments/`files/` refused; hull's Nunjucks corpus run must pick up the new conformance case `section-fragment` (C2)
+- 2026-10-17 · 04/T6 · 4e4bcfe..f3f4915 · section markers and block edits (13 lib tests, RED on todo! stubs); fix round 1: body normalisation, marker injection refused, BOM, exact begin
+- 2026-10-17 · 04/T7 · 35431b1 · pure section planner (insert, adopt, update, drift, gone, broken, --force)
+- 2026-10-17 · 04/T8 · fd7b642 · apply with `LockOut`, section writes via fsio, deferred locks (`write_locks`); lib 216 passing, M2 suites unchanged
+- 2026-10-17 · 04/T9 · d6309e7..05d3c42 · channel CLI grammar and flag conflicts; lib 217, all suites green; fix round 1: conflict tests assert both flag names
+- 2026-10-17 · 04/T10 · 4f3a567 · `splice channel add`; cli_channel 17/17, 372 passing
+- 2026-10-17 · 04/T11 · 04f85c6..0d49096 · `splice add --channel`; fix round 1: non-vacuous G10 seed-drop tests (RED by deleting each retain); 384 passing
+- 2026-10-17 · 04/T12 · 81dc5e1 · `splice update --channel` (filters, `--data` refused); 401 passing
+- 2026-10-17 · 04/T13 · 0d13901 · `--track` updates and subtree compare; 410 passing
+- 2026-10-17 · 04/T14 · 98ce67d..4482506 · `splice update --all` (all files → dedup post → all locks last); fix round 1: spec rulings, main lock byte-identical in --all; 424 passing
+- 2026-10-17 · 04/T15 · 2c393ad · `splice check` across sources and sections; cli_check 19 passing (RED 9 failed)
+- 2026-10-17 · 04/T16 · 23bed57..b7857ce · `diff --channel`, `explain` across sources; fix round 1: drift reporting per command family, `HOST#NAME` paths
+- 2026-10-17 · 04/T17 · fdee2f2..10954a7 · `splice channel remove`; fix round 1: overlap guard (exit 3) and more remove tests
+- 2026-10-17 · 04/T18 · cedf673 · golden main + channel `update --all` (snapshots; fixed --all conflict attribution); review approved
+- 2026-10-18 · 04/T19 · df7c542 · spec index (§10 item 15) and README Channels section; `readme_channel_flags_exist`; SKILL.md part after plan 03 (Blocked)
+- 2026-10-18 · 04/T20 · Blocked · update-bot `scope` input: after plan 03 (see Blocked)
+- 2026-10-18 · 04/T21 · splice 0.2.0 (Cargo.toml, Cargo.lock) · `cargo fmt --check` and `clippy --all-targets --locked -D warnings` clean; `cargo nextest run`: 461 tests run, 461 passed, 0 skipped; no `.snap.new` (snapshots redact the version); node tests: n/a (plan 03 not landed); npm package versions: after plan 03
+- 2026-10-18 · 04/final · 0b68121 · final-review fix wave: section rerun after a failed step/post/lock write converges (no false drift), fragments refuse any channel's marker line, `--all` checks every source's targets before the first write, explain `source=` only with channel locks, `add --channel` refusal names `channel NAME`, Task 11/18 deferred minors; `cargo test` 465 passing, fmt and clippy -D warnings clean
 
 ## Blocked
 
@@ -36,7 +58,14 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
+- SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
+- **Plan 03:** not executed. Task 19's SKILL.md part, Task 20 (bot channel scope), Task 21's npm part (`npm/**/package.json` to 0.2.0 plus node tests), C2's dogfood step and C3 wait for it.
+- **Release 0.2.0 (npm):** after plan 03's release workflow exists: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
+- **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
+- **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
+- **Bot tokens:** each adopting repo needs the bot workflow enabled and a token that can read `keelstackhq/decisions` and `keelstackhq/hull` if they are private (repo secret, e.g. a GitHub App token passed as `token`).
+- **hull release** removing the four agent files (C2 last step): tag a hull version.
 
 ## Status
 
-Milestone 2 done.
+Milestone 2 done. Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the npm release, bot scope, skill file and cross-repo tasks (C1–C3) are Blocked above.

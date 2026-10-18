@@ -5,6 +5,7 @@ pub mod classify;
 pub mod cli;
 pub mod error;
 pub mod fetch;
+pub mod filter;
 pub mod fsio;
 pub mod git;
 pub mod lock;
@@ -18,7 +19,9 @@ pub mod paths;
 pub mod planner;
 pub mod post;
 pub mod render;
+pub mod sections;
 pub mod source;
+pub mod sources;
 pub mod subset;
 pub mod vars;
 
@@ -35,5 +38,9 @@ pub fn run(cli: Cli) -> Result<Report, SpliceError> {
         Command::Update(args) => ops::update::run(&cli.global, args),
         Command::Check(args) => ops::check::run(&cli.global, args),
         Command::Diff(args) => ops::diff::run(&cli.global, args),
+        Command::Channel(args) => match &args.command {
+            cli::ChannelCommand::Add(a) => ops::channel::add(&cli.global, a),
+            cli::ChannelCommand::Remove(a) => ops::channel::remove(&cli.global, a),
+        },
     }
 }

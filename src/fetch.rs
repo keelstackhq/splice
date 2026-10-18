@@ -49,7 +49,7 @@ impl Fetcher {
 
     /// The git directory to read from, and where to list tags. Local sources are used in
     /// place; remote ones are mirrored (created or updated) first.
-    fn repo(&self, src: &TemplateSource) -> Result<(PathBuf, String)> {
+    pub(crate) fn repo(&self, src: &TemplateSource) -> Result<(PathBuf, String)> {
         match &src.kind {
             SourceKind::Local { path } => {
                 let dot_git = path.join(".git");
@@ -135,6 +135,38 @@ impl Fetcher {
         self.checkout_from(src, &git_dir, &commit, version)
     }
 
+    /// The head of `branch` (`refs/heads/<branch>`), version `0.0.0+g<sha7>`. Tags are ignored.
+    /// An unknown branch is exit 3 naming it.
+    pub fn branch_head(&self, src: &TemplateSource, branch: &str) -> Result<ResolvedTemplate> {
+        let (git_dir, _) = self.repo(src)?;
+        let commit = Git::rev_parse(&git_dir, &format!("refs/heads/{branch}")).map_err(|_| {
+            SpliceError::Template(format!(
+                "template `{}` has no branch `{branch}`; pass an existing branch to --track",
+                src.spec
+            ))
+        })?;
+        let version = Version::parse(&format!("0.0.0+g{}", &commit[..7])).expect("valid semver");
+        self.checkout_from(src, &git_dir, &commit, version)
+    }
+
+    /// The tree id of the source's subdir (or root) at `commit`. A remote source's mirror is
+    /// fetched only when it does not have the commit yet.
+    pub fn subtree_id(&self, src: &TemplateSource, commit: &str) -> Result<String> {
+        if let SourceKind::Git { .. } = &src.kind {
+            let mirror = self
+                .cache
+                .join("git")
+                .join(format!("{}.git", src.cache_key()));
+            if mirror.join("HEAD").exists()
+                && let Ok(id) = Git::tree_id(&mirror, commit, src.subdir.as_deref())
+            {
+                return Ok(id);
+            }
+        }
+        let (git_dir, _) = self.repo(src)?;
+        Git::tree_id(&git_dir, commit, src.subdir.as_deref())
+    }
+
     /// The template at tag `v<version>`.
     pub fn resolve_version(
         &self,
@@ -157,7 +189,7 @@ impl Fetcher {
         version: Version,
     ) -> Result<ResolvedTemplate> {
         // The commit becomes a cache path segment: never accept anything but a full sha.
-        validate_commit(commit)?;
+        validate_commit(commit, crate::lock::LOCK_PATH)?;
         if let Some(found) = self.cached(src, commit, &version)? {
             return Ok(found);
         }
@@ -205,7 +237,7 @@ impl Fetcher {
 }
 
 /// A commit taken from a lock must be a full lowercase sha: it is used as a cache path segment.
-pub fn validate_commit(commit: &str) -> Result<()> {
+pub fn validate_commit(commit: &str, lock_path: &str) -> Result<()> {
     if commit.len() == 40
         && commit
             .bytes()
@@ -215,7 +247,7 @@ pub fn validate_commit(commit: &str) -> Result<()> {
     } else {
         Err(SpliceError::Template(format!(
             "invalid commit `{commit}`: expected 40 lowercase hex characters; \
-             fix `commit` in .splice/lock.toml"
+             fix `commit` in {lock_path}"
         )))
     }
 }

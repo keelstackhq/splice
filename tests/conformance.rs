@@ -13,7 +13,7 @@ fn corpus() -> &'static Path {
     ))
 }
 
-const CASES: [&str; 11] = [
+const CASES: [&str; 12] = [
     "var",
     "filters",
     "if-elif-else",
@@ -25,6 +25,7 @@ const CASES: [&str; 11] = [
     "no-trailing-newline",
     "blank-lines-around-blocks",
     "unicode",
+    "section-fragment",
 ];
 
 #[test]

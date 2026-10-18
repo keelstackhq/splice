@@ -2,90 +2,12 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo, tree_snapshot};
+use common::{
+    USER_README, apply_user_edits, commit_all, edit, new_repo_at, redact, splice_cmd,
+    template_repo, tree_snapshot,
+};
 use splice::lock::Lock;
-use std::path::Path;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-const USER_README: &str = "# demo\n\nMy own words, edited by the user.\n";
-
-/// Hide what depends on the machine: the lock's source path, commit and splice version.
-fn redact(snapshot: &str) -> String {
-    let mut out = snapshot.to_string();
-    for (re, to) in [
-        (r#"source = ".*""#, r#"source = "[source]""#),
-        (r#"commit = ".*""#, r#"commit = "[commit]""#),
-        (r#"splice = ".*""#, r#"splice = "[splice]""#),
-        (
-            r"\.splice/lock\.toml [0-9a-f]{64}",
-            ".splice/lock.toml [sha]",
-        ),
-    ] {
-        out = regex::Regex::new(re)
-            .unwrap()
-            .replace_all(&out, to)
-            .into_owned();
-    }
-    out
-}
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
-}
-
-/// `splice new --ref v<version>` of the app piece into a fresh, committed repo.
-fn new_at(tpl: &TempDir, version: &str) -> TempDir {
-    let repo = tempfile::tempdir().unwrap();
-    splice_cmd()
-        .args([
-            "new",
-            tpl.path().to_str().unwrap(),
-            repo.path().to_str().unwrap(),
-        ])
-        .args(["--ref", &format!("v{version}")])
-        .args([
-            "--piece",
-            "app:web",
-            "--data",
-            "project=demo",
-            "--yes",
-            "--json",
-        ])
-        .assert()
-        .success();
-    commit_all(repo.path());
-    repo
-}
-
-fn edit(repo: &TempDir, rel: &str, f: impl FnOnce(String) -> String) {
-    let path = repo.path().join(rel);
-    let text = std::fs::read_to_string(&path).unwrap();
-    std::fs::write(path, f(text)).unwrap();
-}
-
-/// The "User edit" column of the plan's fixture table (never the owned tsconfig: owned drift
-/// refuses the update, covered in cli_update).
-fn apply_user_edits(repo: &TempDir) {
-    edit(repo, "package.json", |t| {
-        t.replace(
-            "  \"private\": true,\n",
-            "  \"private\": true,\n  \"dependencies\": {\n    \"left-pad\": \"1.3.0\"\n  },\n",
-        )
-    });
-    edit(repo, "config/settings.toml", |t| {
-        format!("# local note\n{t}\n[local]\nx = 1\n")
-    });
-    edit(repo, ".github/workflows/ci.yml", |t| {
-        t.replace("ubuntu-latest", "macos-latest")
-    });
-    edit(repo, "notes.txt", |t| {
-        t.replace("line five", "line 5, mine")
-    });
-    std::fs::write(repo.path().join("README.md"), USER_README).unwrap();
-    commit_all(repo.path());
-}
 
 fn update_cmd(repo: &TempDir) -> assert_cmd::Command {
     let mut cmd = splice_cmd();
@@ -101,7 +23,7 @@ fn read(repo: &TempDir, rel: &str) -> String {
 #[test]
 fn golden_v1_to_v2_with_user_edits() {
     let tpl = template_repo(&["v1", "v2"]);
-    let repo = new_at(&tpl, "1.0.0");
+    let repo = new_repo_at(&tpl, "v1.0.0");
     apply_user_edits(&repo);
     let out = update_cmd(&repo)
         .assert()
@@ -122,7 +44,7 @@ fn golden_v1_to_v2_with_user_edits() {
 #[test]
 fn rerun_after_restore_succeeds() {
     let tpl = template_repo(&["v1", "v2"]);
-    let repo = new_at(&tpl, "1.0.0");
+    let repo = new_repo_at(&tpl, "v1.0.0");
     apply_user_edits(&repo);
     let lock_v1 = std::fs::read(repo.path().join(".splice/lock.toml")).unwrap();
 
@@ -164,7 +86,7 @@ fn rerun_after_restore_succeeds() {
     assert_eq!(lock.template.version.to_string(), "2.0.0");
 
     // The re-run lands exactly where an update that never failed lands.
-    let reference = new_at(&tpl, "1.0.0");
+    let reference = new_repo_at(&tpl, "v1.0.0");
     apply_user_edits(&reference);
     update_cmd(&reference).assert().code(1);
     assert_eq!(
@@ -177,7 +99,7 @@ fn rerun_after_restore_succeeds() {
 #[test]
 fn resolve_conflict_then_check_passes() {
     let tpl = template_repo(&["v1", "v2"]);
-    let repo = new_at(&tpl, "1.0.0");
+    let repo = new_repo_at(&tpl, "v1.0.0");
     apply_user_edits(&repo);
     update_cmd(&repo).assert().code(1);
     // Resolve the conflict by keeping the template side, then commit.
@@ -217,7 +139,7 @@ fn apply_clean_edits(repo: &TempDir) {
 #[test]
 fn rerun_after_failed_post_without_restore_converges() {
     let tpl = template_repo(&["v1", "v2"]);
-    let repo = new_at(&tpl, "1.0.0");
+    let repo = new_repo_at(&tpl, "v1.0.0");
     apply_clean_edits(&repo);
     let lock_v1 = std::fs::read(repo.path().join(".splice/lock.toml")).unwrap();
 
@@ -251,7 +173,7 @@ fn rerun_after_failed_post_without_restore_converges() {
     assert_eq!(lock.template.version.to_string(), "2.0.0");
 
     // Same result as an update that never failed: no lost edits, no markers.
-    let reference = new_at(&tpl, "1.0.0");
+    let reference = new_repo_at(&tpl, "v1.0.0");
     apply_clean_edits(&reference);
     std::fs::remove_file(reference.path().join(".post-ran")).unwrap();
     commit_all(reference.path());

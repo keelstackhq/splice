@@ -2,16 +2,8 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo};
-use std::path::Path;
+use common::{commit_all, splice_cmd, template_repo};
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-
-fn commit_all(repo: &Path) {
-    git(repo, DATE, &["add", "-A"]);
-    git(repo, DATE, &["commit", "-q", "-m", "state"]);
-}
 
 /// `splice new` of the app piece from `tpl` (at `--ref` when given) into a committed repo.
 fn new_repo(tpl: &TempDir, git_ref: Option<&str>) -> TempDir {
@@ -224,4 +216,276 @@ fn markers_report_the_lock_class() {
             {"path":".editorconfig","action":"conflict","class":"owned"}
         ])
     );
+}
+
+// ---- channels and sections (Task 15) ----
+
+mod channels {
+    use super::{check, messages};
+    use crate::common::*;
+    use tempfile::TempDir;
+
+    fn src(ch: &TempDir) -> String {
+        format!("{}//channel", ch.path().display())
+    }
+
+    fn paths(v: &serde_json::Value) -> Vec<String> {
+        v["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["path"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// Main repo (app piece) plus channel rig at v1 with claude + core, committed.
+    fn main_and_rig(versions: &[&str]) -> (TempDir, TempDir, TempDir) {
+        let tpl = template_repo(&["v1"]);
+        let repo = new_repo_at(&tpl, "v1.0.0");
+        let ch = channel_repo(versions);
+        chan_commit(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                &src(&ch),
+                "--ref",
+                "v1.0.0",
+                "--piece",
+                "claude",
+            ],
+        );
+        (repo, ch, tpl)
+    }
+
+    #[test]
+    fn check_aggregates_sources() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        assert_eq!(check(&repo, &["--offline"]).0, 0);
+        std::fs::write(repo.path().join(".claude/agents/reviewer.md"), "edited\n").unwrap();
+        std::fs::write(repo.path().join(".editorconfig"), "root = false\n").unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            v["changes"],
+            serde_json::json!([
+                {"path":".claude/agents/reviewer.md","action":"update","class":"owned"},
+                {"path":".editorconfig","action":"update","class":"owned"}
+            ])
+        );
+        let m = messages(&v);
+        assert!(m.contains("channel rig"), "{m}");
+    }
+
+    #[test]
+    fn check_section_drift() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        let p = repo.path().join("AGENTS.md");
+        let text = std::fs::read_to_string(&p).unwrap();
+        let edited = text.replace("Test first", "EDITED");
+        assert_ne!(text, edited);
+        std::fs::write(&p, edited).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            v["changes"],
+            serde_json::json!([{"path":"AGENTS.md#rig","action":"update","class":"owned"}])
+        );
+    }
+
+    #[test]
+    fn check_section_markers_broken_and_host_gone() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        let p = repo.path().join("AGENTS.md");
+        let text = std::fs::read_to_string(&p).unwrap();
+        let no_end: String = text
+            .lines()
+            .filter(|l| !l.contains("splice:rig:end"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        std::fs::write(&p, no_end).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1);
+        assert_eq!(paths(&v), ["AGENTS.md#rig"]);
+        let m = messages(&v);
+        assert!(m.contains("unbalanced splice:rig marker"), "{m}");
+        // A deleted host is drift too.
+        std::fs::remove_file(&p).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1);
+        assert_eq!(paths(&v), ["AGENTS.md#rig"]);
+    }
+
+    #[test]
+    fn check_tracked_head_moved() {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &["channel", "add", &src(&ch), "--track", "main"],
+        );
+        let locked = git_stdout(repo.path(), &["rev-parse", "HEAD"]);
+        assert_eq!(check(&repo, &[]).0, 0);
+        let head = track_commit(ch.path(), true);
+        let (code, v) = check(&repo, &[]);
+        assert_eq!(code, 1);
+        assert_eq!(v["changes"], serde_json::json!([]));
+        let lock = std::fs::read_to_string(repo.path().join(".splice/channels/rig.toml")).unwrap();
+        let old = lock
+            .lines()
+            .find_map(|l| l.strip_prefix("commit = \""))
+            .unwrap()
+            .trim_end_matches('"')
+            .to_string();
+        assert_ne!(old, locked);
+        let m = messages(&v);
+        assert!(
+            m.contains(&format!(
+                "channel rig: update available {} → {} (main)",
+                &old[..7],
+                &head[..7]
+            )),
+            "{m}"
+        );
+        assert_eq!(check(&repo, &["--offline"]).0, 0);
+    }
+
+    #[test]
+    fn check_tracked_outside_change() {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &["channel", "add", &src(&ch), "--track", "main"],
+        );
+        track_commit(ch.path(), false);
+        let (code, v) = check(&repo, &[]);
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(messages(&v), "");
+    }
+
+    #[test]
+    fn check_tag_update_available() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1", "v2"]);
+        let (code, v) = check(&repo, &[]);
+        assert_eq!(code, 1);
+        let m = messages(&v);
+        assert!(
+            m.contains("channel rig: update available 1.0.0 → 2.0.0 (tag)"),
+            "{m}"
+        );
+        assert!(
+            !m.contains("\nupdate available") && !m.starts_with("update available"),
+            "{m}"
+        );
+        assert_eq!(check(&repo, &["--offline"]).0, 0);
+    }
+
+    #[test]
+    fn check_channel_only_repo() {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(repo.path(), &["channel", "add", &src(&ch)]);
+        let (code, v) = check(&repo, &[]);
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(v["ok"], true);
+    }
+
+    #[test]
+    fn check_single_channel() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        std::fs::write(repo.path().join(".editorconfig"), "root = false\n").unwrap();
+        assert_eq!(check(&repo, &["--offline"]).0, 1);
+        let (code, v) = check(&repo, &["--offline", "--channel", "rig"]);
+        assert_eq!(code, 0, "{v}");
+        std::fs::write(repo.path().join(".claude/agents/reviewer.md"), "x\n").unwrap();
+        let (code, v) = check(&repo, &["--offline", "--channel", "rig"]);
+        assert_eq!(code, 1);
+        assert_eq!(paths(&v), [".claude/agents/reviewer.md"]);
+    }
+
+    #[test]
+    fn check_unknown_channel_and_corrupt_lock() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        let (code, v) = check(&repo, &["--channel", "nope"]);
+        assert_eq!(code, 2);
+        assert!(messages(&v).contains("unknown channel `nope`"), "{v}");
+        std::fs::write(
+            repo.path().join(".splice/channels/rig.toml"),
+            "not toml [[\n",
+        )
+        .unwrap();
+        let (code, _) = check(&repo, &["--offline"]);
+        assert_eq!(code, 3);
+    }
+
+    #[test]
+    fn check_is_read_only() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1", "v2"]);
+        std::fs::write(repo.path().join(".claude/agents/reviewer.md"), "x\n").unwrap();
+        let before = tree_snapshot(repo.path());
+        check(&repo, &[]);
+        assert_eq!(tree_snapshot(repo.path()), before);
+    }
+}
+
+mod channel_paths {
+    use super::{check, messages};
+    use crate::common::*;
+
+    fn rig_repo() -> (tempfile::TempDir, tempfile::TempDir) {
+        let repo = bare_repo();
+        let ch = channel_repo(&["v1"]);
+        chan_commit(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                &format!("{}//channel", ch.path().display()),
+                "--piece",
+                "claude",
+            ],
+        );
+        (repo, ch)
+    }
+
+    #[test]
+    fn unsafe_channel_lock_path_is_refused_and_names_the_lock() {
+        let (repo, _ch) = rig_repo();
+        let lock = repo.path().join(".splice/channels/rig.toml");
+        let text = std::fs::read_to_string(&lock).unwrap();
+        std::fs::write(
+            &lock,
+            text.replace(".claude/agents/reviewer.md", "../evil.md"),
+        )
+        .unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 3, "{v}");
+        let m = messages(&v);
+        assert!(
+            m.contains(".splice/channels/rig.toml") && m.contains("unsafe path"),
+            "{m}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_section_host_is_refused() {
+        let (repo, _ch) = rig_repo();
+        std::fs::remove_file(repo.path().join("AGENTS.md")).unwrap();
+        std::os::unix::fs::symlink("README.md", repo.path().join("AGENTS.md")).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 3, "{v}");
+        assert!(messages(&v).contains(".splice/channels/rig.toml"), "{v}");
+    }
+
+    #[test]
+    fn non_utf8_section_host_is_drift_with_a_message() {
+        let (repo, _ch) = rig_repo();
+        std::fs::write(repo.path().join("AGENTS.md"), [0xff, 0xfe, 0x00, b'x']).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1, "{v}");
+        assert_eq!(v["changes"][0]["path"], "AGENTS.md#rig");
+        assert!(messages(&v).contains("not valid UTF-8"), "{v}");
+    }
 }

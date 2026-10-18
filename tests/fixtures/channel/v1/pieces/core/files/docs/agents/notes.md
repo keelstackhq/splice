@@ -1,0 +1,3 @@
+# Notes
+
+Seed, written once.

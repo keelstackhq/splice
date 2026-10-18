@@ -68,13 +68,15 @@ pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result
 
 /// Run the migration steps in order (each paired with its migration's version), with
 /// `SPLICE_FROM_VERSION` and `SPLICE_TO_VERSION` set. Output goes to our stderr like `run_post`.
-/// A failure is an environment error (exit 3) naming the step, its version and the command that
-/// restores the previous state; the lock has not been written yet.
+/// A failure is an environment error (exit 3) naming the step, its version, `still` (which lock
+/// still records what, e.g. `the lock still records 1.0.0`) and the command that restores the
+/// previous state; the lock has not been written yet.
 pub fn run_steps(
     repo: &Path,
     steps: &[(&Version, &Step)],
     from: &Version,
     to: &Version,
+    still: &str,
     json: bool,
 ) -> Result<(), SpliceError> {
     let envs = [
@@ -85,9 +87,8 @@ pub fn run_steps(
         if let Some(d) = &step.description {
             eprintln!("migration {version}: {d}");
         }
-        let restore = format!(
-            "the lock still records {from}; `git checkout -- . && git clean -fd` restores the previous state"
-        );
+        let restore =
+            format!("{still}; `git checkout -- . && git clean -fd` restores the previous state");
         let status = run_shell(repo, &step.run, json, &envs).map_err(|e| {
             SpliceError::Env(format!(
                 "cannot run migration step `{}` (migration {version}): {e}; {restore}",

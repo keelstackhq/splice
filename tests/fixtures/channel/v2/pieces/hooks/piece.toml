@@ -1,0 +1,11 @@
+id = "hooks"
+description = "Session hook"
+multiple = false
+requires = ["core"]
+
+[files]
+owned = [".claude/hooks/session-start.d/rig-sync.sh"]
+
+[[post]]
+run = "echo rig-post >> .rig-post.log"
+when = ["add", "update"]

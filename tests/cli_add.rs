@@ -2,25 +2,9 @@
 
 mod common;
 
-use common::{git, splice_cmd, template_repo, tree_snapshot};
+use common::{amend_tip, commit_all, git, splice_cmd, template_repo, tree_snapshot};
 use splice::lock::Lock;
-use std::path::Path;
 use tempfile::TempDir;
-
-const DATE: &str = "2026-03-01T00:00:00+00:00";
-
-/// Commit everything (also when nothing changed), so `add` sees a clean tree.
-fn commit_all(repo: &Path) {
-    if !repo.join(".git").exists() {
-        git(repo, DATE, &["init", "-q", "-b", "main"]);
-    }
-    git(repo, DATE, &["add", "-A"]);
-    git(
-        repo,
-        DATE,
-        &["commit", "-q", "--allow-empty", "-m", "state"],
-    );
-}
 
 /// A repo made by `splice new` from the v1 fixture; the template dir is returned to keep it alive.
 fn new_repo(extra: &[&str]) -> (TempDir, TempDir) {
@@ -498,4 +482,94 @@ fn outside_work_tree_refused_unless_allow_dirty() {
         ])
         .assert()
         .success();
+}
+
+#[test]
+fn add_refuses_a_piece_with_sections() {
+    let tpl = template_repo(&["v1"]);
+    let piece = tpl.path().join("pieces/guide");
+    std::fs::create_dir_all(piece.join("files")).unwrap();
+    std::fs::write(
+        piece.join("piece.toml"),
+        "id = \"guide\"\ndescription = \"g\"\n\n[sections]\n\"NOTES.md\" = \"frag.md\"\n",
+    )
+    .unwrap();
+    std::fs::write(piece.join("files/frag.md"), "hello\n").unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            repo.path().to_str().unwrap(),
+        ])
+        .args(["--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    commit_all(repo.path());
+    let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
+    let out = add(&repo, &["guide"]).code(3).get_output().clone();
+    let text =
+        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("piece `guide` declares [sections]"), "{text}");
+    assert_eq!(lock_bytes(&repo), lock);
+    assert_eq!(tree_snapshot(repo.path()), tree);
+}
+
+#[test]
+fn main_add_claim_conflict_with_channel() {
+    // B4: a main piece rendering a path that channel rig owns → exit 2 naming the channel.
+    let tpl = common::inline_template(&[
+        (
+            "base",
+            "id = \"base\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"base.txt\"]\n",
+            &[("base.txt", "b\n")],
+        ),
+        (
+            "agents",
+            "id = \"agents\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\".claude/agents/reviewer.md\"]\n",
+            &[(".claude/agents/reviewer.md", "# mine\n")],
+        ),
+    ]);
+    git(
+        tpl.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    common::commit_tag(tpl.path(), "v1", "v1.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            repo.path().to_str().unwrap(),
+            "--yes",
+            "--json",
+        ])
+        .assert()
+        .success();
+    commit_all(repo.path());
+    let ch = common::channel_repo(&["v1"]);
+    let src = format!("{}//channel", ch.path().display());
+    common::chan_commit(repo.path(), &["channel", "add", &src, "--piece", "claude"]);
+    let before = lock_bytes(&repo);
+    let v = json(add(&repo, &["agents"]).code(2).get_output().stdout.clone());
+    assert!(
+        v["messages"]
+            .to_string()
+            .contains("path .claude/agents/reviewer.md is owned by channel rig"),
+        "{v}"
+    );
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(
+        read(&repo, ".claude/agents/reviewer.md"),
+        "# reviewer\n\nReview read-only.\n"
+    );
+    assert_eq!(
+        common::git_stdout(
+            repo.path(),
+            &["status", "--porcelain", "--untracked-files=all"]
+        ),
+        ""
+    );
 }

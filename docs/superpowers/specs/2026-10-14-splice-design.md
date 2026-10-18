@@ -47,10 +47,16 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 |---|---|
 | `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
 | `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
-| `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post]` | Move to a newer template version (default: latest stable tag). |
-| `splice check [--offline]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
-| `splice diff [--to VERSION]` | Show what `update` would change, without writing. |
+| `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag). `--channel` updates one channel, `--all` the main template and every channel. |
+| `splice check [--offline] [--channel NAME]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
+| `splice diff [--to VERSION] [--channel NAME]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
+| `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only GLOB]… [--exclude GLOB]… [--allow-dirty] [--force] [--no-post]` | Render a template source into the repo as a named channel (channels spec §3). |
+| `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited files, strip its sections, then delete its lock last (channels spec §8). |
+
+`add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
+`--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
+working without `--channel` (main template). All channel commands are implemented.
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
@@ -96,6 +102,15 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
   immutable extracted tree per commit at `trees/<sha256(url)[..16]>/<commit>/`, created with
   `git --git-dir <mirror> --work-tree <tmp> checkout <commit> -- .` using a temporary
   `GIT_INDEX_FILE`, then renamed into place. A present tree is reused with no network access.
+- **Tracked channels** (`channel add --track BRANCH`, channels spec §3): `update --channel`
+  resolves the branch head (tags ignored) and records `0.0.0+g<sha7>`. Tracked versions are never
+  compared (semver orders build metadata as text): no downgrade check, and no migrations
+  (`[[remove]]`, steps) run; files the head no longer renders go by the "B only" rule. `--to` on
+  a tracked channel exits 2 (`channel N tracks BRANCH; re-add it with --ref to pin a version`).
+- **Subtree compare** (channels only): a target commit whose tree at the source's `//subdir`
+  (`git rev-parse <commit>:<subdir>`, the commit's root tree without one) equals the lock
+  commit's is up to date (exit 0, nothing written), for tagged and tracked channels. The mirror
+  is fetched only when it lacks the commit.
 - **Local paths** must be git repos (tests create them) and are used directly as the "mirror".
 - A missing commit (force-pushed template) is a template error (exit 3) that names the commit.
 
@@ -117,6 +132,11 @@ readable). Validation errors exit 3 and name the file and key.
 - `[merge]` values are `json|yaml|toml|text`; a `[merge]` key must also match a `shared` glob.
 - `[[post]].when` is required (a missing `when` is a validation error) and its values are
   `new|add|update`.
+- `[sections]` (a splice-only piece key, see the channels spec §6) maps a host path, relative to
+  the piece's `target`, to a fragment file below `files/`. The host ends in `.md`, the fragment in
+  `.md` or `.md.jinja`; the fragment must exist and is not rendered as a file. `new`, `add` and
+  `update` of the main template refuse a piece that declares `[sections]` (exit 3): only
+  `splice channel add` applies them.
 - Migration file names are `<semver>.toml`.
 
 ## 6. Rendering (contract §4)
@@ -154,7 +174,7 @@ All var values are strings.
 
 **Paths.** For each file under `pieces/<id>/files/` (walkdir, sorted): render each path segment,
 strip a trailing `.jinja`, prefix the rendered `target`. The result must be relative, use `/`, and
-contain no empty, `.` or `..` segment; `.splice/lock.toml` is reserved. Violations exit 3. Two
+contain no empty, `.` or `..` segment; `.splice/lock.toml` and everything under `.splice/channels/` are reserved (other `.splice/` paths, e.g. `.splice/migrations/*`, stay renderable). Violations exit 3. Two
 sources producing the same path (within or across instances) exit 3.
 
 **Contents.** `.jinja` files render as UTF-8 with `\n` endings (input `\r\n` is normalised).
@@ -239,6 +259,37 @@ the same `add` is safe because a file that already equals the new render is skip
    a failed lock write says the lock still records the old version.
 8. Conflicts: files carry diff3 markers, the lock still records the target, exit 1.
 
+Channels (channels spec §5, §8): with channel locks in `.splice/channels/`, plain `update` also
+runs the one-owner claim check, with the main target's owned/shared files checked last against
+every channel's lock: a path a channel already holds exits 2 (`path X is owned by channel NAME;
+…`) before anything is written. Without channel locks it behaves exactly as above. In a repo
+with channel locks but no `.splice/lock.toml`, plain `update` exits 2 with `no .splice/lock.toml;
+use --channel NAME or --all`. `update --channel NAME` runs steps 1–8 on that channel's lock (its
+own vars and pieces only; `--to` allowed, `--data` exit 2, §10 item 15; a downgrade message
+names the channel lock), with base filtered by the stored
+`--only`/`--exclude` and theirs by the new ones (either flag replaces both stored lists; a filter
+change alone also updates at the same version), the claim check, the section planner (section
+drift and broken markers refuse like owned drift, broken markers even with `--force`), and only
+that channel's lock written last; `.splice/lock.toml` is never touched. Tracked channels and
+the subtree compare: §4.
+
+`update --all` (G12, channels spec §8) runs step 1 once, then plans the main template (if
+locked; latest target) and every channel (by name) in memory; each later plan sees the earlier
+sources' planned writes, so a section host another source seeds in the same run is planned
+against that seed (`created = false`) and two channels' blocks in one host both survive. Then,
+in order: the claim check on all planned results (exit 2); drift or broken markers in any source
+→ nothing written, exit 1, each line prefixed `main: ` / `channel NAME: `; every changed source's
+files, sections, removals and steps (main first); the `[[post]]` commands (`when` ∋ `update`) of
+all changed sources once, deduplicated by exact `run` (first occurrence), skipped on conflicts
+or `--no-post`; every changed lock last, each atomically (§8.6). A failure before the locks
+writes none: the message names the source (`main: `, `channel NAME: `) or the post command,
+says "no lock was written, every lock still records its old version" and gives the
+`git checkout -- . && git clean -fd` recovery. A failed lock write names
+the locks written, the one not confirmed and those not written; a re-run converges. An
+up-to-date main lock is not rewritten. The report has a `source=…` message per changed source,
+`NAME: up to date …` per unchanged one. The conservative claim check and the steps-after-planning
+rule: channels spec §8 (`update --all` rulings).
+
 ### 8.4 Planner rules
 
 Inputs per path: base file B (render at lock), theirs T (target render), ours O (disk), lock entry
@@ -307,6 +358,22 @@ and a fetch failure is a message, not an error). Changes: drift → `update/owne
 `conflict/<the file's lock class>`. Every lock path is checked like a write target (relative, no
 `..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
 
+With channels (channels spec): without `--channel`, `check` covers the main lock (if there is
+one; a channel-only repo is fine) and then every channel lock by name; `--channel NAME` checks
+only that channel (unknown name: exit 2; a corrupt channel lock: exit 3). Main changes and
+messages are exactly as above, with no prefix. Per channel: owned drift and conflict markers as
+for the main lock (messages prefixed `channel NAME: `, plus one summary line); section drift
+(a locked block edited, deleted, missing its host or with broken markers, or a non-UTF-8 host)
+as the change `HOST#NAME`, `update`, `owned` (broken markers also give a message that says how
+to fix them). Section paths are always `HOST#NAME`. Drift follows each command family: `check` reports it as
+the change `update`/`owned` (the gate fails); the `add` family (`add`, `add --channel`, `channel
+add`) refuses with the change `conflict`/`owned` plus a message, nothing written; the `update`
+family (`update`, `update --channel`, `update --all`) refuses with messages only and no changes,
+as M2 `update`; `diff` names it in a message and exits 0. Update available (skipped with `--offline`; a lookup failure is a
+message): a newer stable tag, or for a tracked channel a branch head, whose template subtree
+differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)`, or
+`… <old7> → <new7> (BRANCH)` with short shas. Read-only, one JSON object.
+
 ### 8.8 `diff`
 
 Runs steps 2–6 of `update` without writing (no dirty-tree check, no `--data`), and prints a
@@ -317,6 +384,11 @@ owned drift go to stderr as messages. `--json` returns the planned `changes` (eq
 `update --json`'s on the same repo when `update` would not refuse) and the messages. Drift and conflicts are reported, not
 failures: exit 0; a downgrade `--to` is exit 2 as on `update`.
 
+`diff --channel NAME` runs the same on that channel's lock: file patches plus one patch per
+section host (labels `a/HOST`, `b/HOST`; `delete HOST` when the host goes), nothing written. Its
+`--json` changes (files, and `HOST#NAME` per section) equal those of `update --channel NAME
+--json` when `update` would not refuse. Drift, section drift and broken markers are messages.
+
 ### 8.9 `explain`
 
 Re-renders the lock state from the cached tree (offline after the first fetch) and prints
@@ -326,6 +398,13 @@ Re-renders the lock state from the cached tree (offline after the first fetch) a
 unmanaged path → ok, no changes, message `unmanaged`. `merge=` is the `[merge]` strategy for
 shared files and `none` for owned and seed files. Paths are normalised first (`./` prefix, `\`
 separators); absolute paths and `..` are a usage error.
+
+With channels, `explain` searches the main lock, then every channel by name (the first hit owns
+the path; one owner per path) and adds the message `source=main` or `source=channel:NAME` (the
+human line gains a trailing `source=` column; `source=` and `section=` appear as messages only
+with `--json`, like `piece=`). A path that is a section host in a channel's `[sections]` also
+gets `section=NAME` per channel (a human line `PATH  section=NAME`); if no source owns the file
+it is `unmanaged` plus those lines. A channel-only repo works (no main lock needed).
 
 ## 9. JSON output (contract §8)
 
@@ -383,6 +462,36 @@ into the contract at its next `format` bump.
     `--force` replaces owned drift and keeps conflicting files as they are. A file no longer
     rendered after the add follows §8.4 (deleted when unedited, else kept with a message that
     does not mention the lock, which no longer lists it). `diff` exits 0 on drift and conflicts.
+
+15. `[sections]` (channels plan 04 task 5): splice < 0.2.0 ignores the key (unknown keys warn) and
+    would render the fragment as an owned file, so a template that uses `[sections]` sets
+    `min_splice = "0.2.0"` (the crate version moves to 0.2.0 in plan 04 task 21). Fragments may not
+    be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
+    piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). `update --channel`
+    takes no `--data` (exit 2): a channel's vars are set at `channel add`; vars new in a later
+    channel version take their defaults or prompts.
+
+    Channel rulings (G1–G17; the channels spec has the detail, `docs/superpowers/specs/
+    2026-10-17-splice-channels-design.md`). Splice-only; offered to hull at the next `format`
+    bump, not required (G1; this item, not "item 10", records it).
+    - G1: the channel decision is recorded here as item 15.
+    - G2: every source reserves `.splice/lock.toml` and `.splice/channels/**`; other `.splice/` paths stay renderable.
+    - G3: `--track` follows the branch head, ignores tags, skips version comparisons and migrations; `--to` on a tracked channel is exit 2.
+    - G4: `update --channel` is "up to date" when the target subtree id equals the lock commit's.
+    - G5: a `[sections]` key is a host path (`.md`) relative to the piece `target`; the value is a fragment under `files/`, excluded from the tree.
+    - G6: section changes are reported as `HOST#CHANNEL`, class `owned`, in every command.
+    - G7: a block body is the fragment with one trailing newline, in the host's line ending; the lock hash is over the LF body.
+    - G8: an unchanged fragment is skipped even if the block was edited; an existing block equal to the fragment is adopted, else drift.
+    - G9: `--force` never fixes duplicate or unbalanced markers.
+    - G10: a seed path another source locks is dropped from this source's plan.
+    - G11: `channel add` follows `update` on shared conflicts (markers, lock written, exit 1); `add --channel` follows `add` (writes nothing).
+    - G12: `update --all` writes all sources' files, runs deduplicated post commands once, then writes every lock last.
+    - G13: a corrupt channel lock or a stray file in `.splice/channels/` is exit 3 naming the file; names starting with `.` are ignored.
+    - G14: only `--only`/`--exclude` need `--channel`; `--to` works alone; `--all` excludes `--channel`, `--to`, `--data`, `--only`, `--exclude`.
+    - G15: fixtures use `min_splice = "0.1.0"`; real channel templates using `[sections]` set `0.2.0` (the crate is 0.2.0).
+    - G16: `--only`/`--exclude` on `update --channel` replace both stored lists.
+    - G17: in `update --all`, a section host's disk view includes an earlier source's planned seed write.
+    - Drift reporting follows each command family (`add` family: `conflict`/`owned` changes; `update` family: messages; `check`: `update`/`owned`; `diff`: messages, exit 0).
 
 ## 11. Testing
 
@@ -448,3 +557,7 @@ instead).
    `diff`, `add` on the full planner, golden v1→v2 tests.
 3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
    product README.
+4. **Channels** — extra templates next to the main one with their own locks, `[sections]`
+   blocks in shared Markdown files, filters, `--track`, `--channel`/`--all` on `update`, `add`,
+   `check`, `diff`, `explain`, `channel add|remove`, version 0.2.0 (channels spec; plan 04).
+   The npm release, the update-bot channel scope and the skill file follow plan 03.
