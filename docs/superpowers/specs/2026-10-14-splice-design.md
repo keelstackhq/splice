@@ -57,8 +57,8 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
 `--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
 working without `--channel` (main template). The channel commands exit 2 "not implemented yet"
-until their channels plan tasks land (`update --all`, `update --channel` on a tracked channel,
-`check`/`diff --channel`, `channel remove`).
+until their channels plan tasks land (`update --all`, `check`/`diff --channel`, `channel
+remove`).
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
@@ -104,6 +104,15 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
   immutable extracted tree per commit at `trees/<sha256(url)[..16]>/<commit>/`, created with
   `git --git-dir <mirror> --work-tree <tmp> checkout <commit> -- .` using a temporary
   `GIT_INDEX_FILE`, then renamed into place. A present tree is reused with no network access.
+- **Tracked channels** (`channel add --track BRANCH`, channels spec §3): `update --channel`
+  resolves the branch head (tags ignored) and records `0.0.0+g<sha7>`. Tracked versions are never
+  compared (semver orders build metadata as text): no downgrade check, and no migrations
+  (`[[remove]]`, steps) run; files the head no longer renders go by the "B only" rule. `--to` on
+  a tracked channel exits 2 (`channel N tracks BRANCH; re-add it with --ref to pin a version`).
+- **Subtree compare** (channels only): a target commit whose tree at the source's `//subdir`
+  (`git rev-parse <commit>:<subdir>`, the commit's root tree without one) equals the lock
+  commit's is up to date (exit 0, nothing written), for tagged and tracked channels. The mirror
+  is fetched only when it lacks the commit.
 - **Local paths** must be git repos (tests create them) and are used directly as the "mirror".
 - A missing commit (force-pushed template) is a template error (exit 3) that names the commit.
 
@@ -258,11 +267,13 @@ every channel's lock: a path a channel already holds exits 2 (`path X is owned b
 …`) before anything is written. Without channel locks it behaves exactly as above. In a repo
 with channel locks but no `.splice/lock.toml`, plain `update` exits 2 with `no .splice/lock.toml;
 use --channel NAME or --all`. `update --channel NAME` runs steps 1–8 on that channel's lock (its
-own vars and pieces only; `--to` allowed, `--data` exit 2), with base filtered by the stored
+own vars and pieces only; `--to` allowed, `--data` exit 2, §10 item 15; a downgrade message
+names the channel lock), with base filtered by the stored
 `--only`/`--exclude` and theirs by the new ones (either flag replaces both stored lists; a filter
 change alone also updates at the same version), the claim check, the section planner (section
 drift and broken markers refuse like owned drift, broken markers even with `--force`), and only
-that channel's lock written last; `.splice/lock.toml` is never touched.
+that channel's lock written last; `.splice/lock.toml` is never touched. Tracked channels and
+the subtree compare: §4.
 
 ### 8.4 Planner rules
 
@@ -413,8 +424,10 @@ into the contract at its next `format` bump.
     would render the fragment as an owned file, so a template that uses `[sections]` sets
     `min_splice = "0.2.0"` (the crate version moves to 0.2.0 in plan 04 task 21). Fragments may not
     be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
-    piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). Plan 04 task 19
-    extends this item with the channel rulings.
+    piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). `update --channel`
+    takes no `--data` (exit 2): a channel's vars are set at `channel add`; vars new in a later
+    channel version take their defaults or prompts. Plan 04 task 19 extends this item with the
+    channel rulings.
 
 ## 11. Testing
 

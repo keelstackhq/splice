@@ -99,3 +99,25 @@ fn bare_repo_has_one_commit_and_no_lock() {
     );
     assert!(!repo.path().join(".splice").exists());
 }
+
+#[test]
+fn tree_id_of_subdir() {
+    let repo = channel_repo(&["v1"]);
+    let p = repo.path();
+    let git_dir = p.join(".git");
+    let head = git_stdout(p, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, Some("channel")).unwrap(),
+        git_stdout(p, &["rev-parse", "HEAD:channel"])
+    );
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, None).unwrap(),
+        git_stdout(p, &["rev-parse", "HEAD^{tree}"])
+    );
+    assert_eq!(
+        Git::tree_id(&git_dir, &head, Some("nope"))
+            .unwrap_err()
+            .exit_code(),
+        3
+    );
+}

@@ -105,6 +105,34 @@ impl Git {
         Ok(stdout(&out).trim().to_string())
     }
 
+    /// The tree id of `commit` (`<commit>^{tree}`), or of `subdir` in it (`<commit>:<subdir>`).
+    pub fn tree_id(
+        git_dir: &Path,
+        commit: &str,
+        subdir: Option<&str>,
+    ) -> Result<String, SpliceError> {
+        let rev = match subdir {
+            Some(sub) => format!("{commit}:{sub}"),
+            None => format!("{commit}^{{tree}}"),
+        };
+        let mut cmd = command();
+        cmd.arg("--git-dir")
+            .arg(git_dir)
+            .args(["rev-parse", "--verify", "--quiet"])
+            .arg(&rev);
+        let out = cmd.output().map_err(|e| {
+            SpliceError::Env(format!(
+                "cannot run git ({e}); install git and put it on PATH"
+            ))
+        })?;
+        if !out.status.success() {
+            return Err(SpliceError::Env(format!(
+                "no tree `{rev}` in the template repository"
+            )));
+        }
+        Ok(stdout(&out).trim().to_string())
+    }
+
     /// Write the tree of `commit` to `dest` (no `.git`). Uses a throwaway index and work
     /// tree so the repository is untouched, then renames the work tree into place.
     pub fn extract_tree(git_dir: &Path, commit: &str, dest: &Path) -> Result<(), SpliceError> {

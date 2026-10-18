@@ -49,7 +49,7 @@ impl Fetcher {
 
     /// The git directory to read from, and where to list tags. Local sources are used in
     /// place; remote ones are mirrored (created or updated) first.
-    fn repo(&self, src: &TemplateSource) -> Result<(PathBuf, String)> {
+    pub(crate) fn repo(&self, src: &TemplateSource) -> Result<(PathBuf, String)> {
         match &src.kind {
             SourceKind::Local { path } => {
                 let dot_git = path.join(".git");
@@ -147,6 +147,24 @@ impl Fetcher {
         })?;
         let version = Version::parse(&format!("0.0.0+g{}", &commit[..7])).expect("valid semver");
         self.checkout_from(src, &git_dir, &commit, version)
+    }
+
+    /// The tree id of the source's subdir (or root) at `commit`. A remote source's mirror is
+    /// fetched only when it does not have the commit yet.
+    pub fn subtree_id(&self, src: &TemplateSource, commit: &str) -> Result<String> {
+        if let SourceKind::Git { .. } = &src.kind {
+            let mirror = self
+                .cache
+                .join("git")
+                .join(format!("{}.git", src.cache_key()));
+            if mirror.join("HEAD").exists()
+                && let Ok(id) = Git::tree_id(&mirror, commit, src.subdir.as_deref())
+            {
+                return Ok(id);
+            }
+        }
+        let (git_dir, _) = self.repo(src)?;
+        Git::tree_id(&git_dir, commit, src.subdir.as_deref())
     }
 
     /// The template at tag `v<version>`.

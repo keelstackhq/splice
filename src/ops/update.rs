@@ -41,6 +41,9 @@ pub struct Prepared {
     pub instances: Vec<PieceInstance>,
     /// Target version and commit equal the lock's: `plan` is empty and nothing is to be done.
     pub up_to_date: bool,
+    /// A tracked branch head: `from`/`to` are `0.0.0+g…` and never compared; no migration
+    /// steps run (B5).
+    pub tracked: bool,
     /// Report messages (template warnings, moved tag).
     pub messages: Vec<String>,
     /// A channel update's lock, section plan and planned claim; `None` for the main template.
@@ -182,6 +185,8 @@ struct Resolved {
     instances: Vec<PieceInstance>,
     /// No `--to` and no newer stable tag.
     no_newer: bool,
+    /// A tracked branch head: no version comparison, no migrations (B5).
+    tracked: bool,
     messages: Vec<String>,
     /// `None` when up to date and `render_current` is false.
     rendered: Option<Rendered>,
@@ -190,9 +195,13 @@ struct Resolved {
 /// Which source a lock belongs to: the main template refuses `[sections]`; a channel may need
 /// the renders even when its version is current (a filter change).
 #[derive(Clone, Copy)]
-enum Kind {
+enum Kind<'a> {
     Main,
-    Channel { render_current: bool },
+    Channel {
+        render_current: bool,
+        /// Named in the downgrade message.
+        lock_path: &'a str,
+    },
 }
 
 /// Spec §8.3 steps 2–5 on any lock: pick the target, fetch both trees, check `min_splice`,
@@ -212,49 +221,73 @@ fn prepare_lock(
             "`{k}` is locked at `{v}`; update keeps lock values (spec §8.3 step 4)"
         ));
     }
-    let to = match target {
-        Target::Latest => None,
-        Target::Version(v) => Some(v),
-        Target::Branch(_) => {
-            return Err(super::channel::not_implemented(
-                "update --channel on a tracked channel",
-            ));
-        }
-    };
-
-    // 2. Target: `--to` or the latest stable tag; never older than the lock.
+    // 2. Target: `--to`, the latest stable tag or the tracked branch head; never older than
+    // the lock (tracked heads `0.0.0+g…` are never compared: semver orders build metadata as
+    // text, B5).
     let src = TemplateSource::parse(&lock.template.source)?;
     let fetcher = Fetcher::from_env();
-    let downgrade = |v: &Version| {
-        SpliceError::Usage(format!(
-            "target {v} is older than the locked {from}; splice does not downgrade"
-        ))
+    let (target, mut up_to_date, no_newer, tracked) = match target {
+        Target::Branch(branch) => {
+            let head = fetcher.branch_head(&src, branch)?;
+            let current = head.commit == lock.template.commit;
+            (head, current, false, true)
+        }
+        Target::Latest | Target::Version(_) => {
+            let to = match target {
+                Target::Version(v) => Some(v),
+                _ => None,
+            };
+            let at = match kind {
+                Kind::Main => String::new(),
+                Kind::Channel { lock_path, .. } => format!(" ({lock_path})"),
+            };
+            let downgrade = |v: &Version| {
+                SpliceError::Usage(format!(
+                    "target {v} is older than the locked {from}{at}; splice does not downgrade"
+                ))
+            };
+            if let Some(v) = to.filter(|v| *v < &from) {
+                return Err(downgrade(v));
+            }
+            // Without `--to`: the latest stable tag. A template with prerelease tags only has
+            // none, so there is nothing newer than the lock either.
+            let latest = match to {
+                Some(v) => Some(fetcher.resolve_version(&src, v)?),
+                None => match fetcher.resolve(&src, None, false) {
+                    Ok(t) => Some(t),
+                    Err(_) if fetcher.available_versions(&src, false)?.is_empty() => None,
+                    Err(e) => return Err(e),
+                },
+            };
+            // No newer stable tag (e.g. a prerelease lock): stay on the lock's commit.
+            let no_newer = to.is_none() && latest.as_ref().is_none_or(|t| t.version < from);
+            let target = match latest {
+                Some(t) if !no_newer => t,
+                _ => fetcher.checkout(&src, &lock.template.commit, from.clone())?,
+            };
+            if target.version < from {
+                return Err(downgrade(&target.version));
+            }
+            let current = target.version == from && target.commit == lock.template.commit;
+            (target, current, no_newer, false)
+        }
     };
-    if let Some(v) = to.filter(|v| *v < &from) {
-        return Err(downgrade(v));
+    // G4 (channels only): a new commit whose template subtree equals the lock's is up to date.
+    if !up_to_date && matches!(kind, Kind::Channel { .. }) {
+        let tree = |c: &str| fetcher.subtree_id(&src, c).ok();
+        if let Some(t) =
+            tree(&target.commit).filter(|t| Some(t) == tree(&lock.template.commit).as_ref())
+        {
+            up_to_date = true;
+            messages.push(format!(
+                "{} ({}) has the same template tree ({}) as the lock",
+                target.version,
+                &target.commit[..7],
+                &t[..7.min(t.len())]
+            ));
+        }
     }
-    // Without `--to`: the latest stable tag. A template with prerelease tags only has none, so
-    // there is nothing newer than the lock either.
-    let latest = match to {
-        Some(v) => Some(fetcher.resolve_version(&src, v)?),
-        None => match fetcher.resolve(&src, None, false) {
-            Ok(t) => Some(t),
-            Err(_) if fetcher.available_versions(&src, false)?.is_empty() => None,
-            Err(e) => return Err(e),
-        },
-    };
-    // No newer stable tag (e.g. a prerelease lock): nothing to do, stay on the lock's commit.
-    let no_newer = to.is_none() && latest.as_ref().is_none_or(|t| t.version < from);
-    let target = match latest {
-        Some(t) if !no_newer => t,
-        _ => fetcher.checkout(&src, &lock.template.commit, from.clone())?,
-    };
-    if target.version < from {
-        return Err(downgrade(&target.version));
-    }
-    let same_version = target.version == from;
-    let up_to_date = same_version && target.commit == lock.template.commit;
-    if same_version && !up_to_date {
+    if !tracked && !up_to_date && target.version == from {
         messages.push(format!(
             "tag v{from} moved from {} to {}; updating to the new commit",
             lock.template.commit, target.commit
@@ -340,7 +373,8 @@ fn prepare_lock(
     let render_current = matches!(
         kind,
         Kind::Channel {
-            render_current: true
+            render_current: true,
+            ..
         }
     );
     let rendered = if up_to_date && !render_current {
@@ -373,9 +407,14 @@ fn prepare_lock(
         };
         // Up to date: same commit, same vars, so the lock state renders exactly as theirs.
         let base = base.unwrap_or_else(|| theirs.clone());
-        let migrations = select(&template.migrations, &from, &target.version);
-        let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
-        let removes = render_removes(&template, &target.version, &removes, &instances, &vars)?;
+        // Tracked heads run no migrations (B5).
+        let removes = if tracked {
+            Vec::new()
+        } else {
+            let migrations = select(&template.migrations, &from, &target.version);
+            let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
+            render_removes(&template, &target.version, &removes, &instances, &vars)?
+        };
         Some(Rendered {
             base,
             theirs,
@@ -390,6 +429,7 @@ fn prepare_lock(
         vars,
         instances,
         no_newer,
+        tracked,
         messages,
         rendered,
     })
@@ -434,6 +474,7 @@ pub fn prepare(
             template: r.template,
             instances: r.instances,
             up_to_date: true,
+            tracked: r.tracked,
             messages: r.messages,
             channel: None,
         });
@@ -470,6 +511,7 @@ pub fn prepare(
         template: r.template,
         instances: r.instances,
         up_to_date: false,
+        tracked: r.tracked,
         messages: r.messages,
         channel: None,
     })
@@ -497,12 +539,18 @@ pub fn prepare_channel(
         None => stored.clone(),
     };
     let target = match (&cl.meta.track, to) {
-        (Some(branch), _) => Target::Branch(branch),
+        (Some(branch), Some(_)) => {
+            return usage(format!(
+                "channel {name} tracks {branch}; re-add it with --ref to pin a version"
+            ));
+        }
+        (Some(branch), None) => Target::Branch(branch),
         (None, Some(v)) => Target::Version(v),
         (None, None) => Target::Latest,
     };
     let kind = Kind::Channel {
         render_current: filter_new.is_some(),
+        lock_path: &lock_path,
     };
     let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind)?;
     let me = SourceId::Channel(name.to_string());
@@ -516,6 +564,7 @@ pub fn prepare_channel(
             template: r.template,
             instances: r.instances,
             up_to_date: true,
+            tracked: r.tracked,
             messages: r.messages,
             channel: Some(ChannelPrepared {
                 lock_new: cl.clone(),
@@ -607,6 +656,7 @@ pub fn prepare_channel(
         template: r.template,
         instances: r.instances,
         up_to_date: false,
+        tracked: r.tracked,
         messages: r.messages,
         channel: Some(ChannelPrepared {
             lock_new,
@@ -755,7 +805,11 @@ fn apply_prepared(
     lock: LockOut,
     sections: &[SectionChange],
 ) -> Result<Report> {
-    let migrations = select(&prep.template.migrations, &prep.from, &prep.to);
+    let migrations = if prep.tracked {
+        Vec::new()
+    } else {
+        select(&prep.template.migrations, &prep.from, &prep.to)
+    };
     let steps = migrations
         .iter()
         .flat_map(|m| m.steps.iter().map(move |s| (&m.version, s)))
