@@ -359,6 +359,19 @@ and a fetch failure is a message, not an error). Changes: drift → `update/owne
 `conflict/<the file's lock class>`. Every lock path is checked like a write target (relative, no
 `..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
 
+With channels (channels spec): without `--channel`, `check` covers the main lock (if there is
+one; a channel-only repo is fine) and then every channel lock by name; `--channel NAME` checks
+only that channel (unknown name: exit 2; a corrupt channel lock: exit 3). Main changes and
+messages are exactly as above, with no prefix. Per channel: owned drift and conflict markers as
+for the main lock (messages prefixed `channel NAME: `, plus one summary line); section drift
+(a locked block edited, deleted, missing its host or with broken markers, or a non-UTF-8 host)
+as the change `HOST#NAME`, `update`, `owned` (broken markers also give a message that says how
+to fix them). Section drift is reported only as a change, in `check`, `channel add` and
+`add --channel` alike. Update available (skipped with `--offline`; a lookup failure is a
+message): a newer stable tag, or for a tracked channel a branch head, whose template subtree
+differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)`, or
+`… <old7> → <new7> (BRANCH)` with short shas. Read-only, one JSON object.
+
 ### 8.8 `diff`
 
 Runs steps 2–6 of `update` without writing (no dirty-tree check, no `--data`), and prints a
