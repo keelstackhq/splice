@@ -77,3 +77,9 @@ test("release.yml build matrix covers exactly the platforms.json targets", () =>
   const targets = [...yml.matchAll(/\{ target: ([a-z0-9_-]+),/g)].map((m) => m[1]).sort();
   assert.deepEqual(targets, platforms.map((p) => p.target).sort());
 });
+
+test("the real npm/splice/package.json matches Cargo.toml", () => {
+  const cargoToml = readFileSync(new URL("../Cargo.toml", import.meta.url), "utf8");
+  const launcherPkg = JSON.parse(readFileSync(new URL("../npm/splice/package.json", import.meta.url), "utf8"));
+  assert.equal(checkVersion({ tag: null, cargoToml, launcherPkg }), launcherPkg.version);
+});

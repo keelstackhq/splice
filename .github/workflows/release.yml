@@ -140,3 +140,73 @@ jobs:
             case "$VERSION" in *-*) pre=(--prerelease) ;; esac
             gh release create "$TAG" --verify-tag --generate-notes "${pre[@]}" splice-* SHA256SUMS
           fi
+
+  npm:
+    needs: [check, build, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # The checkout is only for scripts/ and npm/; no cargo runs in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Require a public repository (npm provenance)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          private=$(gh api "repos/$GH_REPO" --jq .private)
+          if [ "$private" = true ]; then
+            echo "::error::npm provenance needs a public repository: make keelstackhq/splice public, then re-run"
+            exit 1
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: splice-*
+          merge-multiple: true
+          path: dist
+      - name: Unpack the binaries
+        env:
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+        run: |
+          for f in dist/splice-*.tar.gz; do
+            t=${f#dist/splice-}; t=${t%.tar.gz}
+            mkdir -p "$ARTIFACTS/$t"
+            tar -xzf "$f" -C "$ARTIFACTS/$t" splice
+          done
+          for f in dist/splice-*.zip; do
+            t=${f#dist/splice-}; t=${t%.zip}
+            mkdir -p "$ARTIFACTS/$t"
+            unzip -q "$f" splice.exe -d "$ARTIFACTS/$t"
+          done
+          find "$ARTIFACTS" -type f
+      - name: Stage the packages
+        env:
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+          OUT: ${{ runner.temp }}/npm
+          VERSION: ${{ needs.check.outputs.version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/npm-stage.mjs --version "$VERSION" --artifacts "$ARTIFACTS" --out "$OUT" | tee "$RUNNER_TEMP/staged.txt"
+      - name: Publish (trusted publishing, provenance)
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          dist_tag=latest
+          case "$VERSION" in *-*) dist_tag=next ;; esac
+          while read -r dir; do
+            name=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/package.json', 'utf8')).name" "$dir")
+            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+              echo "skip $name@$VERSION: already published"
+            else
+              npm publish "$dir" --provenance --access public --tag "$dist_tag"
+            fi
+          done < "$RUNNER_TEMP/staged.txt"

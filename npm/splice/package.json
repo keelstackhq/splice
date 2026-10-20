@@ -1,0 +1,17 @@
+{
+  "name": "@keelstackhq/splice",
+  "version": "0.2.0",
+  "description": "Bootstrap a repo from versioned template pieces and keep it current.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "splice": "bin/splice.js" },
+  "files": ["bin", "lib", "platforms.json"],
+  "engines": { "node": ">=20" },
+  "optionalDependencies": {
+    "@keelstackhq/splice-linux-x64": "0.2.0",
+    "@keelstackhq/splice-linux-arm64": "0.2.0",
+    "@keelstackhq/splice-darwin-x64": "0.2.0",
+    "@keelstackhq/splice-darwin-arm64": "0.2.0",
+    "@keelstackhq/splice-win32-x64": "0.2.0"
+  }
+}
