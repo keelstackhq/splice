@@ -1,0 +1,125 @@
+name: splice update bot
+description: Run `splice update` and open or refresh one pull request with the result.
+inputs:
+  version:
+    description: "splice npm version: latest, next, a semver, or none (use the splice on PATH)"
+    default: latest
+  to:
+    description: Template version to update to (default latest)
+    default: ""
+  token:
+    description: Token for pushing the branch and managing the pull request
+    default: ${{ github.token }}
+  branch:
+    description: Bot branch
+    default: splice/update
+  labels:
+    description: Label added to the pull request
+    default: splice
+  working-directory:
+    description: Directory of the consumer repo, relative to the workspace
+    default: .
+outputs:
+  result:
+    description: updated, conflicts, current or drift
+    value: ${{ steps.update.outputs.result }}
+  pr-url:
+    description: URL of the pull request, empty unless one was opened or edited
+    value: ${{ steps.pr.outputs.url }}
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        TO: ${{ inputs.to }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        set -euo pipefail
+        node "$GITHUB_ACTION_PATH/args.mjs" validate
+        git check-ref-format --branch "$BRANCH" > /dev/null
+    - name: Install splice
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ "$VERSION" != none ]; then
+          npm i -g "@keelstackhq/splice@$VERSION"
+        fi
+    - name: Run splice update
+      id: update
+      shell: bash
+      env:
+        TO: ${{ inputs.to }}
+        WORKDIR: ${{ inputs.working-directory }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        cd "$WORKDIR"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        # Pushes use `token`, not the credentials checkout may have left behind.
+        GH_TOKEN="$TOKEN" gh auth setup-git
+        mapfile -t args < <(node "$GITHUB_ACTION_PATH/args.mjs" command)
+        report="$RUNNER_TEMP/splice-report.json"
+        set +e
+        splice "${args[@]}" > "$report"
+        code=$?
+        set -e
+        node "$GITHUB_ACTION_PATH/summary.mjs" "$report" "$code"
+    - name: Close a stale pull request
+      if: steps.update.outputs.result == 'current'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BRANCH: ${{ inputs.branch }}
+        WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        cd "$WORKDIR"
+        number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+        if [ -n "$number" ]; then
+          gh pr close "$number" --comment "Already up to date." --delete-branch
+        fi
+    - name: Report drift
+      if: steps.update.outputs.result == 'drift'
+      shell: bash
+      env:
+        BODY_FILE: ${{ steps.update.outputs.body-file }}
+      run: |
+        cat "$BODY_FILE" >&2
+        exit 1
+    - name: Push the branch and open or edit the pull request
+      id: pr
+      if: steps.update.outputs.result == 'updated' || steps.update.outputs.result == 'conflicts'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BRANCH: ${{ inputs.branch }}
+        LABELS: ${{ inputs.labels }}
+        WORKDIR: ${{ inputs.working-directory }}
+        TITLE: ${{ steps.update.outputs.title }}
+        BODY_FILE: ${{ steps.update.outputs.body-file }}
+      run: |
+        set -euo pipefail
+        cd "$WORKDIR"
+        git switch -C "$BRANCH"
+        git add -A
+        git commit -m "$TITLE"
+        # --force-with-lease needs the remote-tracking ref, else it reports "stale info".
+        git fetch --no-tags --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+        git push --force-with-lease="$BRANCH" origin "HEAD:refs/heads/$BRANCH"
+        number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+        if [ -n "$number" ]; then
+          out=$(gh pr edit "$number" --title "$TITLE" --body-file "$BODY_FILE")
+        else
+          base=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
+          out=$(gh pr create --base "$base" --head "$BRANCH" --title "$TITLE" --body-file "$BODY_FILE")
+        fi
+        url=$(printf '%s\n' "$out" | tail -n 1)
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+        if [ -n "$LABELS" ]; then
+          gh pr edit "$url" --add-label "$LABELS" || echo "::warning::could not add labels"
+        fi

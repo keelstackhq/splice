@@ -559,6 +559,9 @@ The push fetches the remote bot branch first, then `git push --force-with-lease`
 authenticates with `token` (`gh auth setup-git`), not with checkout's credentials. The PR body
 is a summary table from the JSON, grouped by source (`main`, each channel) for `scope: all`.
 Labels are added after the PR exists; a label failure is a warning.
+The job needs `permissions: contents: write, pull-requests: write`. `action-selftest.yml`
+(`workflow_dispatch`) runs the Action three times against a local bare origin with a stub `gh`
+and `version: none`: `updated`, `updated` again (the bot branch is rewritten), then `drift`.
 
 `gh` over `peter-evans/create-pull-request`: `gh` is preinstalled on GitHub runners, adds no
 third-party action to pin and audit, and finding/editing one PR by head branch is two commands.

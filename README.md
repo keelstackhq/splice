@@ -88,12 +88,30 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI
 ```
 
 It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
+
+Inputs: `version` (`latest`, `next`, a semver, or `none` to use the `splice` on `PATH`), `to`
+(template version, default latest), `token` (default `github.token`), `branch` (default
+`splice/update`), `labels` (default `splice`), `working-directory` (default `.`). Outputs:
+`result` and `pr-url`. `result` is one of:
+
+| `result` | Meaning | Bot does |
+|---|---|---|
+| `updated` | clean update | commits to the branch, opens or edits the PR |
+| `conflicts` | merge conflicts | same, PR title starts with `[conflicts]` |
+| `current` | nothing to do | closes an open bot PR |
+| `drift` | owned files edited locally | fails with splice's messages, pushes nothing |
+
+Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
+App or fine-grained token as `token` to get CI on the bot PR. The job needs
+`contents: write` and `pull-requests: write`.
 
 License: MIT.
