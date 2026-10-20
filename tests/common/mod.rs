@@ -11,7 +11,7 @@ use tempfile::TempDir;
 const AUTHOR: [(&str, &str); 2] = [("NAME", "Test"), ("EMAIL", "test@example.com")];
 
 /// An empty file used as `GIT_CONFIG_GLOBAL`, so the user's git config never leaks in.
-fn empty_git_config() -> PathBuf {
+pub fn empty_git_config() -> PathBuf {
     let p = std::env::temp_dir().join("splice-test-empty-gitconfig");
     if !p.exists() {
         let _ = std::fs::write(&p, "");
@@ -33,7 +33,9 @@ fn apply_git_env(cmd: &mut Proc, date: &str) {
 
 pub fn git(dir: &Path, date: &str, args: &[&str]) {
     let mut cmd = Proc::new("git");
-    cmd.current_dir(dir).args(args);
+    cmd.current_dir(dir)
+        .args(["-c", "core.autocrlf=false", "-c", "core.eol=lf"])
+        .args(args);
     apply_git_env(&mut cmd, date);
     let out = cmd.output().expect("run git");
     assert!(
@@ -41,6 +43,73 @@ pub fn git(dir: &Path, date: &str, args: &[&str]) {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// Stage the whole work tree, rebuilding the index from file contents.
+///
+/// A plain `git add -A` trusts the cached stat data (size and mtime). A same-size edit made within
+/// the filesystem's timestamp granularity (seen on Windows CI: `indent_size = 2` to `4`) can then
+/// be missed, and the commit silently keeps the old bytes. Dropping the index entries first forces
+/// every file to be hashed again.
+pub fn stage_all(dir: &Path, date: &str) {
+    git(
+        dir,
+        date,
+        &["rm", "-r", "-q", "--cached", "--ignore-unmatch", "."],
+    );
+    git(dir, date, &["add", "-A"]);
+}
+
+/// Assert HEAD's tree is byte for byte the fixture directory (blob ids, no filters).
+fn assert_head_matches(repo: &Path, fixture: &Path) {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut files = Vec::new();
+    collect(fixture, fixture, &mut files);
+    let mut rels: Vec<String> = files
+        .iter()
+        .map(|f| f.to_string_lossy().replace('\\', "/"))
+        .collect();
+    rels.sort();
+    let mut stdin = String::new();
+    for r in &rels {
+        stdin.push_str(&format!("{}\n", fixture.join(r).display()));
+    }
+    let mut hash = Proc::new("git");
+    apply_git_env(&mut hash, STATE_DATE);
+    let mut child = hash
+        .current_dir(repo)
+        .args(["hash-object", "--no-filters", "--stdin-paths"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "git hash-object failed");
+    let hashes = String::from_utf8(out.stdout).unwrap();
+    let want: Vec<String> = rels
+        .iter()
+        .zip(hashes.lines())
+        .map(|(r, h)| format!("{r} {h}"))
+        .collect();
+    let tree = git_stdout(repo, &["ls-tree", "-r", "HEAD"]);
+    let mut got: Vec<String> = tree
+        .lines()
+        .map(|l| {
+            let (meta, path) = l.split_once('\t').unwrap();
+            let id = meta.split(' ').nth(2).unwrap();
+            format!("{path} {id}")
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, want, "commit tree differs from fixture {fixture:?}");
 }
 
 fn copy_dir(from: &Path, to: &Path) {
@@ -90,8 +159,9 @@ pub fn template_repo_tagged(versions: &[(&str, &str)]) -> TempDir {
             }
         }
         copy_dir(&fixtures.join(version), repo.path());
-        git(repo.path(), &date, &["add", "-A"]);
+        stage_all(repo.path(), &date);
         git(repo.path(), &date, &["commit", "-q", "-m", version]);
+        assert_head_matches(repo.path(), &fixtures.join(version));
         git(repo.path(), &date, &["tag", tag]);
     }
     repo
@@ -100,7 +170,7 @@ pub fn template_repo_tagged(versions: &[(&str, &str)]) -> TempDir {
 /// Commit the working tree of a `template_repo` as a new commit and tag it `tag`.
 pub fn commit_tag(repo: &Path, msg: &str, tag: &str) {
     let date = "2026-02-01T00:00:00+00:00";
-    git(repo, date, &["add", "-A"]);
+    stage_all(repo, date);
     git(repo, date, &["commit", "-q", "-m", msg]);
     git(repo, date, &["tag", tag]);
 }
@@ -109,7 +179,7 @@ pub fn commit_tag(repo: &Path, msg: &str, tag: &str) {
 /// the one tag the test already knows.
 pub fn amend_tip(repo: &Path, tag: &str) {
     let date = "2026-01-01T00:00:00+00:00";
-    git(repo, date, &["add", "-A"]);
+    stage_all(repo, date);
     git(repo, date, &["commit", "-q", "--amend", "--no-edit"]);
     git(repo, date, &["tag", "-f", tag]);
 }
@@ -176,7 +246,7 @@ pub fn commit_all(repo: &Path) {
     if !repo.join(".git").exists() {
         git(repo, STATE_DATE, &["init", "-q", "-b", "main"]);
     }
-    git(repo, STATE_DATE, &["add", "-A"]);
+    stage_all(repo, STATE_DATE);
     git(
         repo,
         STATE_DATE,
@@ -247,7 +317,7 @@ pub fn channel_repo_tagged(fixture: &str, versions: &[(&str, &str)]) -> TempDir 
         }
         copy_dir(&fixtures.join(dir), &sub);
         std::fs::write(repo.path().join("README.md"), "# channel repo\n").unwrap();
-        git(repo.path(), &date, &["add", "-A"]);
+        stage_all(repo.path(), &date);
         git(repo.path(), &date, &["commit", "-q", "-m", dir]);
         git(repo.path(), &date, &["tag", tag]);
     }
@@ -279,7 +349,7 @@ pub fn track_commit(repo: &Path, inside: bool) -> String {
     text.push_str(&format!("change {n}\n"));
     std::fs::write(&path, text).unwrap();
     let date = "2026-02-01T00:00:00+00:00";
-    git(repo, date, &["add", "-A"]);
+    stage_all(repo, date);
     git(repo, date, &["commit", "-q", "-m", msg]);
     git_stdout(repo, &["rev-parse", "HEAD"])
 }
@@ -361,7 +431,8 @@ pub fn apply_user_edits(repo: &TempDir) {
 pub fn redact(snapshot: &str) -> String {
     let mut out = snapshot.to_string();
     for (re, to) in [
-        (r#"source = ".*""#, r#"source = "[source]""#),
+        // the lock writer uses a literal ('...') string for Windows paths with backslashes
+        (r#"source = (".*"|'.*')"#, r#"source = "[source]""#),
         (r#"commit = ".*""#, r#"commit = "[commit]""#),
         (r#"splice = ".*""#, r#"splice = "[splice]""#),
         (

@@ -73,7 +73,7 @@ fn rerun_after_restore_succeeds() {
     let restore = std::process::Command::new("sh")
         .current_dir(repo.path())
         .args(["-c", "git checkout -- . && git clean -fd"])
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", common::empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .unwrap();

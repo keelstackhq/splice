@@ -13,8 +13,13 @@ env:
   CARGO_TERM_COLOR: always
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
@@ -27,20 +32,26 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo nextest run --locked --no-fail-fast
-      - run: shellcheck action/publish.sh
+      - name: shellcheck action/publish.sh
+        if: runner.os == 'Linux'
+        run: shellcheck action/publish.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: runner.os == 'Linux'
         with:
           node-version: 22
       # Quoted globs: node expands them itself and passes when nothing matches yet.
       - name: node tests
+        if: runner.os == 'Linux'
         run: node --test 'scripts/**/*.test.mjs' 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'
       - name: no OpenSSL or rustls in the dependency tree
+        if: runner.os == 'Linux'
         run: |
           for c in openssl openssl-sys native-tls rustls; do
             if cargo tree --locked --target all -i "$c"; then echo "$c is in the tree"; exit 1; fi
           done
       # install-action has no actionlint; fetch the release and check its sha256.
       - name: actionlint
+        if: runner.os == 'Linux'
         env:
           AL_VERSION: 1.7.7
           AL_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
