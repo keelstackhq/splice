@@ -984,6 +984,7 @@ fn rerun_after_failed_post_converges_without_restore() {
     stdout_json(chan(r, &["check", "--channel", "rig"]).success());
 }
 
+#[cfg(unix)]
 #[test]
 fn all_symlinked_target_in_later_channel_writes_nothing() {
     // rig (earlier) has file changes; the lock path of rigb (later) is a symlink. Every source's
@@ -1001,6 +1002,7 @@ fn all_symlinked_target_in_later_channel_writes_nothing() {
     assert_eq!(bytes(r, RIG_TOML), rig_before);
 }
 
+#[cfg(unix)]
 #[test]
 fn all_symlinked_host_in_later_channel_writes_nothing() {
     // rigb (later) v2 adds a section in CHANGELOG.md, a symlink: refused before any write.

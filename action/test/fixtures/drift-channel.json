@@ -1,0 +1,1 @@
+{"ok":false,"command":"update","changes":[],"messages":["channel rig: `.claude/agents/reviewer.md` is owned by channel rig but was edited locally","nothing was written; revert the files above or pass --force to replace them (broken markers are fixed by hand)"]}

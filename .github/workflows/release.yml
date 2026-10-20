@@ -1,0 +1,233 @@
+name: release
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Check the tag against Cargo.toml and the npm packages
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            node scripts/check-version.mjs --tag "$TAG"
+          else
+            node scripts/check-version.mjs
+          fi
+
+  build:
+    needs: [check]
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04, native: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, native: true }
+          - { target: aarch64-apple-darwin, os: macos-15, native: true }
+          - { target: x86_64-apple-darwin, os: macos-15, native: false }
+          - { target: x86_64-pc-windows-msvc, os: windows-2025, native: true }
+    env:
+      TARGET: ${{ matrix.target }}
+      NATIVE: ${{ matrix.native }}
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install --profile minimal
+          rustup target add "$TARGET"
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+      - name: Check the Linux binary is static
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          out=$(file "target/$TARGET/release/splice")
+          echo "$out"
+          echo "$out" | grep -Eq 'static-pie linked|statically linked'
+          ! echo "$out" | grep -q interpreter
+      - name: Check the cross-built macOS binary
+        if: matrix.native == false
+        run: file "target/$TARGET/release/splice" | grep -q 'Mach-O 64-bit executable x86_64'
+      - name: Smoke test
+        if: matrix.native == true
+        env:
+          EXPECT_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          bin=splice
+          case "$TARGET" in *windows*) bin=splice.exe ;; esac
+          scripts/smoke.sh "target/$TARGET/release/$bin"
+      - name: Archive
+        run: |
+          mkdir -p stage dist
+          case "$TARGET" in
+            *windows*)
+              cp "target/$TARGET/release/splice.exe" LICENSE README.md stage/
+              (cd stage && 7z a -tzip "../dist/splice-$TARGET.zip" splice.exe LICENSE README.md)
+              ;;
+            *)
+              cp "target/$TARGET/release/splice" LICENSE README.md stage/
+              tar -C stage -czf "dist/splice-$TARGET.tar.gz" splice LICENSE README.md
+              ;;
+          esac
+          ls -l dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: splice-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [check, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: splice-*
+          merge-multiple: true
+          path: dist
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          cd dist
+          sha256sum splice-* > SHA256SUMS
+          cat SHA256SUMS
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" splice-* SHA256SUMS --clobber
+          else
+            pre=()
+            case "$VERSION" in *-*) pre=(--prerelease) ;; esac
+            gh release create "$TAG" --verify-tag --generate-notes "${pre[@]}" splice-* SHA256SUMS
+          fi
+
+  npm:
+    needs: [check, build, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The checkout is only for scripts/ and npm/; no cargo runs in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Require a public repository (npm provenance)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          private=$(gh api "repos/$GH_REPO" --jq .private)
+          if [ "$private" = true ]; then
+            echo "::error::npm provenance needs a public repository: make keelstackhq/splice public, then re-run"
+            exit 1
+          fi
+      - name: Require npm 11.5.1 or newer (trusted publishing)
+        run: |
+          v=$(npm --version)
+          if ! node -e '
+            const p = (s) => s.split("-")[0].split(".").map(Number);
+            const [a, b] = [p(process.argv[1]), p("11.5.1")];
+            for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) process.exit(a[i] > b[i] ? 0 : 1); }
+          ' "$v"; then
+            echo "::error::npm $v is too old for trusted publishing (needs >= 11.5.1): use a newer Node/npm in setup-node"
+            exit 1
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: splice-*
+          merge-multiple: true
+          path: dist
+      - name: Unpack the binaries
+        env:
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+        run: |
+          for f in dist/splice-*.tar.gz; do
+            t=${f#dist/splice-}; t=${t%.tar.gz}
+            mkdir -p "$ARTIFACTS/$t"
+            tar -xzf "$f" -C "$ARTIFACTS/$t" splice
+          done
+          for f in dist/splice-*.zip; do
+            t=${f#dist/splice-}; t=${t%.zip}
+            mkdir -p "$ARTIFACTS/$t"
+            unzip -q "$f" splice.exe -d "$ARTIFACTS/$t"
+          done
+          find "$ARTIFACTS" -type f
+      - name: Stage the packages
+        env:
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+          OUT: ${{ runner.temp }}/npm
+          VERSION: ${{ needs.check.outputs.version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/npm-stage.mjs --version "$VERSION" --artifacts "$ARTIFACTS" --out "$OUT" | tee "$RUNNER_TEMP/staged.txt"
+      - name: Publish (trusted publishing, provenance)
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          dist_tag=latest
+          case "$VERSION" in *-*) dist_tag=next ;; esac
+          if [ ! -s "$RUNNER_TEMP/staged.txt" ]; then
+            echo "::error::no staged packages to publish"
+            exit 1
+          fi
+          while read -r dir; do
+            name=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/package.json', 'utf8')).name" "$dir")
+            if out=$(npm view "$name@$VERSION" version 2>&1); then
+              echo "skip $name@$VERSION: already published"
+            elif grep -q E404 <<<"$out"; then
+              npm publish "$dir" --provenance --access public --tag "$dist_tag"
+            else
+              echo "$out" >&2
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/staged.txt"

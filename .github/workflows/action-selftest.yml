@@ -1,0 +1,138 @@
+name: action-selftest
+# Runs ./action against a throwaway consumer repo and a local bare "origin". `gh` is a stub, so
+# nothing leaves the runner and no secret is needed.
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_NOSYSTEM: "1"
+      GIT_AUTHOR_NAME: selftest
+      GIT_AUTHOR_EMAIL: selftest@example.com
+      GIT_COMMITTER_NAME: selftest
+      GIT_COMMITTER_EMAIL: selftest@example.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Build splice and put it, and a gh stub, on PATH
+        run: |
+          set -euo pipefail
+          cargo build --locked
+          mkdir -p "$RUNNER_TEMP/bin"
+          cp target/debug/splice "$RUNNER_TEMP/bin/splice"
+          cat > "$RUNNER_TEMP/bin/gh" <<'STUB'
+          #!/usr/bin/env bash
+          # Minimal stateful gh: `pr create` makes the pull request exist; calls are logged.
+          echo "$1 $2" >> "$GH_STUB_DIR/calls.log"
+          case "$1 $2" in
+            "auth setup-git") [ -n "${GH_TOKEN:-}" ] || { echo "gh stub: GH_TOKEN is not set" >&2; exit 1; } ;;
+            "pr list") [ -e "$GH_STUB_DIR/pr-exists" ] && echo 1 || true ;;
+            "pr create") touch "$GH_STUB_DIR/pr-exists"; echo "https://example.invalid/pull/1" ;;
+            "pr edit") echo "https://example.invalid/pull/1" ;;
+            "repo view") echo main ;;
+            *) echo "gh stub: unexpected $*" >&2; exit 1 ;;
+          esac
+          STUB
+          chmod +x "$RUNNER_TEMP/bin/gh"
+          mkdir "$RUNNER_TEMP/gh-stub"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "GH_STUB_DIR=$RUNNER_TEMP/gh-stub" >> "$GITHUB_ENV"
+      - name: Create the template repo, the consumer at v1 and a bare origin
+        run: |
+          set -euo pipefail
+          tpl="$RUNNER_TEMP/tpl"
+          mkdir "$tpl"
+          git -C "$tpl" init -q
+          for v in v1 v2; do
+            find "$tpl" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            cp -R "tests/fixtures/template/$v/." "$tpl/"
+            git -C "$tpl" add -A
+            git -C "$tpl" commit -q -m "$v"
+            git -C "$tpl" tag "$v.0.0"
+          done
+          export SPLICE_CACHE_DIR="$RUNNER_TEMP/cache"
+          splice new "$tpl" "$RUNNER_TEMP/consumer" --ref v1.0.0 --piece app:web --data project=demo --yes
+          cd "$RUNNER_TEMP/consumer"
+          git add -A
+          git commit -q -m "splice new"
+          git branch -M main
+          git init -q --bare "$RUNNER_TEMP/origin.git"
+          git remote add origin "$RUNNER_TEMP/origin.git"
+          git push -q origin main
+      - name: Bot, first run
+        id: first
+        uses: ./action
+        with:
+          version: none
+          working-directory: ${{ runner.temp }}/consumer
+          to: 2.0.0
+      - name: Assert the first run and reset the consumer
+        env:
+          RESULT: ${{ steps.first.outputs.result }}
+          PR_URL: ${{ steps.first.outputs.pr-url }}
+        run: |
+          set -euo pipefail
+          [ "$RESULT" = updated ] || { echo "first run: result is '$RESULT'" >&2; exit 1; }
+          [ -n "$PR_URL" ]
+          cd "$RUNNER_TEMP/consumer"
+          git -C "$RUNNER_TEMP/origin.git" rev-parse --verify refs/heads/splice/update
+          git switch -q main
+          git reset -q --hard origin/main
+          # Leave the bot branch's remote-tracking ref stale (an older run pushed it since); the
+          # action must fetch it first, or the push fails with "stale info". Deleting the ref
+          # would not prove this: a missing ref makes git skip the lease check.
+          git update-ref refs/remotes/origin/splice/update refs/remotes/origin/main
+          : > "$GH_STUB_DIR/calls.log"
+      - name: Bot, second run (the bot branch exists on origin and is rewritten)
+        id: second
+        uses: ./action
+        with:
+          version: none
+          working-directory: ${{ runner.temp }}/consumer
+          to: 2.0.0
+      - name: Assert the second run and make an owned file drift
+        env:
+          RESULT: ${{ steps.second.outputs.result }}
+        run: |
+          set -euo pipefail
+          [ "$RESULT" = updated ] || { echo "second run: result is '$RESULT'" >&2; exit 1; }
+          grep -qx "pr edit" "$GH_STUB_DIR/calls.log"
+          if grep -qx "pr create" "$GH_STUB_DIR/calls.log"; then
+            echo "second run opened a new PR instead of editing it" >&2
+            exit 1
+          fi
+          cd "$RUNNER_TEMP/consumer"
+          git switch -q main
+          git reset -q --hard origin/main
+          echo "# local edit" >> .editorconfig
+          git commit -q -am "edit an owned file"
+      - name: Bot, third run (drift must fail without pushing)
+        id: third
+        continue-on-error: true
+        uses: ./action
+        with:
+          version: none
+          working-directory: ${{ runner.temp }}/consumer
+          to: 2.0.0
+      - name: Assert the third run
+        env:
+          OUTCOME: ${{ steps.third.outcome }}
+          RESULT: ${{ steps.third.outputs.result }}
+        run: |
+          set -euo pipefail
+          [ "$OUTCOME" = failure ] || { echo "third run: outcome is '$OUTCOME'" >&2; exit 1; }
+          [ "$RESULT" = drift ] || { echo "third run: result is '$RESULT'" >&2; exit 1; }
