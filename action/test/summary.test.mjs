@@ -77,7 +77,7 @@ test("lock version must be semver, so no newline reaches GITHUB_OUTPUT", () => {
 
 test("update --all groups rows by source", () => {
   const lock = '[files]\n".claude/agents/reviewer.md" = { class = "owned", sha256 = "a" }\n';
-  const owners = Object.fromEntries(lockFiles(lock).map((path) => [path, "rig"]));
+  const owners = new Map(lockFiles(lock).map((path) => [path, "rig"]));
   const s = summarize(load("all.json"), 0, { version: "2.0.0", dirty: true, owners });
   assert.equal(s.title, "chore: splice update to 2.0.0");
   const main = s.body.indexOf("### main");
@@ -101,4 +101,48 @@ test("update --all title without a main lock", () => {
 test("lockFiles reads the [files] table only", () => {
   const text = '[files]\n"a.txt" = { class = "owned" }\n"b#x" = { class = "shared" }\n\n[sections]\n"H.md" = { created = true }\n';
   assert.deepEqual(lockFiles(text), ["a.txt", "b#x"]);
+});
+
+// rig-keys.toml is the channel lock written by splice for a channel whose files are named
+// `Makefile` (bare key), `a b.txt` (basic string), `we"ird.txt` (literal string) and `constructor`;
+// all-keys.json is `update --all` from v1.0.0 to v2.0.0 for it.
+test("channel rows are found under every lock key form", () => {
+  const lock = readFileSync(new URL("./fixtures/rig-keys.toml", import.meta.url), "utf8");
+  const files = lockFiles(lock);
+  for (const p of ["Makefile", "a b.txt", 'we"ird.txt', "constructor"]) assert.ok(files.includes(p), p);
+  const owners = new Map(files.map((path) => [path, "rig"]));
+  const s = summarize(load("all-keys.json"), 0, { version: "2.0.0", dirty: true, owners });
+  const rig = s.body.indexOf("### rig");
+  assert.ok(rig > s.body.indexOf("### main"));
+  for (const p of ["Makefile", "a b.txt", 'we"ird.txt', "constructor"]) {
+    assert.ok(s.body.indexOf(`\`${p}\``) > rig, p);
+  }
+  assert.ok(s.body.indexOf("`package.json`") < rig);
+});
+
+test("lockFiles unescapes basic strings and reads literal strings", () => {
+  const text = [
+    "[files]",
+    String.raw`"q\"b\\s\u00e9" = { class = "owned" }`,
+    String.raw`'l\"x' = { class = "owned" }`,
+    "bare-1_x = { class = \"owned\" }",
+  ].join("\n");
+  assert.deepEqual(lockFiles(text), ['q"b\\sé', String.raw`l\"x`, "bare-1_x"]);
+});
+
+test("a path named like an Object property is main without an owner", () => {
+  const report = {
+    ok: true,
+    command: "update",
+    changes: [{ path: "constructor", action: "update", class: "owned" }],
+    messages: ["source=main", "source=channel:rig"],
+  };
+  const s = summarize(report, 0, { version: "2.0.0", dirty: true, owners: new Map() });
+  assert.ok(s.body.indexOf("`constructor`") < s.body.indexOf("### rig"), s.body);
+});
+
+test("only a channel drifting is drift", () => {
+  const s = summarize(load("drift-channel.json"), 1, { version: "1.0.0", dirty: false });
+  assert.equal(s.result, "drift");
+  assert.match(s.body, /owned by channel rig but was edited locally/);
 });

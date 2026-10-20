@@ -1,7 +1,7 @@
 // Decide the update-bot result from splice's JSON report, its exit code and the tree state.
 // A report with `source=` messages (`update --all`) gets one table per source: `main`, then each
 // channel. Rows do not name their source; a `HOST#NAME` path is channel NAME's section, any other
-// path is looked up in `owners` (path -> source name, built from the channel locks), else main.
+// path is looked up in `owners` (Map path -> source name, built from the channel locks), else main.
 // CLI: node summary.mjs <report.json> <exit-code>   (run inside the repo, after the update)
 //   writes result, title and body-file to $GITHUB_OUTPUT; exits 1 with splice's messages on exit 2/3.
 import { execFileSync } from "node:child_process";
@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SEMVER } from "./args.mjs";
 
-export function summarize(report, exitCode, { version, dirty, owners = {} }) {
+export function summarize(report, exitCode, { version, dirty, owners = new Map() }) {
   const messages = report.messages ?? [];
   if (exitCode !== 0 && exitCode !== 1) {
     throw new Error(messages.join("\n") || `splice exited ${exitCode}`);
@@ -34,7 +34,7 @@ export function summarize(report, exitCode, { version, dirty, owners = {} }) {
   } else {
     const nameOf = (c) => {
       const channel = /#([^#/]+)$/.exec(c.path)?.[1];
-      return channel ?? owners[c.path] ?? "main";
+      return channel ?? owners.get(c.path) ?? "main";
     };
     const names = sources.map((m) => m.replace(/^channel:/, ""));
     for (const c of rows) if (!names.includes(nameOf(c))) names.push(nameOf(c));
@@ -62,14 +62,21 @@ function table(rows) {
   return lines;
 }
 
-// Paths of the `[files]` table of a lock.
+// Paths of the `[files]` table of a lock. toml_edit writes bare, basic-quoted and literal-quoted keys.
+const ESCAPES = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", '"': '"', "\\": "\\" };
+const unescape = (text) =>
+  text.replace(/\\(?:([btnfr"\\])|u([0-9a-fA-F]{4})|U([0-9a-fA-F]{8}))/g, (_, c, u4, u8) =>
+    c ? ESCAPES[c] : String.fromCodePoint(parseInt(u4 ?? u8, 16)),
+  );
+
 export function lockFiles(lock) {
   const section = /^\[files\]\s*$([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(lock)?.[1] ?? "";
-  return [...section.matchAll(/^"((?:[^"\\]|\\.)*)"\s*=/gm)].map((m) => m[1]);
+  const key = /^(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))\s*=/gm;
+  return [...section.matchAll(key)].map((m) => (m[1] !== undefined ? unescape(m[1]) : (m[2] ?? m[3])));
 }
 
 function channelOwners() {
-  const owners = {};
+  const owners = new Map();
   let files = [];
   try {
     files = readdirSync(".splice/channels").filter((f) => f.endsWith(".toml"));
@@ -81,7 +88,7 @@ function channelOwners() {
     try {
       texts.push(execFileSync("git", ["show", `HEAD:${rel}`], { encoding: "utf8", stdio: "pipe" }));
     } catch {}
-    for (const text of texts) for (const path of lockFiles(text)) owners[path] = name;
+    for (const text of texts) for (const path of lockFiles(text)) owners.set(path, name);
   }
   return owners;
 }
