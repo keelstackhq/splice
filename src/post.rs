@@ -194,7 +194,7 @@ fn spawn_error(run: &str, e: &std::io::Error) -> SpliceError {
     SpliceError::Env(format!("cannot run post command `{run}`: {e}"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

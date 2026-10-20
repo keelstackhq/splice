@@ -34,7 +34,7 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings
 cargo nextest run                       # all tests; needs `git` on PATH
 cargo nextest run -E 'test(golden)'     # one group
 cargo insta review                      # inspect snapshot changes; never blind-accept
-node --test npm/splice/test action/test scripts/
+node --test "npm/**/*.test.mjs" "action/**/*.test.mjs" "scripts/**/*.test.mjs"
 ```
 
 Run fmt, clippy and the tests you touched before every commit; the full suite before pushing.

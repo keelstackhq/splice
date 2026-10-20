@@ -1,0 +1,49 @@
+format = 1
+splice = "0.2.0"
+
+[channel]
+name = "rig"
+only = []
+exclude = []
+
+[template]
+source = "/tmp/ch//channel"
+version = "2.0.0"
+commit = "7efde2b35c636c68e7431d09f92ccda23b78f309"
+
+[vars]
+
+[[pieces]]
+id = "core"
+name = "core"
+vars = {}
+
+[[pieces]]
+id = "claude"
+name = "claude"
+vars = {}
+
+[[pieces]]
+id = "skills"
+name = "claude"
+vars = { dir = "claude" }
+
+[[pieces]]
+id = "hooks"
+name = "hooks"
+vars = {}
+
+[files]
+".claude/agents/reviewer.md" = { class = "owned", sha256 = "6c43c67cc5ae0e3fd3dafc92c240377a411775d9a2bda263bb51097e2cacc41a" }
+".claude/hooks/session-start.d/rig-sync.sh" = { class = "owned", sha256 = "5f0bc4f9d9df3ec111c4d6130fbf5cbb072d1229a11599d2304bc47555990599" }
+".claude/skills/caveman/SKILL.md" = { class = "owned", sha256 = "fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4" }
+".claude/skills/verify/SKILL.md" = { class = "owned", sha256 = "69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b" }
+Makefile = { class = "owned", sha256 = "6c7a2f3be26716d397e29b555395fd30146778ae294a55cc08bc3e8474129b84" }
+"a b.txt" = { class = "owned", sha256 = "81db67b6a5702b9b68f0016f061c409bf3fb16d062fc854d1b424bb4e9c28c56" }
+constructor = { class = "owned", sha256 = "81db67b6a5702b9b68f0016f061c409bf3fb16d062fc854d1b424bb4e9c28c56" }
+"docs/agents/rules.md" = { class = "owned", sha256 = "084fbf145e0eea2a10b74cc57fc1c961bd853d8c8a2de3071d1c347db366b96c" }
+'we"ird.txt' = { class = "owned", sha256 = "81db67b6a5702b9b68f0016f061c409bf3fb16d062fc854d1b424bb4e9c28c56" }
+
+[sections]
+"AGENTS.md" = { sha256 = "1fc1cb208882591caf431c3eed82a91a269c0de6c6e490420d16c4459c5f3bca", created = true }
+"CLAUDE.md" = { sha256 = "5bfefe0d03193de021edb6dd64629bc0b9bbb3f5efe76fb488a6fd993e24cfd0", created = true }

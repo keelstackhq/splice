@@ -1,91 +1,79 @@
-import { test } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stage } from "./npm-stage.mjs";
 
-const platforms = JSON.parse(readFileSync(new URL("../npm/platforms.json", import.meta.url), "utf8"));
+const platforms = JSON.parse(readFileSync(new URL("../npm/splice/platforms.json", import.meta.url), "utf8"));
+const REPO = "keelstackhq/splice";
 
-function setup(only = platforms, env = {}) {
-  const root = mkdtempSync(join(tmpdir(), "splice-stage-"));
-  const artifacts = join(root, "artifacts");
-  mkdirSync(artifacts);
-  for (const p of only) {
-    const dir = join(artifacts, p.target);
-    mkdirSync(dir);
-    writeFileSync(join(dir, p.bin), "binary");
+function fixture() {
+  const root = mkdtempSync(join(tmpdir(), "npm-stage-"));
+  const artifactsDir = join(root, "artifacts");
+  for (const p of platforms) {
+    mkdirSync(join(artifactsDir, p.target), { recursive: true });
+    writeFileSync(join(artifactsDir, p.target, p.bin), `binary ${p.target}`);
   }
-  const out = join(root, "out");
-  stage({ version: "1.2.3", artifacts, out, env });
-  return out;
+  return { artifactsDir, outDir: join(root, "out") };
 }
 
-const readPkg = (out, name) => JSON.parse(readFileSync(join(out, name, "package.json"), "utf8"));
+const readPkg = (dir) => JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
 
-test("stage writes no install scripts", () => {
-  const out = setup();
-  const dirs = readdirSync(out);
-  assert.equal(dirs.length, 6);
-  for (const d of dirs) {
-    const scripts = readPkg(out, d).scripts ?? {};
-    for (const k of ["preinstall", "install", "postinstall", "prepare"]) assert.equal(scripts[k], undefined, `${d} ${k}`);
+test("stage writes repository, license, no scripts, exact pins", () => {
+  const { artifactsDir, outDir } = fixture();
+  const dirs = stage({ version: "0.2.0", artifactsDir, outDir, repository: REPO });
+  assert.equal(dirs.length, platforms.length + 1);
+  for (const dir of dirs) {
+    const pkg = readPkg(dir);
+    assert.equal(pkg.repository.url, "git+https://github.com/keelstackhq/splice.git");
+    assert.equal(pkg.repository.type, "git");
+    assert.equal(pkg.license, "MIT");
+    assert.equal(pkg.version, "0.2.0");
+    assert.ok(!("scripts" in pkg));
+    assert.ok(!("devDependencies" in pkg));
+    assert.ok(existsSync(join(dir, "LICENSE")));
+  }
+  const launcher = readPkg(dirs.at(-1));
+  assert.equal(launcher.name, "@keelstackhq/splice");
+  assert.deepEqual(Object.keys(launcher.optionalDependencies).sort(), platforms.map((p) => p.npm).sort());
+  for (const v of Object.values(launcher.optionalDependencies)) assert.equal(v, "0.2.0");
+  for (const f of ["bin/splice.js", "lib/platform.js", "platforms.json", "README.md"]) {
+    assert.ok(existsSync(join(dirs.at(-1), f)), f);
   }
 });
 
-test("platform packages declare os/cpu, files and the binary", () => {
-  const out = setup();
-  const pkg = readPkg(out, "splice-win32-x64");
-  assert.equal(pkg.name, "@keelstackhq/splice-win32-x64");
-  assert.equal(pkg.version, "1.2.3");
-  assert.deepEqual(pkg.os, ["win32"]);
+test("stage writes platform packages with os, cpu and the binary", () => {
+  const { artifactsDir, outDir } = fixture();
+  const dirs = stage({ version: "0.2.0-rc.1", artifactsDir, outDir, repository: REPO });
+  const linux = dirs.find((d) => d.endsWith("splice-linux-x64"));
+  const pkg = readPkg(linux);
+  assert.equal(pkg.name, "@keelstackhq/splice-linux-x64");
+  assert.deepEqual(pkg.os, ["linux"]);
   assert.deepEqual(pkg.cpu, ["x64"]);
-  assert.equal(pkg.preferUnplugged, true);
   assert.deepEqual(pkg.files, ["bin"]);
-  assert.ok(pkg.repository.url.includes("keelstackhq/splice"));
-  assert.ok(existsSync(join(out, "splice-win32-x64", "bin", "splice.exe")));
-  if (process.platform !== "win32") {
-    const mode = statSync(join(out, "splice-linux-x64", "bin", "splice")).mode & 0o777;
-    assert.equal(mode, 0o755);
-  }
+  assert.equal(readFileSync(join(linux, "bin", "splice"), "utf8"), "binary x86_64-unknown-linux-musl");
+  if (process.platform !== "win32") assert.equal(statSync(join(linux, "bin", "splice")).mode & 0o777, 0o755);
+  assert.ok(existsSync(join(dirs.find((d) => d.endsWith("splice-win32-x64")), "bin", "splice.exe")));
 });
 
-test("launcher pins optionalDependencies and ships platforms.json", () => {
-  const out = setup();
-  const pkg = readPkg(out, "splice");
+test("stage rejects a bad repository", () => {
+  const { artifactsDir, outDir } = fixture();
+  assert.throws(() => stage({ version: "0.2.0", artifactsDir, outDir, repository: "a b" }), /owner\/repo/);
+});
+
+test("stage fails when a binary is missing", () => {
+  const { artifactsDir, outDir } = fixture();
+  assert.throws(
+    () => stage({ version: "0.2.0", artifactsDir: join(artifactsDir, "nope"), outDir, repository: REPO }),
+    /missing binary/,
+  );
+});
+
+test("launcher package.json is committed with exact optionalDependencies and no scripts", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../npm/splice/package.json", import.meta.url), "utf8"));
   assert.equal(pkg.name, "@keelstackhq/splice");
-  assert.equal(pkg.version, "1.2.3");
+  assert.ok(!("scripts" in pkg));
+  assert.equal(pkg.type, "module");
   assert.deepEqual(pkg.bin, { splice: "bin/splice.js" });
-  assert.deepEqual(
-    pkg.optionalDependencies,
-    Object.fromEntries(platforms.map((p) => [p.npm, "1.2.3"])),
-  );
-  assert.ok(existsSync(join(out, "splice", "bin", "splice.js")));
-  assert.ok(existsSync(join(out, "splice", "lib", "platform.js")));
-  assert.deepEqual(
-    JSON.parse(readFileSync(join(out, "splice", "platforms.json"), "utf8")),
-    platforms,
-  );
-});
-
-test("README and LICENSE are copied into every package", () => {
-  const out = setup();
-  for (const d of readdirSync(out)) {
-    assert.ok(existsSync(join(out, d, "LICENSE")), `${d} LICENSE`);
-    assert.ok(existsSync(join(out, d, "README.md")), `${d} README`);
-  }
-});
-
-test("a missing binary fails loudly", () => {
-  assert.throws(() => setup(platforms.slice(1)), /splice-linux-x64|x86_64-unknown-linux-musl/);
-});
-
-test("repository comes from GITHUB_REPOSITORY, with a default", () => {
-  const dflt = setup();
-  const custom = setup(platforms, { GITHUB_REPOSITORY: "acme/widgets" });
-  for (const [out, repo] of [[dflt, "keelstackhq/splice"], [custom, "acme/widgets"]]) {
-    for (const d of readdirSync(out)) {
-      assert.equal(readPkg(out, d).repository.url, `git+https://github.com/${repo}.git`, d);
-    }
-  }
 });

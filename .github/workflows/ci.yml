@@ -7,63 +7,69 @@ on:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-permissions:
-  contents: read
-env:
-  CARGO_TERM_COLOR: always
+permissions: {}
 jobs:
-  test:
-    name: test (${{ matrix.os }})
+  ci:
+    name: ci (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
-          tool: ${{ runner.os == 'Linux' && 'nextest,shellcheck' || 'nextest' }}
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo nextest run --locked --no-fail-fast
-      - name: shellcheck action/publish.sh
-        if: runner.os == 'Linux'
-        run: shellcheck action/publish.sh
+          tool: nextest
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: runner.os == 'Linux'
         with:
-          node-version: 22
-      # Quoted globs: node expands them itself and passes when nothing matches yet.
-      - name: node tests
-        if: runner.os == 'Linux'
-        run: node --test 'scripts/**/*.test.mjs' 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'
-      - name: no OpenSSL or rustls in the dependency tree
+          node-version: 24
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo nextest run --locked
+      - name: Check the Windows target compiles
         if: runner.os == 'Linux'
         run: |
-          for c in openssl openssl-sys native-tls rustls; do
-            if cargo tree --locked --target all -i "$c"; then echo "$c is in the tree"; exit 1; fi
-          done
-      # install-action has no actionlint; fetch the release and check its sha256.
+          rustup target add x86_64-pc-windows-msvc
+          cargo check --locked --all-targets --target x86_64-pc-windows-msvc
+      - name: Node tests
+        if: runner.os == 'Linux'
+        run: node --test "npm/**/*.test.mjs" "action/**/*.test.mjs" "scripts/**/*.test.mjs"
+      - name: No OpenSSL or TLS crates
+        if: runner.os == 'Linux'
+        run: "! cargo tree -e normal --target all --locked | grep -E 'openssl|rustls|native-tls'"
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck scripts/smoke.sh
       - name: actionlint
         if: runner.os == 'Linux'
         env:
-          AL_VERSION: 1.7.7
-          AL_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+          ACTIONLINT_VERSION: 1.7.7
+          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
         run: |
-          tgz="actionlint_${AL_VERSION}_linux_amd64.tar.gz"
-          curl -sSLf -o "$RUNNER_TEMP/$tgz" "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/$tgz"
-          echo "$AL_SHA256  $RUNNER_TEMP/$tgz" | sha256sum -c -
-          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP" actionlint
-          "$RUNNER_TEMP/actionlint" -shellcheck "$(command -v shellcheck)"
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "${tarball}" actionlint
+          ./actionlint
   ci-ok:
-    needs: [test]
+    needs: [ci]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
-      - run: '[ "${{ needs.test.result }}" = success ]'
+      - name: Require ci to succeed
+        env:
+          RESULT: ${{ needs.ci.result }}
+        run: '[ "$RESULT" = success ]'

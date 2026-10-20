@@ -1,46 +1,38 @@
-"use strict";
-// Maps (process.platform, process.arch) to the platform package that ships the binary.
-const fs = require("node:fs");
-const path = require("node:path");
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
-function loadPlatforms() {
-  // Staged package: platforms.json sits next to lib/. In the repo it lives in npm/.
-  for (const rel of [["..", "platforms.json"], ["..", "..", "platforms.json"]]) {
-    const file = path.join(__dirname, ...rel);
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, "utf8"));
-  }
-  throw new Error("platforms.json is missing from the @keelstackhq/splice package");
+const PLATFORMS = JSON.parse(readFileSync(new URL("../platforms.json", import.meta.url), "utf8"));
+
+export class LauncherError extends Error {
+  exitCode = 3;
 }
 
-function packageFor(platform = process.platform, arch = process.arch) {
-  const hit = loadPlatforms().find((p) => p.os === platform && p.cpu === arch);
+export function packageFor(platform = process.platform, arch = process.arch) {
+  const hit = PLATFORMS.find((p) => p.os === platform && p.cpu === arch);
   return hit ? { npm: hit.npm, bin: hit.bin } : null;
 }
 
-function supportedPairs() {
-  return loadPlatforms().map((p) => `${p.os}-${p.cpu}`);
-}
-
-function binaryPath(resolve = require.resolve, platform = process.platform, arch = process.arch) {
+export function binaryPath({
+  resolve = createRequire(import.meta.url).resolve,
+  platform = process.platform,
+  arch = process.arch,
+  env = process.env,
+} = {}) {
+  if (env.SPLICE_BINARY) return env.SPLICE_BINARY;
   const pkg = packageFor(platform, arch);
-  if (!pkg) {
-    throw new Error(
-      `splice has no prebuilt binary for ${platform}-${arch}.\n` +
-        `Supported platforms: ${supportedPairs().join(", ")}.`,
-    );
+  if (pkg) {
+    try {
+      return join(resolve(`${pkg.npm}/package.json`), "..", "bin", pkg.bin);
+    } catch {
+      // fall through to the error below
+    }
   }
-  let manifest;
-  try {
-    manifest = resolve(`${pkg.npm}/package.json`);
-  } catch {
-    throw new Error(
-      `The platform package ${pkg.npm} is not installed.\n` +
-        `It is an optional dependency of @keelstackhq/splice; reinstall without --no-optional ` +
-        `(or --omit=optional / --ignore-optional).\n` +
-        `Supported platforms: ${supportedPairs().join(", ")}.`,
-    );
-  }
-  return path.join(path.dirname(manifest), "bin", pkg.bin);
+  const supported = PLATFORMS.map((p) => `${p.os}-${p.cpu}`).join(", ");
+  const detail = pkg ? `package ${pkg.npm} is not installed` : "no package for this platform";
+  throw new LauncherError(
+    `splice: no prebuilt binary for ${platform}-${arch} (${detail}); ` +
+      `supported: ${supported}; download a release from https://github.com/keelstackhq/splice/releases ` +
+      "or run `cargo install --locked --git https://github.com/keelstackhq/splice keel-splice`",
+  );
 }
-
-module.exports = { packageFor, binaryPath, supportedPairs };

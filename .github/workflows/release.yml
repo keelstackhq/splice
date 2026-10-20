@@ -1,112 +1,120 @@
 name: release
 on:
   push:
-    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
-  # Dry run: builds and smoke-tests every target, but creates no release and publishes nothing.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 permissions: {}
-env:
-  CARGO_TERM_COLOR: always
 jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
-      - name: tag matches Cargo.toml
-        if: github.ref_type == 'tag'
-        run: node scripts/check-version.mjs
+          node-version: 24
+      - name: Check the tag against Cargo.toml and the npm packages
+        id: version
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-      - name: dry run (no tag to check)
-        if: github.ref_type != 'tag'
-        run: echo "workflow_dispatch dry run on ${GITHUB_REF_NAME}; version check skipped"
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            node scripts/check-version.mjs --tag "$TAG"
+          else
+            node scripts/check-version.mjs
+          fi
 
   build:
-    name: build (${{ matrix.target }})
-    needs: check
+    needs: [check]
+    name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: read
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
-          - { os: macos-15, target: x86_64-apple-darwin }
-          - { os: macos-15, target: aarch64-apple-darwin }
-          - { os: windows-2025, target: x86_64-pc-windows-msvc }
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-24.04, native: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, native: true }
+          - { target: aarch64-apple-darwin, os: macos-15, native: true }
+          - { target: x86_64-apple-darwin, os: macos-15, native: false }
+          - { target: x86_64-pc-windows-msvc, os: windows-2025, native: true }
+    env:
+      TARGET: ${{ matrix.target }}
+      NATIVE: ${{ matrix.native }}
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-        with:
-          key: ${{ matrix.target }}
-      - name: install musl-tools
-        if: runner.os == 'Linux'
+          persist-credentials: false
+      - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: build
-        run: cargo build --release --locked --target "${{ matrix.target }}"
-      - name: binary is statically linked
-        if: runner.os == 'Linux'
+      - name: Install the pinned Rust toolchain
         run: |
-          out=$(file "target/${{ matrix.target }}/release/splice")
+          rustup toolchain install --profile minimal
+          rustup target add "$TARGET"
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+      - name: Check the Linux binary is static
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          out=$(file "target/$TARGET/release/splice")
           echo "$out"
-          echo "$out" | grep -E 'statically linked|static-pie linked'
-      # x86_64-apple-darwin runs on the arm64 runner under Rosetta.
-      - name: smoke test
+          echo "$out" | grep -Eq 'static-pie linked|statically linked'
+          ! echo "$out" | grep -q interpreter
+      - name: Check the cross-built macOS binary
+        if: matrix.native == false
+        run: file "target/$TARGET/release/splice" | grep -q 'Mach-O 64-bit executable x86_64'
+      - name: Smoke test
+        if: matrix.native == true
         env:
-          BIN_DIR: target/${{ matrix.target }}/release
-          EXE: ${{ runner.os == 'Windows' && 'splice.exe' || 'splice' }}
+          EXPECT_VERSION: ${{ needs.check.outputs.version }}
         run: |
-          bin="$PWD/$BIN_DIR/$EXE"
-          "$bin" --version
-          tpl="$RUNNER_TEMP/smoke-template"
-          rm -rf "$tpl" "$RUNNER_TEMP/smoke-out"
-          cp -R tests/fixtures/template/v1 "$tpl"
-          git -C "$tpl" init -q
-          git -C "$tpl" add -A
-          git -C "$tpl" -c user.name=ci -c user.email=ci@example.com commit -q -m template
-          git -C "$tpl" tag v1.0.0
-          "$bin" new "$tpl" "$RUNNER_TEMP/smoke-out" --data project=demo --yes
-          test -f "$RUNNER_TEMP/smoke-out/.splice/lock.toml"
-      - name: package (tar.gz)
-        if: runner.os != 'Windows'
+          bin=splice
+          case "$TARGET" in *windows*) bin=splice.exe ;; esac
+          scripts/smoke.sh "target/$TARGET/release/$bin"
+      - name: Archive
         run: |
-          mkdir -p dist
-          cp "target/${{ matrix.target }}/release/splice" LICENSE README.md dist/
-          tar -C dist -czf "splice-${{ matrix.target }}.tar.gz" splice LICENSE README.md
-      - name: package (zip)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/splice.exe", LICENSE, README.md dist/
-          Compress-Archive -Path dist/splice.exe, dist/LICENSE, dist/README.md -DestinationPath "splice-${{ matrix.target }}.zip"
+          mkdir -p stage dist
+          case "$TARGET" in
+            *windows*)
+              cp "target/$TARGET/release/splice.exe" LICENSE README.md stage/
+              (cd stage && 7z a -tzip "../dist/splice-$TARGET.zip" splice.exe LICENSE README.md)
+              ;;
+            *)
+              cp "target/$TARGET/release/splice" LICENSE README.md stage/
+              tar -C stage -czf "dist/splice-$TARGET.tar.gz" splice LICENSE README.md
+              ;;
+          esac
+          ls -l dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: splice-${{ matrix.target }}
-          path: splice-${{ matrix.target }}.*
+          path: dist/*
           if-no-files-found: error
 
   release:
-    needs: build
-    # Dry runs (workflow_dispatch) stop after build.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [check, build]
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: write
     steps:
@@ -115,70 +123,111 @@ jobs:
           pattern: splice-*
           merge-multiple: true
           path: dist
-      - name: checksums
-        working-directory: dist
-        run: sha256sum splice-* > SHA256SUMS && cat SHA256SUMS
-      - name: create release
-        working-directory: dist
+      - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          flags=""
-          case "$TAG" in *-*) flags="--prerelease" ;; esac
-          # shellcheck disable=SC2086
-          gh release create "$TAG" --repo "$REPO" --verify-tag --generate-notes $flags splice-* SHA256SUMS
+          cd dist
+          sha256sum splice-* > SHA256SUMS
+          cat SHA256SUMS
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" splice-* SHA256SUMS --clobber
+          else
+            pre=()
+            case "$VERSION" in *-*) pre=(--prerelease) ;; esac
+            gh release create "$TAG" --verify-tag --generate-notes "${pre[@]}" splice-* SHA256SUMS
+          fi
 
   npm:
-    needs: release
-    # Dry runs (workflow_dispatch) never publish.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [check, build, release]
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    environment: release
     permissions:
-      id-token: write # npm provenance
       contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
     steps:
+      # The checkout is only for scripts/ and npm/; no cargo runs in this job.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: Require a public repository (npm provenance)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          private=$(gh api "repos/$GH_REPO" --jq .private)
+          if [ "$private" = true ]; then
+            echo "::error::npm provenance needs a public repository: make keelstackhq/splice public, then re-run"
+            exit 1
+          fi
+      - name: Require npm 11.5.1 or newer (trusted publishing)
+        run: |
+          v=$(npm --version)
+          if ! node -e '
+            const p = (s) => s.split("-")[0].split(".").map(Number);
+            const [a, b] = [p(process.argv[1]), p("11.5.1")];
+            for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) process.exit(a[i] > b[i] ? 0 : 1); }
+          ' "$v"; then
+            echo "::error::npm $v is too old for trusted publishing (needs >= 11.5.1): use a newer Node/npm in setup-node"
+            exit 1
+          fi
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: splice-*
           merge-multiple: true
           path: dist
-      - name: unpack release archives
-        run: |
-          set -euo pipefail
-          while read -r target _os _cpu bin; do
-            mkdir -p "artifacts/$target"
-            if [ "$bin" = "splice.exe" ]; then
-              unzip -q -o "dist/splice-$target.zip" "$bin" -d "artifacts/$target"
-            else
-              tar -xzf "dist/splice-$target.tar.gz" -C "artifacts/$target" "$bin"
-            fi
-          done < <(node -e 'for (const p of require("./npm/platforms.json")) console.log(p.target, p.os, p.cpu, p.bin)')
-      - name: stage npm packages
+      - name: Unpack the binaries
         env:
-          TAG: ${{ github.ref_name }}
-        run: node scripts/npm-stage.mjs "${TAG#v}" artifacts target/npm
-      - name: publish (platform packages first, then the launcher)
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          ARTIFACTS: ${{ runner.temp }}/artifacts
         run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          tag_flag=()
-          case "$version" in *-*) tag_flag=(--tag next) ;; esac
-          for dir in target/npm/splice-* target/npm/splice; do
-            name=$(node -p 'require("./" + process.argv[1] + "/package.json").name' "$dir")
-            if npm view "$name@$version" version >/dev/null 2>&1; then
-              echo "::notice::$name@$version is already published; skipping"
-              continue
-            fi
-            npm publish "$dir" --access public --provenance "${tag_flag[@]}"
+          for f in dist/splice-*.tar.gz; do
+            t=${f#dist/splice-}; t=${t%.tar.gz}
+            mkdir -p "$ARTIFACTS/$t"
+            tar -xzf "$f" -C "$ARTIFACTS/$t" splice
           done
+          for f in dist/splice-*.zip; do
+            t=${f#dist/splice-}; t=${t%.zip}
+            mkdir -p "$ARTIFACTS/$t"
+            unzip -q "$f" splice.exe -d "$ARTIFACTS/$t"
+          done
+          find "$ARTIFACTS" -type f
+      - name: Stage the packages
+        env:
+          ARTIFACTS: ${{ runner.temp }}/artifacts
+          OUT: ${{ runner.temp }}/npm
+          VERSION: ${{ needs.check.outputs.version }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/npm-stage.mjs --version "$VERSION" --artifacts "$ARTIFACTS" --out "$OUT" | tee "$RUNNER_TEMP/staged.txt"
+      - name: Publish (trusted publishing, provenance)
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          dist_tag=latest
+          case "$VERSION" in *-*) dist_tag=next ;; esac
+          if [ ! -s "$RUNNER_TEMP/staged.txt" ]; then
+            echo "::error::no staged packages to publish"
+            exit 1
+          fi
+          while read -r dir; do
+            name=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/package.json', 'utf8')).name" "$dir")
+            if out=$(npm view "$name@$VERSION" version 2>&1); then
+              echo "skip $name@$VERSION: already published"
+            elif grep -q E404 <<<"$out"; then
+              npm publish "$dir" --provenance --access public --tag "$dist_tag"
+            else
+              echo "$out" >&2
+              exit 1
+            fi
+          done < "$RUNNER_TEMP/staged.txt"

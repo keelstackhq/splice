@@ -1,78 +1,79 @@
-// Build the npm package directories for a release.
-// usage: node scripts/npm-stage.mjs <version> <artifacts-dir> <out-dir>
-// <artifacts-dir>/<target>/<bin> holds each target's binary (splice or splice.exe).
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+// Stage the npm packages for a release: one per platform plus the launcher (last).
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DEFAULT_REPO = "keelstackhq/splice";
-// Provenance must match the repo that publishes, so CI's GITHUB_REPOSITORY wins.
-const repositoryFor = (env) => ({
-  type: "git",
-  url: `git+https://github.com/${env.GITHUB_REPOSITORY || DEFAULT_REPO}.git`,
-});
-const NO_SCRIPTS = ["preinstall", "install", "postinstall", "prepare"];
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
-const writeJson = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
+const writeJson = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 
-export function stage({ version, artifacts, out, env = process.env }) {
-  const repository = repositoryFor(env);
-  if (!version) throw new Error("version is required");
-  const platforms = JSON.parse(readFileSync(join(root, "npm", "platforms.json"), "utf8"));
-  rmSync(out, { recursive: true, force: true });
-  mkdirSync(out, { recursive: true });
-
-  const docs = (dir) => {
-    for (const f of ["LICENSE", "README.md"]) copyFileSync(join(root, f), join(dir, f));
-  };
+export function stage({ version, artifactsDir, outDir, repository }) {
+  if (!REPO_RE.test(repository ?? "")) {
+    throw new Error(`repository must look like owner/repo, got ${JSON.stringify(repository)}`);
+  }
+  const repo = { type: "git", url: `git+https://github.com/${repository}.git` };
+  const license = join(ROOT, "LICENSE");
+  const launcherSrc = join(ROOT, "npm", "splice");
+  const platforms = JSON.parse(readFileSync(join(launcherSrc, "platforms.json"), "utf8"));
+  const dirs = [];
 
   for (const p of platforms) {
-    const src = join(artifacts, p.target, p.bin);
-    if (!existsSync(src)) throw new Error(`missing binary for ${p.npm} (${p.target}): ${src}`);
-    const dir = join(out, p.npm.split("/")[1]);
+    const src = join(artifactsDir, p.target, p.bin);
+    if (!existsSync(src)) throw new Error(`missing binary for ${p.target}: ${src}`);
+    const dir = join(outDir, p.npm.split("/")[1]);
     mkdirSync(join(dir, "bin"), { recursive: true });
-    const dest = join(dir, "bin", p.bin);
-    copyFileSync(src, dest);
-    if (p.os !== "win32") chmodSync(dest, 0o755);
+    copyFileSync(src, join(dir, "bin", p.bin));
+    if (p.os !== "win32") chmodSync(join(dir, "bin", p.bin), 0o755);
+    copyFileSync(license, join(dir, "LICENSE"));
     writeJson(join(dir, "package.json"), {
       name: p.npm,
       version,
       description: `splice binary for ${p.os}-${p.cpu}`,
       license: "MIT",
-      repository,
+      repository: repo,
       os: [p.os],
       cpu: [p.cpu],
-      preferUnplugged: true,
       files: ["bin"],
-      publishConfig: { access: "public" },
     });
-    docs(dir);
+    dirs.push(dir);
   }
 
-  const launcher = join(out, "splice");
-  const launcherSrc = join(root, "npm", "splice");
-  cpSync(launcherSrc, launcher, {
-    recursive: true,
-    filter: (s) => relative(launcherSrc, s).split(sep)[0] !== "test",
-  });
-  copyFileSync(join(root, "npm", "platforms.json"), join(launcher, "platforms.json"));
-  const pkg = JSON.parse(readFileSync(join(root, "npm", "splice", "package.json"), "utf8"));
+  const dir = join(outDir, "splice");
+  for (const f of ["bin/splice.js", "lib/platform.js", "platforms.json", "README.md"]) {
+    mkdirSync(dirname(join(dir, f)), { recursive: true });
+    copyFileSync(join(launcherSrc, f), join(dir, f));
+  }
+  chmodSync(join(dir, "bin", "splice.js"), 0o755);
+  copyFileSync(license, join(dir, "LICENSE"));
+  const pkg = JSON.parse(readFileSync(join(launcherSrc, "package.json"), "utf8"));
+  delete pkg.scripts;
+  delete pkg.devDependencies;
   pkg.version = version;
-  pkg.repository = repository;
+  pkg.repository = repo;
   pkg.optionalDependencies = Object.fromEntries(platforms.map((p) => [p.npm, version]));
-  for (const k of NO_SCRIPTS) delete pkg.scripts?.[k];
-  writeJson(join(launcher, "package.json"), pkg);
-  docs(launcher);
-  return out;
+  writeJson(join(dir, "package.json"), pkg);
+  dirs.push(dir);
+  return dirs;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const arg = (name) => {
+    const i = process.argv.indexOf(`--${name}`);
+    if (i < 0 || !process.argv[i + 1]) {
+      console.error(`npm-stage: missing --${name}`);
+      process.exit(2);
+    }
+    return process.argv[i + 1];
+  };
   try {
-    const [version, artifacts, out] = process.argv.slice(2);
-    if (!version || !artifacts || !out) throw new Error("usage: npm-stage.mjs <version> <artifacts-dir> <out-dir>");
-    stage({ version, artifacts, out });
-    console.log(`staged ${version} into ${out}`);
+    const dirs = stage({
+      version: arg("version"),
+      artifactsDir: arg("artifacts"),
+      outDir: arg("out"),
+      repository: process.env.GITHUB_REPOSITORY,
+    });
+    console.log(dirs.join("\n"));
   } catch (e) {
     console.error(`npm-stage: ${e.message}`);
     process.exit(1);

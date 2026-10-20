@@ -1,6 +1,6 @@
 mod common;
 
-use common::splice_cmd;
+use common::{flags, splice_cmd, unknown_flags};
 
 #[test]
 fn bad_flag_with_json_is_one_json_object_exit_2() {
@@ -186,17 +186,4 @@ fn readme_channel_flags_exist() {
     );
     // Whole flag words: a prefix of a real flag is not a flag.
     assert_eq!(unknown_flags("use --chan", &help), ["--chan"]);
-}
-
-fn flags(text: &str) -> Vec<&str> {
-    let flag = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
-    flag.find_iter(text).map(|m| m.as_str()).collect()
-}
-
-fn unknown_flags<'a>(section: &'a str, help: &str) -> Vec<&'a str> {
-    let known: std::collections::BTreeSet<&str> = flags(help).into_iter().collect();
-    flags(section)
-        .into_iter()
-        .filter(|f| !known.contains(f))
-        .collect()
 }

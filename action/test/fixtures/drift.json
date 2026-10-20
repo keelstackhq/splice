@@ -1,1 +1,1 @@
-{"ok":false,"command":"update","changes":[],"messages":["`apps/web/tsconfig.json` is owned by the template but was edited locally","nothing was written; revert the files above or pass --force to replace them"]}
+{"ok":false,"command":"update","changes":[],"messages":["`.editorconfig` is owned by the template but was edited locally","nothing was written; revert the files above or pass --force to replace them"]}

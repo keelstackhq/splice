@@ -1,95 +1,70 @@
 # splice
 
 Start a repo from versioned template pieces and keep it up to date. A Copier alternative in one
-static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstackhq):
+static binary: no Python, no Rust toolchain. Part of [keelstackhq](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
-> Status: under construction. See `docs/superpowers/specs/2026-10-14-splice-design.md`.
+> Status: version 0.2.0 (`Cargo.toml`), unreleased until the `v0.2.0` tag is pushed and the npm
+> packages are published; until then the install paths below do not work yet. Design:
+> `docs/superpowers/specs/2026-10-14-splice-design.md`. New here? Start with
+> [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Install
 
-With pnpm (Node 20+) you can run splice without installing it:
+- **npm:** `pnpm dlx @keelstackhq/splice <command>` (or `npx`). The launcher runs the prebuilt
+  binary of your platform; there are no install scripts. `SPLICE_BINARY` runs a specific binary.
+- **Release archives:** download `splice-<target>.tar.gz` (`.zip` on Windows) and `SHA256SUMS` from
+  the GitHub release, check the sum, put `splice` on your `PATH`. Targets: Linux x86_64 and
+  aarch64 (static musl), macOS x86_64 and aarch64, Windows x86_64.
+- **From source:** `cargo install --locked --git https://github.com/keelstackhq/splice keel-splice`
+  (the binary is `splice`).
 
 ```bash
-pnpm dlx @keelstackhq/splice --version
-```
-
-`@keelstackhq/splice` is a small launcher. The binary comes from a per-platform package
-(`@keelstackhq/splice-linux-x64`, `-linux-arm64`, `-darwin-x64`, `-darwin-arm64`, `-win32-x64`).
-There are no install scripts.
-
-Or download a binary from the GitHub release for your target (`splice-<target>.tar.gz`, `.zip` on
-Windows) and check it against `SHA256SUMS`. Targets: `x86_64-unknown-linux-musl`,
-`aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
-`x86_64-pc-windows-msvc`. `git` must be on `PATH`: all fetching goes through it. Template commands (`[[post]]`, migration
-steps) run with POSIX `sh -c` on every OS; on Windows that is Git for Windows' `sh.exe`.
-
-## Quick start
-
-New to splice? Follow [`docs/getting-started.md`](docs/getting-started.md), a step-by-step
-guide for a new repository.
-
-```bash
-splice new gh:keelstackhq/hull//template my-app
+pnpm dlx @keelstackhq/splice new gh:keelstackhq/hull//template my-app
 cd my-app
-splice add preact-app --name web
-splice update        # 3-way merge to the latest template version
-splice check         # exit 1 on drift, conflicts or an available update
+pnpm dlx @keelstackhq/splice add preact-app --name web
+pnpm dlx @keelstackhq/splice update        # 3-way merge to the latest template version
+pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an available update
 ```
-
-Prefix each command with `pnpm dlx @keelstackhq/` if splice is not installed. `update` and `add`
-need a clean git tree: commit first.
-
-## Commands
 
 | Command | What it does |
 |---|---|
-| `splice new <source> [dest]` | Render the template's base piece and any `--piece ID[:NAME]` into `dest`, write `.splice/lock.toml`. `--data K=V` sets a var, `--ref` picks a ref, `--pre` allows pre-releases. |
-| `splice add <piece>` | Add a piece (or another instance of a `multiple` piece, with `--name`) at the lock's template version. Other files merge as on `update`; on a conflict nothing is written. |
-| `splice update` | Move to the latest stable version, or `--to VERSION`; `--all` also updates every channel. Your edits are merged, never lost. |
-| `splice check` | Exit 1 on edited owned files, leftover conflict markers, or a newer version. `--offline` skips the version lookup and makes no git call. It never writes. |
-| `splice diff` | Show what `update` would change (`--to VERSION`). Writes nothing and needs no clean tree. |
-| `splice explain <path>` | Which piece owns a file, its class and the matching glob. With channels it also names the source. |
-| `splice channel add <source>` / `splice channel remove <name>` | Add or remove a channel, a second template kept current beside the main one. See [Channels](#channels). |
+| `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest` |
+| `splice add <piece>` | Add a piece (or another instance of a `multiple` piece); other files merge as on `update`, and a conflict writes nothing |
+| `splice update [--to V]` | Move to a newer template version; your edits are merged, never lost |
+| `splice check` | Fail on edited owned files, leftover conflict markers, or a newer version |
+| `splice diff [--to V]` | Show what `update` would change, as a unified diff; writes nothing |
+| `splice explain <path>` | Which piece owns a file and how splice treats it |
+| `splice channel add <source>` | Apply a second template next to the main one, with its own lock (see Channels) |
+| `splice channel remove <name>` | Remove a channel: delete its unedited files and blocks, then its lock |
 
-Flags on every command: `--json` (stdout is exactly one JSON object, other output goes to
-stderr), `--yes` (no prompts, use defaults) and `-C <dir>` (project root). Without a TTY or with
-`--json` splice never prompts; a missing value is a usage error naming the `--data` flag.
-
-`new`, `add` and `update` also take `--no-post` (skip the template's post commands) and
-`--force`. `update` and `add` take `--allow-dirty`: they refuse a dirty git tree (exit 2) without
-it, and with it git cannot separate your earlier changes from splice's.
-
-`--force` on `update` and `add` only replaces owned files that you edited or deleted. Shared
-files still merge, and seeds are never touched. On `new` it allows a non-empty `dest`:
-owned and shared files are overwritten, seeds kept.
-
-### Exit codes
-
-| Code | Meaning |
-|---|---|
-| 0 | ok; `check` found nothing |
-| 1 | `check`: drift, markers or update available. `update`: conflicts written, or refused because of owned drift. `add`: a conflict or owned drift, nothing written |
-| 2 | usage error: bad flags, missing var value, dirty tree, downgrade, no lock |
-| 3 | template or environment error: bad manifest, `min_splice` too new, render error, git failure, failed migration or post command |
-
-If an update goes wrong after files were written and the tree was clean before it, undo it with
-`git checkout -- . && git clean -fd` in the project directory. The lock is written last, so a failed
-migration step leaves the old lock in place.
+Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts). Exit codes:
+0 ok, 1 drift/conflict/update available, 2 usage error, 3 template error. `add` and `update`
+refuse a dirty git tree (exit 2) unless `--allow-dirty`.
 
 ## How files are treated
 
-The classes and globs are defined in [`docs/template-format.md`](docs/template-format.md).
-
 | Class | On `update` |
 |---|---|
-| `owned` | Replaced. Local edits block the update (exit 1, nothing written) until reverted or `--force`. |
-| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). Conflicts get diff3 markers and exit 1. |
-| `seed` | Written once, then yours. Never modified. |
+| `owned` | Replaced. Local edits block the update (`--force` overrides). |
+| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). Conflicts get diff3 markers. |
+| `seed` | Written once, then yours. |
 
-After a conflict, edit the files between `<<<<<<< ours` and `>>>>>>> template` (the `|||||||
-base` part shows the common ancestor), remove the marker lines, then run `splice check`.
-JSON and YAML lose comments on a real merge; TOML keeps them.
+## Writing templates
+
+A template is a directory with `splice.toml` and pieces. The format (manifests, the Jinja subset,
+ownership classes, merges, migrations) is specified in
+[`docs/template-format.md`](docs/template-format.md). It is shared with
+[hull](https://github.com/keelstackhq/hull), the first template, and is binding for both repos.
+
+## Compared with Copier
+
+Copier is the closest tool: it also renders a template and updates it later. splice is one static
+binary with no Python, so `pnpm dlx` is enough, and it classifies every file (`owned`, `shared`,
+`seed`) so that `update` knows what may be replaced, merged or left alone. Templates use a small
+Jinja subset that any implementation can follow, not Python-specific features. splice does not
+run arbitrary template code; it runs only the `post` commands and migration steps a template
+declares. It does not read Copier templates.
 
 ## Channels
 
@@ -134,61 +109,51 @@ splice channel remove rig              # delete unedited files, strip its blocks
 
 ```yaml
 # .github/workflows/splice.yml
-name: splice-update
 on:
-  schedule: [{ cron: "17 6 * * 1" }]   # weekly, Monday
+  schedule: [{ cron: "17 6 * * 1" }]
   workflow_dispatch:
-permissions:
-  contents: write
-  pull-requests: write
+permissions: { contents: write, pull-requests: write }
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `@v1` exists after the first release (tagged by a human; see docs/PROGRESS.md Blocked).
       - uses: keelstackhq/splice/action@v1
         with:
-          token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}
+          token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI
 ```
 
-It opens or refreshes one pull request from branch `splice/update` with a summary of the
-changes, prefixes the title with `[conflicts]` when there are conflict markers, and closes the
-PR when the repo is already current. Owned drift and template errors fail the job. The `scope`
-input (`main` or `all`) chooses whether channels are updated too; the default follows
-`.splice/channels/`.
+It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
 
-Pass a GitHub App token or a fine-grained token as `SPLICE_BOT_TOKEN`. Without that secret the
-example falls back to `GITHUB_TOKEN`, which cannot push changes to `.github/workflows/*`, and
-PRs it opens do not trigger CI. Inputs, outputs and
-details: [`action/README.md`](action/README.md).
+Inputs: `version` (`latest`, `next`, a semver, or `none` to use the `splice` on `PATH`), `to`
+(template version, default latest), `scope` (`main` or `all`; default `all` when
+`.splice/channels/` holds a `*.toml`, else `main`; `all` runs `splice update --all` and groups the PR
+body by source; `to` needs `scope: main`), `token` (default `github.token`), `branch` (default
+`splice/update`), `labels` (default `splice`), `working-directory` (default `.`). Outputs:
+`result` and `pr-url`. `result` is one of:
 
-### Renovate instead
+| `result` | Meaning | Bot does |
+|---|---|---|
+| `updated` | clean update | commits to the branch, opens or edits the PR |
+| `conflicts` | merge conflicts | same, PR title starts with `[conflicts]` |
+| `current` | nothing to do | closes an open bot PR |
+| `drift` | owned files edited locally | fails with splice's messages, pushes nothing |
 
-A Renovate `customManagers` regex entry on `.splice/lock.toml` (`version = "..."`, datasource
-`github-tags`) plus a `postUpgradeTasks` entry running `splice update --to {{newVersion}} --yes`
-works. `postUpgradeTasks` only run on self-hosted Renovate with `allowedCommands` set. Without
-them Renovate would only change the version string, which breaks the lock. So the Action is
-the default.
+Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
+App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials, and it also authenticates the template fetches of `splice update` (private templates). Run the bot right after checkout: untracked files left by earlier steps count as an update and get committed. The job needs
+`contents: write` and `pull-requests: write`.
 
-## Writing templates
+### Renovate instead of the Action
 
-The template format (layout, manifests, the rendering subset, ownership globs, the lock, version
-migrations, JSON shape) is in [`docs/template-format.md`](docs/template-format.md). Template
-rendering is a small frozen subset, so old template versions keep rendering the same.
-
-## Agents
-
-`skills/splice/SKILL.md` is a Claude Code skill: always `--json`, `explain` before editing a
-generated file, resolve conflicts by editing marker blocks, never edit the lock.
-
-## Compared with Copier
-
-Copier is mature but needs Python, and it replays old template versions under the new Copier,
-which breaks when the template language moves. splice is one static binary, renders a frozen
-subset, and a template pins its minimum splice with `min_splice`. It does the same 3-way update,
-and adds structured merges for JSON, YAML and TOML. It has no hooks beyond the template's post
-commands and migration steps.
+Renovate can do the same job with a `customManagers` regex entry on `.splice/lock.toml`
+(`version = "..."`, datasource `github-tags`) plus a `postUpgradeTasks` entry that runs
+`splice update --to {{newVersion}} --yes`. `postUpgradeTasks` only run on self-hosted Renovate
+with `allowedCommands` set. Without them Renovate only bumps the version string, which breaks the
+lock. That is why the Action is the default. This setup is documented, not shipped.
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [`LICENSE`](LICENSE).

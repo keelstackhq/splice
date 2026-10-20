@@ -1,77 +1,69 @@
 ---
 name: splice
-description: Use when a repo has .splice/lock.toml or the user asks to create, update or check a project from a keelstack template (splice new, add, update, check, diff, explain). Covers JSON output, exit codes, file ownership and resolving update conflicts.
+description: Use when a repo has .splice/lock.toml or files in .splice/channels/, or the user asks to create, update or check a project from a keelstackhq template (splice new, add, update, check, diff, explain, channel add or remove), or to resolve splice merge conflicts.
 ---
 
 # splice
 
-splice builds a repo from versioned template pieces and keeps it current with 3-way merges.
-Run it as `splice`, or `pnpm dlx @keelstackhq/splice` if it is not installed.
+splice renders versioned template pieces into a repo and keeps them current with a 3-way merge.
+The state lives in `.splice/lock.toml` (main template) and `.splice/channels/NAME.toml`
+(channels). Run it as `splice`, or `pnpm dlx @keelstackhq/splice` when it is not installed.
 
-## Rules
+## Always
 
-- Always pass `--json`. Stdout is then exactly one object:
-  `{ok, command, changes: [{path, action, class}], messages}`. Post-command and git output go to stderr.
-- Read `changes` and `messages`, not the human text. Pass `--yes` and `--data K=V` so nothing prompts.
-- Never edit `.splice/lock.toml` by hand.
-- Never pass `--allow-dirty` or `--force` unless the user asked for it.
-
-## Exit codes
+- Pass `--json`. Stdout is exactly one object `{ok, command, changes, messages}`. Each change
+  is `{path, action, class}`. The last message of a failure says what went wrong and how to fix it.
+- Read the exit code, not just the text:
 
 | Code | Meaning |
 |---|---|
-| 0 | ok; `check` found nothing |
-| 1 | `check`: owned drift, conflict markers or an update is available. `update`: conflicts were written, or refused because of owned drift. `add`: a conflict or owned drift, nothing written |
-| 2 | usage: bad flags, missing `--data` value, dirty git tree, downgrade, no lock; `new` into a non-empty `dest` or one that already has a lock; `add` with an unmet `requires` or a duplicate instance name |
-| 3 | template or environment error: bad manifest, `min_splice` too new, render error, git failure, failed migration or post command |
+| 0 | ok, nothing to do |
+| 1 | drift, conflicts written, or an update is available |
+| 2 | usage: bad flag, dirty tree, missing value, unmet `requires` |
+| 3 | template or environment error (also a failed step after files were written) |
 
 ## Before editing a generated file
 
-Run `splice explain <path> --json`. The class is in `changes[0].class`.
+Run `splice explain <path> --json` and read the `class` and `source` messages.
 
-- `owned`: the template owns it. Change the template instead. A local edit makes `update` refuse
-  (exit 1) until you revert it or the user accepts `--force`.
-- `shared`: edit freely. `update` merges your change with the template's.
-- `seed`: written once, yours. `update` never touches it.
-- `unmanaged` in `messages`: not a splice file.
+- `owned`: the template replaces it on every update. Change the template, or accept that the
+  next `splice update` refuses the drift (exit 1) until you pass `--force`.
+- `shared`: merged by key or by line. Edit freely.
+- `seed`: written once. It is yours.
+- `unmanaged`: not from splice.
 
 ## Commands
 
-- `splice check --json --offline`: drift and markers, no network. Without `--offline` it also
-  looks for a newer template tag.
-- `splice diff --json`: what `update` would change. Never writes, needs no clean tree.
-- `splice update --json --yes [--to VERSION]`: needs a clean git tree (else exit 2).
-- `splice add <piece> --json --yes [--name N]`: same tree rule as `update`; conflicts write nothing.
-- `splice new <source> [dest] --json --yes [--piece ID[:NAME]] [--data K=V]`
+- `splice new <source> [dest] --piece ID[:NAME] --data K=V --yes --json`
+- `splice add <piece> --name NAME --json`
+- `splice diff --json` shows what `update` would do and writes nothing. Run it first.
+- `splice update --json`, optionally `--to VERSION`.
+- `splice check --json --offline` is the cheap, network-free verification.
 
-Dirty tree: ask the user to commit or stash, then run it again.
+## Rules
+
+- Never edit `.splice/lock.toml` or `.splice/channels/*.toml`. Never hand-fix a version in them.
+- A dirty git tree is refused (exit 2). Commit or stash first. Do not pass `--allow-dirty`
+  unless the user asked for it.
+- After a failed `add` or `update` (exit 3), follow the restore command in the last message
+  (a `git checkout` and `git clean`). Do not retry on top of a half-written tree.
+- Do not pass `--force` unless the user accepts losing their edits to owned files.
+- Do not pass `--no-post` to hide a failing post command; fix the command.
+
+## Resolving conflicts
+
+1. `splice update --json` exits 1 and lists `conflict` changes. Open each file.
+2. Edit every `<<<<<<<` / `|||||||` / `=======` / `>>>>>>>` block. Keep the intent of both
+   sides: the template's change and the local edit. Delete all markers.
+3. Run `splice check --json --offline`. It exits 0 only when no markers or owned drift remain.
+4. Run the repo's own checks, then commit.
 
 ## Channels
 
-- Channels exist when `.splice/channels/` has files. Each is a second template with its own lock.
-- `splice explain <path> --json` names the source in `messages`: `source=main` or
-  `source=channel:NAME` (and `section=NAME` for a block inside a file).
-- Never edit inside `<!-- splice:NAME:begin ... -->` blocks. Change the channel source instead;
-  `update` refuses an edited block unless the user accepts `--force`.
-- `splice check --json` covers the main lock and every channel. `splice update --all --json --yes`
-  updates all of them; `--channel NAME` limits `update`, `check`, `diff` and `add` to one.
-
-## Conflicts (`update` exit 1)
-
-1. List files in `changes` with `action` `conflict`.
-2. In each, find the blocks `<<<<<<< ours`, `||||||| base`, `=======`, `>>>>>>> template`.
-   Keep the intent of both sides, then delete all marker lines.
-3. Run `splice check --json --offline`. Done at exit 0. Any marker line left gives exit 1.
-4. Post commands are skipped on conflict. Run the template's `[[post]]` commands by hand.
-
-`add` never writes markers: on a conflict it lists the paths and writes nothing. Fix the local
-edit (or the template), then run it again.
-
-Owned drift refusal (exit 1, nothing written): `update` lists the files in `messages`, `add`
-as `changes`. Revert them, or move the change into the template, then run it again.
-
-## After a failed update
-
-Nothing is lost if the tree was clean before the run. Only then, and only if the user wants to
-undo it: `cd <project dir> && git checkout -- . && git clean -fd`. If the tree was dirty
-(`--allow-dirty`), git cannot tell the earlier changes apart, so do not run it.
+- Channels exist when `.splice/channels/` has files. A channel-only repo has no main lock.
+- `splice explain <path> --json` names the owner: `source=main` or `source=channel:NAME`.
+- Never edit inside a `<!-- splice:NAME:begin ... -->` block; change the channel source instead.
+- `splice check --json` covers the main lock and every channel; `splice update --all` updates all.
+- `splice update --channel NAME` and `splice diff --channel NAME` work on one channel.
+- `splice channel add <source> --piece ID --track main` and `splice channel remove NAME` change
+  the set of channels. Ask before running either.

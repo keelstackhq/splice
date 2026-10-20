@@ -280,8 +280,8 @@ jobs:
 It opens or refreshes one pull request from the branch `splice/update` (title prefixed
 `[conflicts]` when markers were written), and closes it when you are current. Owned drift and
 template errors fail the job. If the repo has channels, the bot updates them too (the `scope`
-input, default `all` when `.splice/channels/` has a lock). Inputs and outputs are in
-[`action/README.md`](../action/README.md).
+input, default `all` when `.splice/channels/` holds a `*.toml`). Inputs and outputs are in
+[the README](../README.md#update-bot).
 
 **Why a token.** The default `GITHUB_TOKEN` cannot push changes under `.github/workflows/`, and
 templates ship workflow files. Pull requests it opens also do not trigger your CI workflows, so
