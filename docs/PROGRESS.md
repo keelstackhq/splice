@@ -50,6 +50,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-18 · 04/final · 0b68121 · final-review fix wave: section rerun after a failed step/post/lock write converges (no false drift), fragments refuse any channel's marker line, `--all` checks every source's targets before the first write, explain `source=` only with channel locks, `add --channel` refusal names `channel NAME`, Task 11/18 deferred minors; `cargo test` 465 passing, fmt and clippy -D warnings clean
 - 2026-10-20 · 03/T1 · see git log · single-job CI with `ci-ok` (ubuntu only for now), pinned actions, node tests, no-TLS-crate check, actionlint 1.7.7 sha256-pinned; actionlint clean locally (shellcheck not installed locally); fmt/clippy clean, nextest 465 passed (~64 s cold local; CI wall time unmeasured until the first PR run)
 - 2026-10-20 · 03/T2 · see git log · release workflow (5 targets, static check, smoke test, SHA256SUMS, tag-filtered), `scripts/check-version.mjs`, `npm/platforms.json`, `[profile.release]`; node tests 6 passing, actionlint clean, smoke steps run locally with the debug binary; dry run Blocked; npm job references `scripts/npm-stage.mjs` (Task 3); LICENSE and README packaging needs LICENSE (Task 5)
+- 2026-10-20 · 03/T3 · see git log · npm launcher (`@keelstackhq/splice`, platform lookup from `platforms.json`, exit/signal passthrough), `scripts/npm-stage.mjs`, package versions 0.2.0 (04/T21 npm part); node tests 23 passing; staged locally and ran the launcher: `splice 0.2.0`; release npm job already matches the script CLI; LICENSE copied only once Task 5 adds it
 
 ## Blocked
 
@@ -61,7 +62,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
 - SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
-- **Plan 03:** not executed. Task 19's SKILL.md part, Task 20 (bot channel scope), Task 21's npm part (`npm/**/package.json` to 0.2.0 plus node tests), C2's dogfood step and C3 wait for it.
+- **Plan 03:** executed through Task 3; Tasks 4+ pending. Task 19's SKILL.md part, Task 20 (bot channel scope), C2's dogfood step and C3 wait for it.
 - **Release 0.2.0 (npm):** the release workflow exists (03/T2). Run its `workflow_dispatch` dry run once on keelstackhq/splice (plan 03 Task 2 Step 4) and check all five targets build and smoke-test. Then: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
 - **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
