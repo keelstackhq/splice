@@ -1,0 +1,89 @@
+name: splice update bot
+description: Run `splice update` and open or refresh one pull request with the result.
+inputs:
+  version:
+    description: "splice npm version to install (`latest`, `0.1.0`, ...). `local` skips the install and uses the `splice` already on PATH (self-test only)."
+    default: latest
+  to:
+    description: Template version to update to (empty = latest).
+    default: ""
+  token:
+    description: Token used for the git push (not the checkout credential) and the gh CLI. The default GITHUB_TOKEN cannot push changes to .github/workflows/* and PRs it opens do not trigger CI; pass a GitHub App or fine-grained PAT (contents, pull-requests, workflows write).
+    default: ${{ github.token }}
+  branch:
+    description: Branch that carries the update.
+    default: splice/update
+  labels:
+    description: Comma-separated labels for the PR.
+    default: splice
+  working-directory:
+    description: Directory of the splice project, relative to the workspace.
+    default: "."
+outputs:
+  result:
+    description: updated, conflicts or current.
+    value: ${{ steps.publish.outputs.result }}
+  pr-url:
+    description: URL of the opened or refreshed PR (empty when none).
+    value: ${{ steps.publish.outputs.pr-url }}
+runs:
+  using: composite
+  steps:
+    - name: Install splice
+      shell: bash
+      env:
+        SPLICE_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ "$SPLICE_VERSION" = local ]; then
+          command -v splice >/dev/null || { echo "version=local needs splice on PATH" >&2; exit 1; }
+          exit 0
+        fi
+        prefix="$RUNNER_TEMP/splice-npm"
+        npm install -g --prefix "$prefix" "@keelstackhq/splice@${SPLICE_VERSION}"
+        # Unix puts npm bins in $prefix/bin, Windows in $prefix itself.
+        echo "$prefix/bin" >> "$GITHUB_PATH"
+        echo "$prefix" >> "$GITHUB_PATH"
+
+    - name: Run splice update
+      id: update
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        TEMPLATE_VERSION: ${{ inputs.to }}
+      run: |
+        set -uo pipefail
+        git config user.name splice-bot
+        git config user.email splice-bot@users.noreply.github.com
+        args=(update --json --yes)
+        if [ -n "$TEMPLATE_VERSION" ]; then args+=(--to "$TEMPLATE_VERSION"); fi
+        # stdout is exactly one JSON object; splice's own logs stay on stderr.
+        splice "${args[@]}" > "$RUNNER_TEMP/splice-report.json"
+        echo "code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Summarize
+      id: summary
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SPLICE_CODE: ${{ steps.update.outputs.code }}
+      run: |
+        set -euo pipefail
+        # The lock is read after the update, so it names the version just applied.
+        version=$(awk '/^\[template\]/{t=1;next} /^\[/{t=0} t && $1=="version"{gsub(/"/,"",$3); print $3; exit}' .splice/lock.toml || true)
+        node "$GITHUB_ACTION_PATH/summary.mjs" "$RUNNER_TEMP/splice-report.json" "$SPLICE_CODE" "${version:-unknown}"
+
+    - name: Open, refresh or close the pull request
+      id: publish
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.token || github.token }}
+        GH_REPO: ${{ github.repository }}
+        GITHUB_SERVER_URL: ${{ github.server_url }}
+        BRANCH: ${{ inputs.branch }}
+        LABELS: ${{ inputs.labels }}
+        RESULT: ${{ steps.summary.outputs.result }}
+        TITLE: ${{ steps.summary.outputs.title }}
+        BODY: ${{ steps.summary.outputs.body }}
+      run: bash "$GITHUB_ACTION_PATH/publish.sh"

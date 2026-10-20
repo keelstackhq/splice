@@ -162,7 +162,7 @@ test("stage writes no install scripts", () => { /* every staged package.json has
   - Outputs: `result` (`updated|conflicts|current`), `pr-url`.
   - `summary.mjs`: `export function summarize(report, exitCode) -> {title, body, result}` — title `chore: splice update to <version>` (version read from the lock after update, passed in), prefixed `[conflicts] ` when exit 1; body = table of `changes` grouped by action + messages + "how to resolve" line pointing to `splice check`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```js
 test("conflict title and body", () => {
@@ -174,14 +174,14 @@ test("no changes is current", () => { assert.equal(summarize({ok:true,command:"u
 test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("error.json"), 3), /template needs splice/); });
 ```
 
-- [ ] **Step 2: Run — FAIL**
-- [ ] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstackhq/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
+- [x] **Step 2: Run — FAIL**
+- [x] **Step 3: Implement `action.yml`** (`runs.using: composite`, every step `shell: bash`): set git identity `splice-bot`; `npm i -g @keelstackhq/splice@${{ inputs.version }}`; run update capturing JSON and exit code (`set +e`); `node summary.mjs`; then by `result`:
   - `current`: `gh pr list --head <branch> --state open --json number` → if found, `gh pr close --comment "Already up to date." --delete-branch`.
   - `updated`/`conflicts`: `git switch -C <branch>`, `git add -A`, commit with the title, `git push --force-with-lease origin <branch>`, then `gh pr edit` the open PR (title/body) or `gh pr create --base <default branch> --head <branch> --label …`.
   - exit 3: print messages, `exit 1`.
   `GH_TOKEN: ${{ inputs.token }}`. Document in the action's README section: `permissions: contents: write, pull-requests: write`; PRs from `GITHUB_TOKEN` do not trigger `pull_request` workflows, so pass an App/fine-grained token for CI on the PR.
-- [ ] **Step 4: Run tests — PASS; actionlint on `action/action.yml` via a throwaway workflow that uses `./action` (`.github/workflows/action-selftest.yml`, `workflow_dispatch` only, runs the action against a temp repo created from the fixture with `--allow-dirty`-free flow) — selftest run on GitHub is Blocked until the repo exists**
-- [ ] **Step 5: Commit** — `feat: update-bot composite action`
+- [x] **Step 4: Run tests — PASS; actionlint on `action/action.yml` via a throwaway workflow that uses `./action` (`.github/workflows/action-selftest.yml`, `workflow_dispatch` only, runs the action against a temp repo created from the fixture with `--allow-dirty`-free flow) — selftest run on GitHub is Blocked until the repo exists**
+- [x] **Step 5: Commit** — `feat: update-bot composite action`
 
 ---
 

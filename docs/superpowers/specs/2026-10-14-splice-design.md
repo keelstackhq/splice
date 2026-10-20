@@ -523,11 +523,14 @@ into the contract at its next `format` bump.
 
 Composite action `action/action.yml` (`uses: keelstackhq/splice/action@v1`). Inputs: `version`
 (splice npm version, default `latest`), `to` (template version, default latest), `token`
-(default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`).
-Steps: install via `npm i -g @keelstackhq/splice@<version>`, run `splice update --json --yes`,
-and if anything changed commit to `branch`, `git push --force-with-lease`, then open or edit the
-single PR with the `gh` CLI (body = summary table from the JSON; title gets `[conflicts]` on
-exit 1). If the repo is already current and a bot PR is open, close it.
+(default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
+`working-directory` (default `.`). Steps: install via `npm i -g @keelstackhq/splice@<version>`
+(`version: local` uses the `splice` on PATH, self-test only), run `splice update --json --yes`,
+and if anything changed commit to `branch`, `git push --force-with-lease` (authenticated with the
+`token` input through a one-command `http.<server>/.extraheader`, never written to `.git/config`),
+then open or edit the single same-repo PR with the `gh` CLI (body = summary table from the JSON;
+title gets `[conflicts]` on exit 1). If the repo is already current and a bot PR is open, close
+it. Owned drift (exit 1, no conflicts) and exit 2/3 fail the job with splice's messages; no PR.
 
 `gh` over `peter-evans/create-pull-request`: `gh` is preinstalled on GitHub runners, adds no
 third-party action to pin and audit, and finding/editing one PR by head branch is two commands.
