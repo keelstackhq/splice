@@ -556,7 +556,7 @@ Steps: install via `npm i -g @keelstackhq/splice@<version>` (unless `none`), run
 | 2, 3 | — | — | fail with splice's messages |
 
 The push fetches the remote bot branch first, then `git push --force-with-lease`; it
-always authenticates with `token` (`gh auth setup-git`; the push resets `http.https://github.com/.extraheader`, so credentials left by checkout are ignored). The PR body
+always authenticates with `token` (`gh auth setup-git`; the push resets `http.https://github.com/.extraheader`, so credentials left by checkout are ignored). `token` is also passed as `GH_TOKEN` to the update step, so it authenticates the template fetches of `splice update` (private `gh:` templates) too. The PR body
 is a summary table from the JSON. For `scope: all` it has one table per source under a heading
 (`main`, then each channel): rows carry no source, so a `HOST#NAME` section row belongs to channel
 `NAME` and any other path to the source whose lock (current or at `HEAD`) lists it, else `main`.

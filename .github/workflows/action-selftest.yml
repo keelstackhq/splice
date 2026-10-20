@@ -39,7 +39,7 @@ jobs:
           # Minimal stateful gh: `pr create` makes the pull request exist; calls are logged.
           echo "$1 $2" >> "$GH_STUB_DIR/calls.log"
           case "$1 $2" in
-            "auth setup-git") ;;
+            "auth setup-git") [ -n "${GH_TOKEN:-}" ] || { echo "gh stub: GH_TOKEN is not set" >&2; exit 1; } ;;
             "pr list") [ -e "$GH_STUB_DIR/pr-exists" ] && echo 1 || true ;;
             "pr create") touch "$GH_STUB_DIR/pr-exists"; echo "https://example.invalid/pull/1" ;;
             "pr edit") echo "https://example.invalid/pull/1" ;;

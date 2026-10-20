@@ -142,7 +142,7 @@ body by source; `to` needs `scope: main`), `token` (default `github.token`), `br
 | `drift` | owned files edited locally | fails with splice's messages, pushes nothing |
 
 Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
-App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials. The job needs
+App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials, and it also authenticates the template fetches of `splice update` (private templates). Run the bot right after checkout: untracked files left by earlier steps count as an update and get committed. The job needs
 `contents: write` and `pull-requests: write`.
 
 ### Renovate instead of the Action

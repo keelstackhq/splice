@@ -40,6 +40,8 @@ jobs:
         run: node --test "npm/**/*.test.mjs" "action/**/*.test.mjs" "scripts/**/*.test.mjs"
       - name: No OpenSSL or TLS crates
         run: "! cargo tree -e normal --target all --locked | grep -E 'openssl|rustls|native-tls'"
+      - name: shellcheck
+        run: shellcheck scripts/smoke.sh
       - name: actionlint
         env:
           ACTIONLINT_VERSION: 1.7.7

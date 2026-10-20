@@ -59,14 +59,15 @@ runs:
         TO: ${{ inputs.to }}
         SCOPE: ${{ inputs.scope }}
         WORKDIR: ${{ inputs.working-directory }}
-        TOKEN: ${{ inputs.token }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
         cd "$WORKDIR"
         git config user.name "github-actions[bot]"
         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        # Pushes use `token`, not the credentials checkout may have left behind.
-        GH_TOKEN="$TOKEN" gh auth setup-git
+        # GH_TOKEN (step env) authenticates gh, the git credential helper, splice's template
+        # fetches and the push, not the credentials checkout may have left behind.
+        gh auth setup-git
         mapfile -t args < <(node "$GITHUB_ACTION_PATH/args.mjs" command)
         report="$RUNNER_TEMP/splice-report.json"
         set +e
