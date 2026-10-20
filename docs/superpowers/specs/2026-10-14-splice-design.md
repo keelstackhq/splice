@@ -511,29 +511,61 @@ into the contract at its next `format` bump.
 - Release targets: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` (static),
   `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`. No TLS or network
   crates at all (git does the fetching), so no OpenSSL anywhere.
-- GitHub release per tag `v<semver>`: archives `splice-<target>.tar.gz` (`.zip` for Windows) and
-  `SHA256SUMS`.
+- GitHub release per tag `v<semver>` (workflow filter `v[0-9]+.[0-9]+.[0-9]+*`, so the Action's
+  major tag `v1` never releases): archives `splice-<target>.tar.gz` (`.zip` for Windows), each
+  with `splice[.exe]`, `LICENSE` and `README.md`, and `SHA256SUMS`. The tag, `Cargo.toml` and
+  `npm/splice/package.json` (version and every platform pin) must agree, or the release stops
+  before building. A version with `-` is a GitHub prerelease.
+- Builds run in unprivileged jobs; only the release job (`contents: write`) and the npm job
+  (`id-token: write`, environment `release`) hold privileges, and neither builds.
 - npm: `@keelstackhq/splice` = a tiny JS launcher (`bin/splice.js`) with the five platform
   packages as exact-version `optionalDependencies`; each platform package declares `os`/`cpu`
-  and ships the binary in `bin/`. No install scripts (pnpm 10 blocks them by default); the
-  launcher resolves `@keelstackhq/splice-<platform>-<arch>/package.json`, spawns the binary with
-  inherited stdio and forwards the exit code. Not cargo-dist's npm installer.
+  and ships the binary in `bin/`. No install scripts (pnpm blocks them by default). Not
+  cargo-dist's npm installer. Every package carries `repository` (the GitHub repo) and
+  `license`. Published with npm trusted publishing (OIDC) and provenance, no npm token; a
+  version with `-` publishes under the dist-tag `next`, else `latest`; an already published
+  version is skipped.
+- Launcher: resolves `@keelstackhq/splice-<platform>-<arch>/package.json` (or uses
+  `SPLICE_BINARY` when set), spawns the binary without a shell with inherited stdio, and forwards
+  the exit code unchanged. A signal death is re-raised on the launcher. No prebuilt binary for the
+  platform, or a binary that cannot start, is **exit 3** (environment error): the message names
+  the `<platform>-<arch>` pair, the supported pairs, the release page and
+  `cargo install --locked --git https://github.com/keelstackhq/splice keel-splice`.
 
 ## 13. Update bot
 
 Composite action `action/action.yml` (`uses: keelstackhq/splice/action@v1`). Inputs: `version`
-(splice npm version, default `latest`), `to` (template version, default latest), `token`
-(default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`).
-Steps: install via `npm i -g @keelstackhq/splice@<version>`, run `splice update --json --yes`,
-and if anything changed commit to `branch`, `git push --force-with-lease`, then open or edit the
-single PR with the `gh` CLI (body = summary table from the JSON; title gets `[conflicts]` on
-exit 1). If the repo is already current and a bot PR is open, close it.
+(splice npm version: `latest` (default), `next`, a semver, or `none` = use the `splice` already on
+`PATH`), `to` (template version, default latest), `scope` (`main` | `all`; default `all` when
+`.splice/channels/` holds a `*.toml`, else `main`), `token` (default `github.token`), `branch`
+(default `splice/update`), `labels` (default `splice`), `working-directory` (default `.`).
+Outputs: `result` and `pr-url`. Inputs reach the scripts only through environment variables and
+are validated (`version`, `to` as semver, `branch` with `git check-ref-format`); `to` with
+`scope: all` is an input error (`--all` excludes `--to`, §3).
+
+Steps: install via `npm i -g @keelstackhq/splice@<version>` (unless `none`), run
+`splice update --json --yes` (`scope: all`: `splice update --all --json --yes`), then decide the
+`result` from the exit code and `git status`:
+
+| Exit | Tree | `result` | Bot does |
+|---|---|---|---|
+| 0 | clean | `current` | close an open bot PR with a comment and delete its branch |
+| 0 | changed | `updated` | commit to `branch`, push, open or edit the single PR |
+| 1 | changed | `conflicts` | same, title prefixed `[conflicts]`, body lists the conflicted paths |
+| 1 | clean | `drift` | fail with splice's messages (owned or section drift); no push |
+| 2, 3 | — | — | fail with splice's messages |
+
+The push fetches the remote bot branch first, then `git push --force-with-lease`; it
+authenticates with `token` (`gh auth setup-git`), not with checkout's credentials. The PR body
+is a summary table from the JSON, grouped by source (`main`, each channel) for `scope: all`.
+Labels are added after the PR exists; a label failure is a warning.
 
 `gh` over `peter-evans/create-pull-request`: `gh` is preinstalled on GitHub runners, adds no
 third-party action to pin and audit, and finding/editing one PR by head branch is two commands.
 
-Docs note: PRs opened with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
-App or fine-grained token as `token` to get CI on the bot PR.
+Docs note: PRs and pushes made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a
+GitHub App or fine-grained token as `token` to get CI on the bot PR, and check out with
+`persist-credentials: false`.
 
 Renovate alternative (documented, not shipped): a `customManagers` regex entry on
 `.splice/lock.toml` (`version = "…"`, datasource `github-tags`) plus `postUpgradeTasks`
@@ -544,10 +576,12 @@ which breaks the lock, so the Action is the default.
 ## 14. Agent use
 
 `--json` everywhere, terse human output, `splice explain <path>` as cheap context. The repo ships
-`skills/splice/SKILL.md` (Claude Code skill): always pass `--json`, read `changes`, resolve
-conflicts by editing marker blocks then `splice check --json`, never hand-edit
-`.splice/lock.toml`, use `explain` before editing a generated file (owned → change the template
-instead).
+`skills/splice/SKILL.md` (Claude Code skill), triggered by `.splice/lock.toml` or files in
+`.splice/channels/` (channel-only repos have no main lock): always pass `--json`, read
+`changes`, resolve conflicts by editing marker blocks then `splice check --json`, never hand-edit
+`.splice/lock.toml` or a channel lock, use `explain` before editing a generated file (owned →
+change the template instead; `source=channel:NAME` → change that channel), never edit inside a
+channel's section block.
 
 ## 15. Milestones
 
