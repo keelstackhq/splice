@@ -29,9 +29,9 @@ export function binaryPath({
     }
   }
   const supported = PLATFORMS.map((p) => `${p.os}-${p.cpu}`).join(", ");
-  const name = pkg ? pkg.npm : "none for this platform";
+  const detail = pkg ? `package ${pkg.npm} is not installed` : "no package for this platform";
   throw new LauncherError(
-    `splice: no prebuilt binary for ${platform}-${arch} (package ${name} is not installed); ` +
+    `splice: no prebuilt binary for ${platform}-${arch} (${detail}); ` +
       `supported: ${supported}; download a release from https://github.com/keelstackhq/splice/releases ` +
       "or run `cargo install --locked --git https://github.com/keelstackhq/splice keel-splice`",
   );

@@ -42,6 +42,20 @@ test("unsupported platform message", () => {
   );
 });
 
+test("unsupported pair names no package, known pair names its package", () => {
+  const nf = () => {
+    throw new Error("nf");
+  };
+  assert.throws(
+    () => binaryPath({ resolve: nf, platform: "freebsd", arch: "x64", env: {} }),
+    (e) => e.message.includes("(no package for this platform)") && !e.message.includes("none for"),
+  );
+  assert.throws(
+    () => binaryPath({ resolve: nf, platform: "linux", arch: "x64", env: {} }),
+    (e) => e.message.includes("(package @keelstackhq/splice-linux-x64 is not installed)"),
+  );
+});
+
 test("SPLICE_BINARY override", () => {
   assert.equal(binaryPath({ env: { SPLICE_BINARY: "/x/splice" } }), "/x/splice");
 });

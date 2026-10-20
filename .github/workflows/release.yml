@@ -150,6 +150,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    defaults:
+      run:
+        shell: bash
     steps:
       # The checkout is only for scripts/ and npm/; no cargo runs in this job.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -202,11 +205,18 @@ jobs:
         run: |
           dist_tag=latest
           case "$VERSION" in *-*) dist_tag=next ;; esac
+          if [ ! -s "$RUNNER_TEMP/staged.txt" ]; then
+            echo "::error::no staged packages to publish"
+            exit 1
+          fi
           while read -r dir; do
             name=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1] + '/package.json', 'utf8')).name" "$dir")
-            if npm view "$name@$VERSION" version > /dev/null 2>&1; then
+            if out=$(npm view "$name@$VERSION" version 2>&1); then
               echo "skip $name@$VERSION: already published"
-            else
+            elif grep -q E404 <<<"$out"; then
               npm publish "$dir" --provenance --access public --tag "$dist_tag"
+            else
+              echo "$out" >&2
+              exit 1
             fi
           done < "$RUNNER_TEMP/staged.txt"

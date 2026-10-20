@@ -48,7 +48,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-18 · 04/T20 · Blocked · update-bot `scope` input: after plan 03 (see Blocked)
 - 2026-10-18 · 04/T21 · splice 0.2.0 (Cargo.toml, Cargo.lock) · `cargo fmt --check` and `clippy --all-targets --locked -D warnings` clean; `cargo nextest run`: 461 tests run, 461 passed, 0 skipped; no `.snap.new` (snapshots redact the version); node tests: n/a (plan 03 not landed); npm package versions: after plan 03
 - 2026-10-18 · 04/final · 0b68121 · final-review fix wave: section rerun after a failed step/post/lock write converges (no false drift), fragments refuse any channel's marker line, `--all` checks every source's targets before the first write, explain `source=` only with channel locks, `add --channel` refusal names `channel NAME`, Task 11/18 deferred minors; `cargo test` 465 passing, fmt and clippy -D warnings clean
-- 2026-10-20 · 04/T21 npm part · npm launcher at 0.2.0 · node tests run: 26 passed (launcher, npm-stage, check-version); installed launcher + linux-x64 package prints `splice 0.2.0`; release.yml `npm` job added, actionlint clean
+- 2026-10-20 · 04/T21 npm part · af72999 · npm launcher at 0.2.0 · node tests run: 26 passed (launcher, npm-stage, check-version); installed launcher + linux-x64 package prints `splice 0.2.0`; release.yml `npm` job added, actionlint clean
 
 ## Blocked
 
