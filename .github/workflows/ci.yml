@@ -1,19 +1,53 @@
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
   merge_group:
+  push:
+    branches: [main]
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions: {}
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: nextest,actionlint@1.7.7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo nextest run --locked
+      - name: Check the Windows target compiles
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo check --locked --all-targets --target x86_64-pc-windows-msvc
+      - name: Node tests
+        run: node --test "npm/**/*.test.mjs" "action/**/*.test.mjs" "scripts/**/*.test.mjs"
+      - name: No OpenSSL or TLS crates
+        run: "! cargo tree -e normal --target all --locked | grep -E 'openssl|rustls|native-tls'"
+      - run: actionlint
+  ci-ok:
+    needs: [ci]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Require ci to succeed
+        env:
+          RESULT: ${{ needs.ci.result }}
+        run: '[ "$RESULT" = success ]'
