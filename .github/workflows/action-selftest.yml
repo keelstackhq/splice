@@ -111,7 +111,10 @@ jobs:
           set -euo pipefail
           [ "$RESULT" = updated ] || { echo "second run: result is '$RESULT'" >&2; exit 1; }
           grep -qx "pr edit" "$GH_STUB_DIR/calls.log"
-          ! grep -qx "pr create" "$GH_STUB_DIR/calls.log"
+          if grep -qx "pr create" "$GH_STUB_DIR/calls.log"; then
+            echo "second run opened a new PR instead of editing it" >&2
+            exit 1
+          fi
           cd "$RUNNER_TEMP/consumer"
           git switch -q main
           git reset -q --hard origin/main
