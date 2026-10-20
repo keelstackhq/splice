@@ -70,13 +70,7 @@ fn rerun_after_restore_succeeds() {
     );
 
     // Restore as the error message tells, then update again without the failure.
-    let restore = std::process::Command::new("sh")
-        .current_dir(repo.path())
-        .args(["-c", "git checkout -- . && git clean -fd"])
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
+    let restore = common::sh_with_git_env(repo.path(), "git checkout -- . && git clean -fd");
     assert!(restore.status.success());
     update_cmd(&repo)
         .env_remove("SPLICE_FIXTURE_FAIL")

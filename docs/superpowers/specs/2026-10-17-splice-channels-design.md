@@ -91,7 +91,7 @@ A tracked channel targets the branch head only (tags ignored; `--to` → exit 2)
 (`[[remove]]`, steps): files the head no longer renders are removed by the "B only" rule.
 
 **Bot.** The update Action (main spec §13) gains input `scope` (`main` | `all`, default `all` when
-`.splice/channels/` exists, else `main`) and runs `splice update --all --json --yes`; one PR.
+`.splice/channels/` holds a `*.toml` lock, else `main`) and runs `splice update --all --json --yes`; one PR.
 
 ## 4. Lock and contract delta
 

@@ -6,7 +6,8 @@ tools for bootstrapping projects.
 
 > Status: version 0.2.0 (`Cargo.toml`), unreleased until the `v0.2.0` tag is pushed and the npm
 > packages are published; until then the install paths below do not work yet. Design:
-> `docs/superpowers/specs/2026-10-14-splice-design.md`.
+> `docs/superpowers/specs/2026-10-14-splice-design.md`. New here? Start with
+> [`docs/getting-started.md`](docs/getting-started.md).
 
 ## Install
 

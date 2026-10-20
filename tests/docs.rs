@@ -4,8 +4,9 @@ use common::{flags, splice_cmd, unknown_flags};
 
 /// Flags of other tools that the docs may show. Keep this short.
 const OTHER_TOOLS: &[&str] = &[
-    "--locked", // cargo install --locked (README, source install)
-    "--git",    // cargo install --git (README, source install)
+    "--locked",  // cargo install --locked (README, source install)
+    "--git",     // cargo install --git (README, source install)
+    "--release", // cargo build --release (getting-started)
 ];
 
 #[test]
@@ -14,6 +15,7 @@ fn docs_mention_only_real_flags() {
     // this catches invented flags, not flags used on the wrong subcommand.
     let mut help = String::new();
     for args in [
+        vec!["--help"], // --version
         vec!["new", "--help"],
         vec!["add", "--help"],
         vec!["update", "--help"],
@@ -32,7 +34,11 @@ fn docs_mention_only_real_flags() {
             .clone();
         help.push_str(&String::from_utf8_lossy(&out));
     }
-    for path in ["README.md", "skills/splice/SKILL.md"] {
+    for path in [
+        "README.md",
+        "skills/splice/SKILL.md",
+        "docs/getting-started.md",
+    ] {
         let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
         let unknown: Vec<&str> = unknown_flags(&text, &help)
             .into_iter()

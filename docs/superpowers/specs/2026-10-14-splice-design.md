@@ -87,7 +87,8 @@ any `https://`, `ssh://`, `git@…` or `file://` URL with optional `//<subdir>` 
 or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lock stores the
 spec as given (`gh:keelstackhq/hull//template`), except that a local path is stored as an absolute
 path (`splice new tpl out` locks `/abs/tpl`), so later commands work from any directory and with
-`-C`. A relative local source is resolved against the current directory, not against `-C`.
+`-C`. A relative local source typed on the command line is resolved against the current
+directory, not against `-C`; a relative one found in a lock resolves against the repo root and is written back as it was (§10 item 18).
 
 All git work shells out to the `git` CLI (present wherever repos live), so the user's credentials,
 proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c core.eol=lf` and
@@ -150,6 +151,7 @@ output   := "{{" ws expr ws "}}"
 if       := "{%" ws ("if"|"elif") ws cond ws "%}"    cond := path | string ws "in" ws "pieces"
 else     := "{%" ws ("else"|"endif"|"endfor") ws "%}"
 for      := "{%" ws "for" ws ident ws "in" ws "pieces" ws "%}"
+raw      := "{%" ws "raw" ws "%}" any "{%" ws "endraw" ws "%}"
 comment  := "{#" any "#}"
 string   := '"' [a-z0-9-]+ '"'
 ```
@@ -160,8 +162,9 @@ are rejected as variables (use `"id" in pieces`, `for x in pieces`, or dotted ac
 `path` may only be `piece.id`, `piece.name`, `template.name` or `template.version`; `else` is
 allowed only once, inside `if` (never in `for`), and `elif` not after `else`.
 
-No whitespace-control dashes (`{%-`), no `set`, `macro`, `include`, `raw`, operators or literals
-other than the piece-id string. Path names (`{{ var }}` in a path segment) allow only `output`.
+No whitespace-control dashes (`{%-`), no `set`, `macro`, `include`, operators or literals
+other than the piece-id string. `raw` outputs its body verbatim (§10 item 16); a stray `#}` is
+rejected (item 17). Path names (`{{ var }}` in a path segment) allow only `output`.
 
 **Engine.** `minijinja::Environment::empty()` with exactly two filters (`lower`, `upper`),
 `UndefinedBehavior::Strict`, auto-escape off, `keep_trailing_newline(true)` (Nunjucks keeps the
@@ -492,6 +495,46 @@ into the contract at its next `format` bump.
     - G16: `--only`/`--exclude` on `update --channel` replace both stored lists.
     - G17: in `update --all`, a section host's disk view includes an earlier source's planned seed write.
     - Drift reporting follows each command family (`add` family: `conflict`/`owned` changes; `update` family: messages; `check`: `update`/`owned`; `diff`: messages, exit 0).
+
+16. `{% raw %}` ... `{% endraw %}` (pending contract sign-off: the contract's §6 subset must gain
+    raw blocks in the joint contract PR with hull; never edited here alone). The body is output
+    verbatim (after §6 CRLF normalisation) and may be anything except the text of an `endraw`
+    tag; `{{`, `{%` and `{#` inside are neither parsed nor validated, and the body's lines still
+    count for error line numbers. No whitespace control (`-`, `+`) on either tag; `ws` inside the
+    braces is space, tab, CR or LF. An unterminated raw is exit 3 naming the line where it
+    opened; a stray `endraw` is exit 3. `raw` is allowed anywhere text is (also inside `if`/`for`
+    bodies) and does not affect their balancing; it is not allowed in a path segment. MiniJinja
+    ends a raw at the first `endraw` while Nunjucks nests raw blocks, and the two read dashes and
+    exotic whitespace (vertical tab, NBSP) in the `endraw` tag differently, so the gate also
+    rejects, inside a raw body, an inner `raw` tag (any spelling) and any `endraw` spelling other
+    than the strict one. A template using raw sets `min_splice` to a splice with raw support
+    (0.2.0 and later); there is no `format` bump. Corpus cases: `raw-braces`,
+    `raw-final-newline`, `raw-line-edges`, `raw-tags`.
+17. A `#}` in plain text (outside a comment and outside a raw body) is exit 3 naming file:line
+    (pending contract, with item 16): Nunjucks' lexer throws "unexpected end of comment" on it
+    while MiniJinja prints it, so the gate rejects it. Inside a raw body it stays allowed. It also
+    applies to path segments. **Behaviour change:** splice <= 0.2.0-pre accepted a literal `#}` in
+    plain template text (for example the shell `${#}`); from this release it is exit 3. Write it
+    inside `{% raw %}...{% endraw %}` (item 16).
+18. Local sources (ported from PR #1, adapted). `new`, `add` and `channel add` already lock an
+    absolute path (§4), so a relative `../tpl` given on the command line never reaches a lock. A
+    relative local source found in a lock anyway (hand-written, or from another splice that stores
+    it relative to the repo) resolves against the repo root (the `-C` dir), never the process cwd,
+    and becomes absolute before any git call; this holds for the main lock and every channel
+    lock. `update` and `add` (and `channel update`) write such a lock back with the relative spec
+    it had; only `new` and `channel add` store an absolute path. A local path is canonicalised leniently
+    (made absolute, `.` and `..` collapsed, symlinks followed before `..` for the longest existing ancestor, a Windows `\\?\` prefix removed), for
+    the stored absolute path and for the cache key, so the key and the stored path do not change
+    when the source folder is later deleted or renamed, nor with Windows short names. The cache
+    key of an existing source is unchanged on Unix; on Windows the key used to hash a `\\?\C:\...`
+    path, so the first fetch of a local source there after this change is a one-time refetch.
+19. Template commands run with POSIX `sh -c` on every OS (ported from PR #1, adapted): the `run`
+    strings of `[[post]]` and `[[step]]` are shell text written by template authors (hull writes
+    POSIX), so `cmd /C` on Windows would break them. On Windows splice uses the first `sh.exe` or
+    `sh` on `PATH`, else Git for Windows' `sh.exe`, found by walking up from `git --exec-path`
+    to the first `bin\sh.exe` or `usr\bin\sh.exe`. No sh found is exit 3 and the message names
+    the missing `sh`. Pending hull's decision (shared document section 6) and the contract: until
+    both say POSIX sh, this is splice's own decision.
 
 ## 11. Testing
 

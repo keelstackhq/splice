@@ -55,6 +55,13 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · 03/T5 · 5c96f2f · agent skill (`skills/splice/SKILL.md`, body 65 lines) and product README; `cargo nextest run`: 467 passed; review approved
 - 2026-10-18 · 04/C1 · keelstackhq/decisions#2 (3bfa3ec, 75a0ab1; merged 32f618a) · `channel/` template and D-004; dry run 2026-10-20 with local splice 0.2.0 on a scratch hull 42fd8c3: stale snapshot → `channel add` exit 1 (owned conflict, nothing written); after syncing the snapshot → exit 0, `CLAUDE.md#decisions` created, `splice check --json --offline` exit 0
 - 2026-10-18 · 04/C2 · keelstackhq/hull#5 (merged 42fd8c3) · `rigging/` channel template, `AGENTS.md` seed, `section-fragment` in hull's conformance run; hull owner sign-off recorded in hull PROGRESS; dogfood and the hull release stay Blocked
+- 2026-10-20 · port/raw · d20af8e · `{% raw %}` blocks in the subset gate and a stray `#}` rejected (spec §10 items 16, 17), adapted from PR #1 to this gate; 4 raw conformance cases; contract sign-off is Blocked
+- 2026-10-20 · port/relative-sources · bcf753a · relative local sources in a lock resolve from the repo root (`parse_from`, main and channel locks), lenient canonicalisation (`lenient_canonical`, `strip_verbatim`) for the stored path and the cache key (spec §10 item 18); main already stored absolute paths, so `new`/`channel add` were not buggy; `tests/cli_local_source.rs`
+- 2026-10-20 · port/posix-sh · 3ac583b · template commands run with POSIX `sh -c` on every OS; on Windows `sh` from PATH else Git for Windows' `sh.exe` via `git --exec-path` (`sh_from_exec_path`), exit 3 naming the missing sh (spec §10 item 19); main prints no shell-specific restore command, so `restore_cmd`/`Undo` were not needed
+- 2026-10-20 · port/windows-ci · 13af910 · `windows-latest` leg in the CI `ci` job (matrix, `fail-fast: false`; shellcheck, node tests, dependency-tree check and actionlint stay Linux-only; `ci-ok` still aggregates `ci`); test portability audit from PR #1: symlink tests gated `#[cfg(unix)]`, `stage_all` + `assert_head_matches` (same-size edits, byte-exact fixture commits), `-c core.autocrlf=false` for test git, empty gitconfig file instead of `/dev/null`, lock `source = '...'` redaction; `cargo clippy --target x86_64-pc-windows-gnu` clean. First Windows run happens on GitHub
+- 2026-10-20 · port/getting-started · c26784e · `docs/getting-started.md` ported from PR #1 and re-verified against this CLI (outputs recaptured from the 0.2.0 binary; adds a short Channels section, `add` never writes markers, `check` prints nothing when clean); linked from the README; covered by `tests/docs.rs`
+- 2026-10-20 · port/review-fixes · acd5965 · test git env for every raw `git`/`sh` in tests (`sh_with_git_env`, `GIT_CONFIG_COUNT` autocrlf=false, porcelain via `git_stdout`); shellcheck installed on Linux only; `update`/`add`/`channel update` keep a relative lock source (`Lock::keep_relative_source`, 2 tests); Windows looks up only `sh.exe`; spec §10 items 17, 18 reworded (`#}` behaviour change, one-time Windows refetch)
+- 2026-10-20 · port/docs-review · the port merge · getting-started samples re-captured (`--ref v1.0.0`, real `add --name docs` lines); `tests/docs.rs` trims `[]`, treats `pnpm dlx`/`npx @keelstackhq/splice` as `splice`, rejects unknown subcommands in code spans, with a negative test of the checker; SKILL.md exit-2 row and `add` merge wording fixed
 
 ## Blocked
 
@@ -66,6 +73,11 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
+  Add to the same PR: `{% raw %}...{% endraw %}` blocks in the §6 subset and rejecting a stray
+  `#}` (spec §10 items 16, 17; hull agreed raw blocks). splice already accepts raw; until the
+  contract lists it, templates using it work with splice only.
+- **POSIX sh for template commands:** hull to confirm POSIX `sh` for `[[post]]`/`[[step]]` `run` (shared document section 6), then the joint contract PR (add to the one above). Until then spec §10 item 19 is splice's own decision.
+- **Windows CI:** the `ci` job is now a matrix, `ci (ubuntu-latest)` and `ci (windows-latest)`; `ci-ok` still aggregates it. A human checks that branch protection requires `ci-ok` (a required check named `ci` never reports) and confirms the first `windows-latest` run is green.
 - **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists. C3 per repo: sync the snapshot first (copy `DECISIONS.md`), then `channel add` (see plan 04 C3).
 - Repo settings on `keelstackhq/splice`: make `ci-ok` the only required check; merge queue optional.
 - **Visibility:** make `keelstackhq/splice` public before the first tag (npm provenance needs a public repo; the `npm` job fails fast otherwise).
@@ -81,4 +93,4 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Status
 
-Milestones 2 and 3 done (release workflow, npm launcher, update-bot Action, skill file, product README). Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the first release (visibility, `release` environment, npm first publish, tags `v0.2.0` and `v1`) are Blocked above. Cross-repo C1 (decisions channel, D-004) and C2 (hull `rigging/`) are merged; C3 (six repos adopt the channel), the C2 dogfood step and the hull release wait for 0.2.0 on npm.
+Milestones 2 and 3 done (release workflow, npm launcher, update-bot Action, skill file, product README). Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the first release (visibility, `release` environment, npm first publish, tags `v0.2.0` and `v1`) are Blocked above. Cross-repo C1 (decisions channel, D-004) and C2 (hull `rigging/`) are merged; C3 (six repos adopt the channel), the C2 dogfood step and the hull release wait for 0.2.0 on npm. Ported on top of main from PR #1: `{% raw %}` blocks and a stray `#}` rejected (spec §10 items 16, 17), relative local lock sources (item 18), POSIX `sh` for template commands (item 19), a Windows CI leg, and `docs/getting-started.md`.

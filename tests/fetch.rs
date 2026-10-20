@@ -13,7 +13,7 @@ fn git(dir: &Path, args: &[&str]) {
     let out = Command::new("git")
         .current_dir(dir)
         .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", common::empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "Test")
         .env("GIT_AUTHOR_EMAIL", "test@example.com")

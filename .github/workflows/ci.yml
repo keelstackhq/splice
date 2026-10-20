@@ -10,8 +10,13 @@ concurrency:
 permissions: {}
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    name: ci (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     permissions:
       contents: read
     env:
@@ -27,22 +32,28 @@ jobs:
         with:
           tool: nextest
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: runner.os == 'Linux'
         with:
           node-version: 24
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo nextest run --locked
       - name: Check the Windows target compiles
+        if: runner.os == 'Linux'
         run: |
           rustup target add x86_64-pc-windows-msvc
           cargo check --locked --all-targets --target x86_64-pc-windows-msvc
       - name: Node tests
+        if: runner.os == 'Linux'
         run: node --test "npm/**/*.test.mjs" "action/**/*.test.mjs" "scripts/**/*.test.mjs"
       - name: No OpenSSL or TLS crates
+        if: runner.os == 'Linux'
         run: "! cargo tree -e normal --target all --locked | grep -E 'openssl|rustls|native-tls'"
       - name: shellcheck
+        if: runner.os == 'Linux'
         run: shellcheck scripts/smoke.sh
       - name: actionlint
+        if: runner.os == 'Linux'
         env:
           ACTIONLINT_VERSION: 1.7.7
           ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
