@@ -7,6 +7,9 @@ inputs:
   to:
     description: Template version to update to (empty = latest).
     default: ""
+  scope:
+    description: "`main` runs `splice update`; `all` runs `splice update --all` (main template and every channel). Default: `all` when `.splice/channels/` holds a lock, else `main`. `all` cannot be combined with `to`."
+    default: ""
   token:
     description: Token used for the git push (not the checkout credential) and the gh CLI. The default GITHUB_TOKEN cannot push changes to .github/workflows/* and PRs it opens do not trigger CI; pass a GitHub App or fine-grained PAT (contents, pull-requests, workflows write).
     default: ${{ github.token }}
@@ -51,12 +54,15 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         TEMPLATE_VERSION: ${{ inputs.to }}
+        SCOPE: ${{ inputs.scope }}
       run: |
         set -uo pipefail
         git config user.name splice-bot
         git config user.email splice-bot@users.noreply.github.com
-        args=(update --json --yes)
-        if [ -n "$TEMPLATE_VERSION" ]; then args+=(--to "$TEMPLATE_VERSION"); fi
+        # summary.mjs picks the scope (default from .splice/channels/) and prints the arguments.
+        cmd=$(node "$GITHUB_ACTION_PATH/summary.mjs" args "$SCOPE" "$TEMPLATE_VERSION") || exit 1
+        args=()
+        while IFS= read -r a; do args+=("$a"); done <<< "$cmd"
         # stdout is exactly one JSON object; splice's own logs stay on stderr.
         splice "${args[@]}" > "$RUNNER_TEMP/splice-report.json"
         echo "code=$?" >> "$GITHUB_OUTPUT"

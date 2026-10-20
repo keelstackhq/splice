@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { summarize } from "../summary.mjs";
+import { summarize, scopeDefault, command } from "../summary.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fx = (n) => join(here, "fixtures", n);
@@ -137,4 +137,80 @@ test("cli current", () => {
   const r = cli("current.json", 0);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.out, /^result=current$/m);
+});
+
+test("scope defaults to all when a channel lock exists, else main", () => {
+  assert.equal(scopeDefault({ channels: ["rig.toml"] }), "all");
+  assert.equal(scopeDefault({ channels: [] }), "main");
+  assert.equal(scopeDefault({ channels: [".rig.toml.tmp123", "notes.txt"] }), "main");
+});
+
+test("command per scope", () => {
+  assert.deepEqual(command("all"), ["update", "--all", "--json", "--yes"]);
+  assert.deepEqual(command("main"), ["update", "--json", "--yes"]);
+  assert.deepEqual(command("main", "2.0.0"), ["update", "--json", "--yes", "--to", "2.0.0"]);
+  assert.throws(() => command("all", "2.0.0"), /scope: main/);
+  assert.throws(() => command("everything"), /main or all/);
+});
+
+test("update --all rows are grouped under a heading per source", () => {
+  const owners = {
+    files: new Map([[".claude/agents/explorer.md", "rig"], [".claude/agents/reviewer.md", "rig"], [".claude/skills/verify/SKILL.md", "rig"]]),
+    sections: new Set(["rig"]),
+  };
+  const { body, result } = summarize(load("all.json"), 0, "2.0.0", owners);
+  assert.equal(result, "updated");
+  const main = body.indexOf("### main");
+  const rig = body.indexOf("### rig");
+  assert.ok(main >= 0 && rig > main, body);
+  const [mainPart, rigPart] = [body.slice(main, rig), body.slice(rig)];
+  assert.match(mainPart, /`\.editorconfig`/);
+  assert.match(mainPart, /`old\.txt`/);
+  assert.doesNotMatch(mainPart, /AGENTS\.md#rig/);
+  assert.match(rigPart, /\| update \| `AGENTS\.md#rig` \| owned \|/);
+  assert.match(rigPart, /\| delete \| `\.claude\/agents\/explorer\.md` \| owned \|/);
+  assert.match(rigPart, /`\.claude\/skills\/verify\/SKILL\.md`/);
+  assert.doesNotMatch(rigPart, /editorconfig/);
+  assert.doesNotMatch(body, /source=/);
+});
+
+test("scope main output keeps the flat table", () => {
+  const { body } = summarize(load("updated.json"), 0, "2.0.0");
+  assert.doesNotMatch(body, /### /);
+});
+
+test("cli attributes rows from the new locks and HEAD's (deletions)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "own-"));
+  const sh = (...a) => spawnSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@e", ...a], { encoding: "utf8" });
+  const lock = (files) => `format = 1\n[template]\nsource = "x"\nversion = "2.0.0"\ncommit = "c"\n\n[files]\n${files.map((f) => `"${f}" = { class = "owned", sha256 = "s" }\n`).join("")}`;
+  mkdirSync(join(dir, ".splice", "channels"), { recursive: true });
+  const write = (rel, text) => writeFileSync(join(dir, rel), text);
+  write(".splice/lock.toml", lock([".editorconfig", "old.txt"]));
+  write(".splice/channels/rig.toml", lock([".claude/agents/explorer.md", ".claude/agents/reviewer.md"]));
+  sh("init", "-q", "-b", "main"); sh("add", "-A"); sh("commit", "-q", "-m", "old");
+  write(".splice/lock.toml", lock([".editorconfig"]));
+  write(".splice/channels/rig.toml", lock([".claude/agents/reviewer.md"]));
+  const out = join(dir, "out");
+  writeFileSync(out, "");
+  const r = spawnSync(process.execPath, [join(here, "..", "summary.mjs"), fx("all.json"), "0", "2.0.0"], {
+    cwd: dir,
+    env: { ...process.env, GITHUB_OUTPUT: out },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const body = readFileSync(out, "utf8");
+  const rig = body.slice(body.indexOf("### rig"));
+  assert.match(rig, /explorer\.md/);
+  assert.match(rig, /reviewer\.md/);
+  assert.doesNotMatch(body.slice(body.indexOf("### main"), body.indexOf("### rig")), /explorer|reviewer/);
+});
+
+test("cli args prints the update command, one argument per line", () => {
+  const run = (...a) => spawnSync(process.execPath, [join(here, "..", "summary.mjs"), "args", ...a], { encoding: "utf8", cwd: mkdtempSync(join(tmpdir(), "args-")) });
+  assert.equal(run("all", "").stdout, "update\n--all\n--json\n--yes\n");
+  assert.equal(run("", "").stdout, "update\n--json\n--yes\n"); // no channel dir: default main
+  assert.equal(run("main", "1.2.3").stdout, "update\n--json\n--yes\n--to\n1.2.3\n");
+  const bad = run("all", "1.2.3");
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /scope: main/);
 });

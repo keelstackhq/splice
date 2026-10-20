@@ -45,7 +45,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 04/T17 · fdee2f2..10954a7 · `splice channel remove`; fix round 1: overlap guard (exit 3) and more remove tests
 - 2026-10-17 · 04/T18 · cedf673 · golden main + channel `update --all` (snapshots; fixed --all conflict attribution); review approved
 - 2026-10-18 · 04/T19 · df7c542 · spec index (§10 item 15) and README Channels section; `readme_channel_flags_exist`; SKILL.md part after plan 03 (Blocked)
-- 2026-10-18 · 04/T20 · Blocked · update-bot `scope` input: after plan 03 (see Blocked)
+- 2026-10-20 · 04/T20 · see git log · update-bot `scope` input (`main`|`all`, default from `.splice/channels/`); `all` runs `splice update --all --json --yes`; PR body grouped per source (rows attributed from the old and new lock files, since `changes` carry no source); `all` with `to` refused; node tests 31 action tests passing, actionlint clean
 - 2026-10-18 · 04/T21 · splice 0.2.0 (Cargo.toml, Cargo.lock) · `cargo fmt --check` and `clippy --all-targets --locked -D warnings` clean; `cargo nextest run`: 461 tests run, 461 passed, 0 skipped; no `.snap.new` (snapshots redact the version); node tests: n/a (plan 03 not landed); npm package versions: after plan 03
 - 2026-10-18 · 04/final · 0b68121 · final-review fix wave: section rerun after a failed step/post/lock write converges (no false drift), fragments refuse any channel's marker line, `--all` checks every source's targets before the first write, explain `source=` only with channel locks, `add --channel` refusal names `channel NAME`, Task 11/18 deferred minors; `cargo test` 465 passing, fmt and clippy -D warnings clean
 - 2026-10-20 · 03/T1 · see git log · single-job CI with `ci-ok` (ubuntu only for now), pinned actions, node tests, no-TLS-crate check, actionlint 1.7.7 sha256-pinned; actionlint clean locally (shellcheck not installed locally); fmt/clippy clean, nextest 465 passed (~64 s cold local; CI wall time unmeasured until the first PR run)
@@ -63,7 +63,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
 - SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
-- **Plan 03:** executed through Task 4; Tasks 5+ pending. Task 19's SKILL.md part, Task 20 (bot channel scope), C2's dogfood step and C3 wait for it.
+- **Plan 03:** executed through Task 4; Tasks 5+ pending. Task 19's SKILL.md part, C2's dogfood step and C3 wait for it.
 - **Release 0.2.0 (npm):** the release workflow exists (03/T2). Run its `workflow_dispatch` dry run once on keelstackhq/splice (plan 03 Task 2 Step 4) and check all five targets build and smoke-test. Then: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
 - **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).

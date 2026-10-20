@@ -22,7 +22,7 @@ jobs:
 ```
 
 Inputs: `version` (splice npm version, default `latest`), `to` (template version, default latest),
-`token` (default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
+`scope` (`main` or `all`, see below), `token` (default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
 `working-directory` (default `.`). Outputs: `result` (`updated`, `conflicts` or `current`) and
 `pr-url`.
 
@@ -36,6 +36,18 @@ Inputs: `version` (splice npm version, default `latest`), `to` (template version
 - Owned drift (exit 1, nothing written, no conflicts) and template errors (exit 3): the job fails
   and splice's messages are printed. Nothing is hidden in a PR; fix the local edit or use
   `splice update --force` yourself.
+
+## Scope: main template and channels
+
+`scope: main` runs `splice update`; `scope: all` runs `splice update --all --json --yes`, which
+updates the main template and every channel together. The default is `all` when `.splice/channels/`
+holds a lock, else `main`, so a repo that adopts a channel needs no workflow change. Either way
+it is one branch and one PR. With `all` the PR body has one table per source (`### main`,
+`### rig`, ...), main first; rows are attributed from the lock files, before and after the
+update. `all` cannot be combined with `to` (splice rejects `--all --to`): set `scope: main` to
+pin the main template. `scope: main` in a channel-only repo fails with splice's own message
+(exit 2). The channel sources must be readable with the job's git credentials (private ones
+need a token that can read them).
 
 ## Permissions and token
 

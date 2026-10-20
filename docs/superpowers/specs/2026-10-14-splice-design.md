@@ -524,7 +524,9 @@ into the contract at its next `format` bump.
 Composite action `action/action.yml` (`uses: keelstackhq/splice/action@v1`). Inputs: `version`
 (splice npm version, default `latest`), `to` (template version, default latest), `token`
 (default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
-`working-directory` (default `.`). Steps: install via `npm i -g @keelstackhq/splice@<version>`
+`working-directory` (default `.`), `scope` (channels spec §3: `main` | `all`, default `all` when
+`.splice/channels/` holds a lock; `all` runs `splice update --all --json --yes`, one PR with a
+table per source). Steps: install via `npm i -g @keelstackhq/splice@<version>`
 (`version: local` uses the `splice` on PATH, self-test only), run `splice update --json --yes`,
 and if anything changed commit to `branch`, `git push --force-with-lease` (authenticated with the
 `token` input through a one-command `http.<server>/.extraheader`, never written to `.git/config`),

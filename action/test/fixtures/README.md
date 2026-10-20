@@ -6,3 +6,6 @@ binary (splice 0.2.0) against `tests/fixtures/template` (v1 -> v2, piece `app:we
 - `current.json`  exit 0, already up to date
 - `drift.json`    exit 1, owned `apps/web/tsconfig.json` edited locally, `changes` empty
 - `error.json`    exit 3, `--to 3.0.0` (fixture v3 needs a newer splice)
+- `all.json`      exit 0, `splice update --all --json --yes` with main (v1 -> v2) plus channel `rig`
+  (`tests/fixtures/channel`, v1 -> v2): `changes` carry no source, `messages` hold
+  `source=main` and `source=channel:rig`
