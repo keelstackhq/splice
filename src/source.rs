@@ -282,7 +282,8 @@ mod tests {
     #[test]
     fn lenient_canonical_follows_symlinks_before_dotdot() {
         let d = tempfile::tempdir().unwrap();
-        let root = d.path().canonicalize().unwrap();
+        // lenient_canonical drops Windows' `\\?\` prefix; canonicalize keeps it.
+        let root = strip_verbatim(d.path().canonicalize().unwrap());
         std::fs::create_dir_all(root.join("a/deep")).unwrap();
         std::fs::create_dir(root.join("tpl")).unwrap();
         #[cfg(unix)]
@@ -343,22 +344,20 @@ mod tests {
 
     #[test]
     fn parse_from_resolves_relative_local_against_base_only() {
-        let s = TemplateSource::parse_from("../tpl//sub", Path::new("/r/app")).unwrap();
+        // A drive-less `/r` is relative on Windows; make every path absolute for this OS.
+        let abs = |p: &str| std::path::absolute(p).unwrap();
+        let s = TemplateSource::parse_from("../tpl//sub", &abs("/r/app")).unwrap();
         assert_eq!(
             s.kind,
             SourceKind::Local {
-                path: PathBuf::from("/r/tpl")
+                path: abs("/r/tpl")
             }
         );
         assert_eq!(s.spec, "../tpl//sub");
         assert_eq!(s.subdir.as_deref(), Some("sub"));
-        let s = TemplateSource::parse_from("/abs/tpl", Path::new("/r/app")).unwrap();
-        assert_eq!(
-            s.kind,
-            SourceKind::Local {
-                path: PathBuf::from("/abs/tpl")
-            }
-        );
+        let a = abs("/abs/tpl");
+        let s = TemplateSource::parse_from(a.to_str().unwrap(), &abs("/r/app")).unwrap();
+        assert_eq!(s.kind, SourceKind::Local { path: a });
         let g = TemplateSource::parse_from("gh:a/b", Path::new("/r")).unwrap();
         assert!(matches!(g.kind, SourceKind::Git { .. }));
     }
