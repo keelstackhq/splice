@@ -124,7 +124,7 @@ fn spawn_error(run: &str, e: &std::io::Error) -> SpliceError {
     SpliceError::Env(format!("cannot run post command `{run}`: {e}"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -135,7 +135,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn filters_by_when_and_dedupes_in_order() {
         let dir = tempfile::tempdir().unwrap();
@@ -152,7 +151,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn failure_names_the_command_and_stops() {
         let dir = tempfile::tempdir().unwrap();
