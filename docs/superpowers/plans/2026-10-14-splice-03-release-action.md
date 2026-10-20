@@ -107,7 +107,8 @@ jobs:
 - [x] **Step 1: Write failing test** — `checkVersion({tag:"v0.2.0", cargoToml:'version = "0.1.0"'})` throws `tag v0.2.0 does not match Cargo.toml 0.1.0`; matching inputs return `"0.2.0"`.
 - [x] **Step 2: Run `node --test scripts/` — FAIL**
 - [x] **Step 3: Implement the script and the workflow.** Trigger `push: tags: ['v*']` + `workflow_dispatch` (dry run, no publish). Jobs: `check` (version script) → `build` matrix: `ubuntu-24.04` (x86_64 musl, `apt-get install musl-tools`), `ubuntu-24.04-arm` (aarch64 musl, musl-tools), `macos-15` (both darwin targets, `rustup target add x86_64-apple-darwin`), `windows-2025` (msvc). Each native build runs `splice --version` and a `splice new` smoke test against `tests/fixtures/template/v1` (made into a git repo by a 5-line shell step). Linux: verify `file splice` says `statically linked`. → `release` job: download artifacts, write `SHA256SUMS`, `gh release create $TAG --generate-notes` with all files → `npm` job (Task 3).
-- [ ] **Step 4: Run the test — PASS; actionlint clean; `workflow_dispatch` dry run is a Blocked item until the repo exists**
+- [x] **Step 4a: Run the test — PASS; actionlint clean**
+- [ ] **Step 4b: `workflow_dispatch` dry run** — human-only, Blocked until the repo exists and Task 5 adds `LICENSE`
 - [x] **Step 5: Commit** — `ci: release workflow for five targets with checksums`
 
 ---
