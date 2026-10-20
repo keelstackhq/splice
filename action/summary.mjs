@@ -29,12 +29,27 @@ export function scopeDefault({ channels }) {
 // The `splice update` arguments for a scope. `--all` conflicts with `--to` (splice exits 2), so
 // that pairing is refused here with the way out.
 export function command(scope, to = "") {
+  if (/[\r\n]/.test(to) || to.startsWith("-")) throw new Error("input `to` must be a version, not a flag or multi-line text");
   if (scope === "main") return ["update", "--json", "--yes", ...(to ? ["--to", to] : [])];
   if (scope === "all") {
     if (to) throw new Error("input `to` needs `scope: main`: `splice update --all` cannot take --to");
     return ["update", "--all", "--json", "--yes"];
   }
   throw new Error(`input \`scope\` must be main or all, not '${scope}'`);
+}
+
+// Key of a `[files]`/`[sections]` line in a lock: toml_edit writes bare keys when it can
+// (`Makefile = …`), else basic `"…"` (escapes) or literal `'…'` ones. null: not a key line.
+export function lockKey(line) {
+  const m = line.match(/^(?:([A-Za-z0-9_-]+)|"((?:[^"\\]|\\.)*)"|'([^']*)')\s*=/);
+  if (!m) return null;
+  if (m[1] !== undefined) return m[1];
+  if (m[3] !== undefined) return m[3];
+  try {
+    return JSON.parse(`"${m[2]}"`);
+  } catch {
+    return m[2];
+  }
 }
 
 // Source of a changed path: section rows are `HOST#CHANNEL`; files come from the lock tables
@@ -126,8 +141,8 @@ function lockTables(ref) {
     for (const line of text.split("\n")) {
       const h = line.match(/^\[([a-z]+)\]/);
       if (h) table = h[1];
-      const k = line.match(/^"((?:[^"\\]|\\.)*)"\s*=/);
-      if (k && table === "files") files.set(JSON.parse(`"${k[1]}"`), source);
+      const k = lockKey(line);
+      if (k !== null && table === "files") files.set(k, source);
     }
     if (source !== "main") sections.add(source);
     return version;
@@ -184,8 +199,13 @@ function main([reportPath, code, version]) {
   try {
     const owners = ownersFromLocks();
     // A channel-only repo has no main lock: name the channel versions instead.
-    const named = version && version !== "unknown" ? version
-      : Object.entries(owners.channels).map(([n, v]) => `${n} ${v}`).join(", ") || "unknown";
+    // With a main lock the title also names each channel `update --all` covered: `2.0.0, rig 1.1.0`.
+    const hasMain = version && version !== "unknown";
+    const touched = new Set((report.messages ?? []).map((m) => m.match(/^source=channel:(.+)$/)?.[1]).filter(Boolean));
+    const chans = Object.entries(owners.channels)
+      .filter(([n]) => !hasMain || touched.has(n))
+      .map(([n, v]) => `${n} ${v}`);
+    const named = [...(hasMain ? [version] : []), ...chans].join(", ") || "unknown";
     s = summarize(report, exitCode, named, owners);
   } catch (e) {
     process.stderr.write(`${e.message}\n`);

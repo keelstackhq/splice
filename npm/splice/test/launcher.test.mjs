@@ -57,7 +57,7 @@ test("missing platform package gives a helpful message", () => {
   );
 });
 
-test("unsupported platform: message, exit 1, no stack trace", () => {
+test("unsupported platform: message, exit 3, no stack trace", () => {
   const dir = mkdtempSync(join(tmpdir(), "splice-shim-"));
   let r;
   try {
@@ -67,7 +67,7 @@ test("unsupported platform: message, exit 1, no stack trace", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  assert.equal(r.status, 1);
+  assert.equal(r.status, 3);
   assert.match(r.stderr, /freebsd-/);
   assert.match(r.stderr, /linux-x64/);
   assert.doesNotMatch(r.stderr, /\n\s+at /);

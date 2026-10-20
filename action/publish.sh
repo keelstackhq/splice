@@ -34,6 +34,19 @@ git add -A -- .
 if git diff --cached --quiet; then finish_current; fi
 git commit -m "$TITLE"
 remote_sha=$(git_auth ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+# The lease sha is read just before the push, so by itself it would not protect anything. Refuse
+# to overwrite a bot branch whose head was not authored and committed by the bot identity used
+# for the commit above: someone pushed to it by hand, and a force-push would drop their work.
+if [ -n "$remote_sha" ]; then
+  git_auth fetch --quiet --no-tags origin "refs/heads/$BRANCH"
+  me=$(git config user.email || true)
+  while IFS= read -r who; do
+    if [ -z "$me" ] || [ "$who" != "$me" ]; then
+      echo "::error::Branch $BRANCH has a head commit ($remote_sha) that was not made by the update bot ($me); refusing to overwrite it. Merge or delete the branch, or use another \`branch\` input." >&2
+      exit 1
+    fi
+  done < <(git log -1 --format='%ae%n%ce' "$remote_sha")
+fi
 git_auth push --force-with-lease="$BRANCH:$remote_sha" origin "HEAD:refs/heads/$BRANCH"
 
 if [ -n "$pr" ]; then

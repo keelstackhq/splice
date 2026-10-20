@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { summarize, scopeDefault, command } from "../summary.mjs";
+import { summarize, scopeDefault, command, lockKey } from "../summary.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fx = (n) => join(here, "fixtures", n);
@@ -213,4 +213,38 @@ test("cli args prints the update command, one argument per line", () => {
   const bad = run("all", "1.2.3");
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /scope: main/);
+});
+
+test("lockKey reads bare, basic-quoted (escapes) and literal-quoted keys", () => {
+  assert.equal(lockKey('Makefile = { class = "owned", sha256 = "s" }'), "Makefile");
+  assert.equal(lockKey('LICENSE-MIT = { class = "seed" }'), "LICENSE-MIT");
+  assert.equal(lockKey('"docs/a b.md" = { class = "owned" }'), "docs/a b.md");
+  assert.equal(lockKey('"we\\"ird\\\\x" = 1'), 'we"ird\\x');
+  assert.equal(lockKey("'dir/it\"s.md' = { class = \"owned\" }"), 'dir/it"s.md');
+  assert.equal(lockKey('# comment = 1'), null);
+  assert.equal(lockKey("[files]"), null);
+});
+
+test("cli attributes bare-key channel lock rows and names channel versions in the title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bare-"));
+  mkdirSync(join(dir, ".splice", "channels"), { recursive: true });
+  const lock = (v, files) => `format = 1\n[template]\nsource = "x"\nversion = "${v}"\ncommit = "c"\n\n[files]\n${files}`;
+  writeFileSync(join(dir, ".splice/lock.toml"), lock("2.0.0", 'README.md = { class = "owned", sha256 = "s" }\n'));
+  writeFileSync(join(dir, ".splice/channels/rig.toml"), lock("1.1.0", 'Makefile = { class = "owned", sha256 = "s" }\n\'dir/x.md\' = { class = "owned", sha256 = "s" }\n'));
+  spawnSync("git", ["-C", dir, "init", "-q"]);
+  const out = join(dir, "out");
+  writeFileSync(out, "");
+  const r = spawnSync(process.execPath, [join(here, "..", "summary.mjs"), fx("all.json"), "0", "2.0.0"], {
+    cwd: dir, env: { ...process.env, GITHUB_OUTPUT: out }, encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const body = readFileSync(out, "utf8");
+  assert.match(body, /^title=chore: splice update to 2\.0\.0, rig 1\.1\.0$/m);
+  assert.ok(body.includes("### rig"), body);
+});
+
+test("command rejects a `to` with a newline or a leading dash", () => {
+  assert.throws(() => command("main", "1.0\n--force"), /to/);
+  assert.throws(() => command("main", "--force"), /to/);
+  assert.deepEqual(command("main", "v1.2.3"), ["update", "--json", "--yes", "--to", "v1.2.3"]);
 });

@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 const script = join(dirname(fileURLToPath(import.meta.url)), "..", "publish.sh");
 
 // Runs publish.sh with stub `gh` and `git` on PATH that log their argv, one line per call.
-function run(env, { openPr = "", staged = true, crossPr = "" } = {}) {
+function run(env, { openPr = "", staged = true, crossPr = "", remote = true, remoteEmails = "bot@x\nbot@x" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "pub-"));
   const log = join(dir, "log");
   const out = join(dir, "out");
@@ -25,8 +25,12 @@ function run(env, { openPr = "", staged = true, crossPr = "" } = {}) {
     `case "$1 $2" in
   "diff --cached") [ "$STUB_STAGED" = 1 ] && exit 1 || exit 0;;
   "ls-remote origin") printf 'abc123\\trefs/heads/x\\n';;
+  "config user.email") echo bot@x;;
 esac
-case " $* " in *" ls-remote "*) printf 'abc123\\trefs/heads/x\\n';; esac`,
+case " $* " in
+  *" ls-remote "*) if [ "$STUB_REMOTE" = 1 ]; then printf 'abc123\\trefs/heads/x\\n'; fi;;
+  *" log "*) printf "$STUB_EMAILS\\n";;
+esac`,
   );
   stub(
     "gh",
@@ -43,6 +47,8 @@ esac`,
       STUB_LOG: log,
       STUB_PR: openPr,
       STUB_ALLPR: crossPr,
+      STUB_REMOTE: remote ? "1" : "0",
+      STUB_EMAILS: remoteEmails.replace(/\n/g, "\\n"),
       STUB_STAGED: staged ? "1" : "0",
       GITHUB_OUTPUT: out,
       GH_TOKEN: "tok",
@@ -133,4 +139,28 @@ test("only a cross-repo (fork) PR on the branch: never edited or closed", () => 
   const cur = run({ RESULT: "current", TITLE: "", BODY: "" }, { crossPr: "7" });
   assert.ok(!has(cur.calls, /pr (edit|close)/));
   assert.match(cur.outputs, /^result=current$/m);
+});
+
+test("remote bot branch whose head is not ours: refuse, no push, no PR", () => {
+  for (const emails of ["human@x\nhuman@x", "bot@x\nhuman@x", "human@x\nbot@x"]) {
+    const r = run({}, { remoteEmails: emails });
+    assert.notEqual(r.status, 0, emails);
+    assert.match(r.stderr, /not made by the update bot/);
+    assert.ok(!has(r.calls, / push /), r.calls.join("\n"));
+    assert.ok(!has(r.calls, /^gh pr (create|edit)/));
+  }
+});
+
+test("remote bot branch whose head is ours: pushed with the lease on that sha", () => {
+  const r = run({}, { openPr: "5" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(has(r.calls, / fetch .*origin/), r.calls.join("\n"));
+  assert.ok(has(r.calls, /--force-with-lease=splice\/update:abc123 /));
+});
+
+test("no remote branch yet: nothing to protect, no fetch", () => {
+  const r = run({}, { remote: false });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!has(r.calls, / fetch /));
+  assert.ok(has(r.calls, / push /));
 });

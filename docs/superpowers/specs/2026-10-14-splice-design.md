@@ -517,7 +517,8 @@ into the contract at its next `format` bump.
   packages as exact-version `optionalDependencies`; each platform package declares `os`/`cpu`
   and ships the binary in `bin/`. No install scripts (pnpm 10 blocks them by default); the
   launcher resolves `@keelstackhq/splice-<platform>-<arch>/package.json`, spawns the binary with
-  inherited stdio and forwards the exit code. Not cargo-dist's npm installer.
+  inherited stdio and forwards the exit code; its own failures (no binary for the platform, spawn
+  error) exit 3, since 1 means drift or an update available. Not cargo-dist's npm installer.
 
 ## 13. Update bot
 
@@ -526,12 +527,15 @@ Composite action `action/action.yml` (`uses: keelstackhq/splice/action@v1`). Inp
 (default `github.token`), `branch` (default `splice/update`), `labels` (default `splice`),
 `working-directory` (default `.`), `scope` (channels spec §3: `main` | `all`, default `all` when
 `.splice/channels/` holds a lock; `all` runs `splice update --all --json --yes`, one PR with a
-table per source). Steps: install via `npm i -g @keelstackhq/splice@<version>`
+table per source). Steps: install via `npm install -g --prefix "$RUNNER_TEMP/splice-npm" @keelstackhq/splice@<version>`
 (`version: local` uses the `splice` on PATH, self-test only), run `splice update --json --yes`,
-and if anything changed commit to `branch`, `git push --force-with-lease` (authenticated with the
+and if anything changed commit to `branch`, `git push --force-with-lease` (refused when the
+remote `branch` head was not authored and committed by the bot identity: a human pushed to it;
+authenticated with the
 `token` input through a one-command `http.<server>/.extraheader`, never written to `.git/config`),
 then open or edit the single same-repo PR with the `gh` CLI (body = summary table from the JSON;
-title gets `[conflicts]` on exit 1). If the repo is already current and a bot PR is open, close
+title gets `[conflicts]` on exit 1; with `scope: all` it also names the channel versions,
+`chore: splice update to 2.0.0, rig 1.1.0`). `to` must not contain a newline or start with `-`. If the repo is already current and a bot PR is open, close
 it. Owned drift (exit 1, no conflicts) and exit 2/3 fail the job with splice's messages; no PR.
 
 `gh` over `peter-evans/create-pull-request`: `gh` is preinstalled on GitHub runners, adds no

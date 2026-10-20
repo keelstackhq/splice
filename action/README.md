@@ -28,7 +28,10 @@ Inputs: `version` (splice npm version, default `latest`), `to` (template version
 
 ## What it does
 
-- Changes, clean: commits to the branch, force-pushes with a lease, opens or edits the PR.
+- Changes, clean: commits to the branch, force-pushes with a lease, opens or edits the PR. If the branch already exists and its head commit
+  was not authored and committed by the bot (someone pushed to it), the job fails instead of
+  overwriting it; merge or delete that branch, or choose another `branch`. With `scope: all` the
+  title also names the channel versions (`chore: splice update to 2.0.0, rig 1.1.0`).
 - Conflicts (splice exit 1 with conflicted files): same, with the title prefixed `[conflicts]` and
   the conflicted paths listed in the body.
 - Already current: no push and no PR. An open bot PR is closed with a comment and its branch is
