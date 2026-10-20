@@ -46,8 +46,8 @@ fn strategy_name(s: MergeStrategy) -> &'static str {
 }
 
 /// The tree a lock renders from its pinned commit (offline after the first fetch).
-fn render_lock(lock: &Lock) -> Result<RenderedTree> {
-    let src = TemplateSource::parse(&lock.template.source)?;
+fn render_lock(repo: &std::path::Path, lock: &Lock) -> Result<RenderedTree> {
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
         Fetcher::from_env().checkout(&src, &lock.template.commit, lock.template.version.clone())?;
     let template = Template::load(&resolved.root)?;
@@ -87,13 +87,13 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
     }
     let mut found = None;
     if let Some(lock) = &sources.main
-        && let Some(file) = render_lock(lock)?.remove(&path)
+        && let Some(file) = render_lock(repo, lock)?.remove(&path)
     {
         found = Some((SourceId::Main, file));
     }
     if found.is_none() {
         for cl in &sources.channels {
-            if let Some(file) = render_lock(&cl.lock)?.remove(&path) {
+            if let Some(file) = render_lock(repo, &cl.lock)?.remove(&path) {
                 found = Some((SourceId::Channel(cl.meta.name.clone()), file));
                 break;
             }

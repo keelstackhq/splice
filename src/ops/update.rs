@@ -228,7 +228,7 @@ fn prepare_lock(
     // 2. Target: `--to`, the latest stable tag or the tracked branch head; never older than
     // the lock (tracked heads `0.0.0+g…` are never compared: semver orders build metadata as
     // text, B5).
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, g.dir.as_path())?;
     let fetcher = Fetcher::from_env();
     let (target, mut up_to_date, no_newer, tracked) = match target {
         Target::Branch(branch) => {

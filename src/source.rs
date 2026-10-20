@@ -55,7 +55,26 @@ fn check_subdir(spec: &str, sub: &str) -> Result<Option<String>, SpliceError> {
 }
 
 impl TemplateSource {
+    /// Parse a spec; a relative local path stays relative to the process cwd.
     pub fn parse(spec: &str) -> Result<Self, SpliceError> {
+        Self::parse_raw(spec)
+    }
+
+    /// Parse a spec read from a lock: a relative local path resolves against `base` (the repo
+    /// root, the `-C` dir), never the process cwd, and becomes absolute. `spec` stays as written.
+    pub fn parse_from(spec: &str, base: &Path) -> Result<Self, SpliceError> {
+        let mut s = Self::parse_raw(spec)?;
+        if let SourceKind::Local { path } = &mut s.kind
+            && path.is_relative()
+        {
+            // Absolute, so git calls made from other directories resolve it too.
+            let joined = base.join(&*path);
+            *path = lenient_canonical(&joined).unwrap_or(joined);
+        }
+        Ok(s)
+    }
+
+    fn parse_raw(spec: &str) -> Result<Self, SpliceError> {
         // Split `//subdir` on the first `//` after the scheme's own `//`.
         let skip = scheme_len(spec).unwrap_or(0);
         let (main, subdir) = match spec[skip..].find("//") {
@@ -98,7 +117,7 @@ impl TemplateSource {
         let SourceKind::Local { path } = &self.kind else {
             return self.spec.clone();
         };
-        let abs = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let abs = lenient_canonical(path).unwrap_or_else(|| path.clone());
         match &self.subdir {
             Some(sub) => format!("{}//{sub}", abs.display()),
             None => abs.display().to_string(),
@@ -109,13 +128,50 @@ impl TemplateSource {
     pub fn cache_key(&self) -> String {
         let id = match &self.kind {
             SourceKind::Git { url } => url.clone(),
-            SourceKind::Local { path } => path
-                .canonicalize()
-                .unwrap_or_else(|_| path.clone())
+            // Lenient: the key must not change when the source is later deleted or renamed.
+            SourceKind::Local { path } => lenient_canonical(path)
+                .unwrap_or_else(|| path.clone())
                 .to_string_lossy()
                 .into_owned(),
         };
         key16(&id)
+    }
+}
+
+/// Absolute, `.`/`..` collapsed, symlinks resolved for the longest existing ancestor (symlinks
+/// are followed before `..`, as the filesystem does). Never fails on a missing path.
+fn lenient_canonical(p: &Path) -> Option<PathBuf> {
+    let abs = std::path::absolute(p).ok()?;
+    let mut cur = PathBuf::new();
+    let mut exists = true;
+    for c in abs.components() {
+        match c {
+            Component::Prefix(_) | Component::RootDir => cur.push(c),
+            Component::CurDir => {}
+            // `cur` is canonical while `exists`, so popping is what the filesystem does.
+            Component::ParentDir => {
+                cur.pop();
+            }
+            Component::Normal(n) => {
+                cur.push(n);
+                if exists {
+                    match cur.canonicalize() {
+                        Ok(real) => cur = real,
+                        Err(_) => exists = false,
+                    }
+                }
+            }
+        }
+    }
+    Some(strip_verbatim(cur))
+}
+
+/// Drop a Windows `\\?\` prefix (not `\\?\UNC\`) so paths compare and print normally.
+fn strip_verbatim(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => p,
     }
 }
 
@@ -216,5 +272,89 @@ mod tests {
         assert_eq!(k, TemplateSource::parse("gh:a/b//sub").unwrap().cache_key());
         assert_ne!(k, TemplateSource::parse("gh:a/c").unwrap().cache_key());
         assert_eq!(key16("x"), key16("x"));
+    }
+
+    #[test]
+    fn lenient_canonical_follows_symlinks_before_dotdot() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("a/deep")).unwrap();
+        std::fs::create_dir(root.join("tpl")).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("a/deep"), root.join("link")).unwrap();
+            // `link/..` is `a`, not the root.
+            assert_eq!(
+                lenient_canonical(&root.join("link/../x")).unwrap(),
+                root.join("a/x")
+            );
+        }
+        assert_eq!(
+            lenient_canonical(&root.join("a/../tpl/./")).unwrap(),
+            root.join("tpl")
+        );
+        assert_eq!(
+            lenient_canonical(&root.join("nope/y/../z")).unwrap(),
+            root.join("nope/z")
+        );
+    }
+
+    #[test]
+    fn local_cache_key_is_stable_after_deletion_and_for_equivalent_paths() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("a/tpl")).unwrap();
+        let key = |p: &Path| {
+            TemplateSource::parse(&p.to_string_lossy())
+                .unwrap()
+                .cache_key()
+        };
+        let before = key(&root.join("a/tpl"));
+        assert_eq!(key(&root.join("a/../a/./tpl")), before);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("a"), root.join("link")).unwrap();
+            assert_eq!(key(&root.join("link/tpl")), before);
+        }
+        std::fs::remove_dir(root.join("a/tpl")).unwrap();
+        assert_eq!(key(&root.join("a/tpl")), before);
+        #[cfg(unix)]
+        assert_eq!(key(&root.join("link/tpl")), before);
+        assert_eq!(key(&root.join("a/x/../tpl")), before);
+    }
+
+    #[test]
+    fn strips_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim(PathBuf::from(r"\\?\C:\x\y")),
+            PathBuf::from(r"C:\x\y")
+        );
+        assert_eq!(
+            strip_verbatim(PathBuf::from(r"\\?\UNC\h\s")),
+            PathBuf::from(r"\\?\UNC\h\s")
+        );
+        assert_eq!(strip_verbatim(PathBuf::from("/a/b")), PathBuf::from("/a/b"));
+    }
+
+    #[test]
+    fn parse_from_resolves_relative_local_against_base_only() {
+        let s = TemplateSource::parse_from("../tpl//sub", Path::new("/r/app")).unwrap();
+        assert_eq!(
+            s.kind,
+            SourceKind::Local {
+                path: PathBuf::from("/r/tpl")
+            }
+        );
+        assert_eq!(s.spec, "../tpl//sub");
+        assert_eq!(s.subdir.as_deref(), Some("sub"));
+        let s = TemplateSource::parse_from("/abs/tpl", Path::new("/r/app")).unwrap();
+        assert_eq!(
+            s.kind,
+            SourceKind::Local {
+                path: PathBuf::from("/abs/tpl")
+            }
+        );
+        let g = TemplateSource::parse_from("gh:a/b", Path::new("/r")).unwrap();
+        assert!(matches!(g.kind, SourceKind::Git { .. }));
     }
 }

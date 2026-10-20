@@ -87,7 +87,8 @@ any `https://`, `ssh://`, `git@…` or `file://` URL with optional `//<subdir>` 
 or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lock stores the
 spec as given (`gh:keelstackhq/hull//template`), except that a local path is stored as an absolute
 path (`splice new tpl out` locks `/abs/tpl`), so later commands work from any directory and with
-`-C`. A relative local source is resolved against the current directory, not against `-C`.
+`-C`. A relative local source typed on the command line is resolved against the current
+directory, not against `-C`; a relative one found in a lock resolves against the repo root (§10 item 18).
 
 All git work shells out to the `git` CLI (present wherever repos live), so the user's credentials,
 proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c core.eol=lf` and
@@ -513,6 +514,16 @@ into the contract at its next `format` bump.
     (pending contract, with item 16): Nunjucks' lexer throws "unexpected end of comment" on it
     while MiniJinja prints it, so the gate rejects it. Inside a raw body it stays allowed. It also
     applies to path segments.
+18. Local sources (ported from PR #1, adapted). `new`, `add` and `channel add` already lock an
+    absolute path (§4), so a relative `../tpl` given on the command line never reaches a lock. A
+    relative local source found in a lock anyway (hand-written, or from another splice that stores
+    it relative to the repo) resolves against the repo root (the `-C` dir), never the process cwd,
+    and becomes absolute before any git call; this holds for the main lock and every channel
+    lock. A local path is canonicalised leniently (made absolute, `.` and `..` collapsed, symlinks
+    followed before `..` for the longest existing ancestor, a Windows `\\?\` prefix removed), for
+    the stored absolute path and for the cache key, so the key and the stored path do not change
+    when the source folder is later deleted or renamed, nor with Windows short names. The cache
+    key of a source that exists is unchanged.
 
 ## 11. Testing
 

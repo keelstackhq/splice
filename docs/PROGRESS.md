@@ -56,6 +56,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · port/getting-started · c26784e · `docs/getting-started.md` ported from PR #1 and re-verified against this CLI (outputs recaptured from the 0.2.0 binary; adds a short Channels section, `add` never writes markers, `check` prints nothing when clean); linked from the README; covered by `tests/docs.rs`
 - 2026-10-20 · port/npm-bot-review · see git log · npm launcher exits 3 (not 1) on missing binary, unsupported platform or spawn failure; update bot reads bare and literal-quoted lock keys, names channel versions in the `scope: all` title, rejects `to` with a newline or leading `-`, and refuses to overwrite a bot branch whose head is not the bot's; specs aligned (channels §3 `*.toml` lock, §13 install prefix)
 - 2026-10-20 · port/raw · see git log · `{% raw %}` blocks in the subset gate and a stray `#}` rejected (spec §10 items 16, 17), adapted from PR #1 to this gate; 4 raw conformance cases; contract sign-off is Blocked
+- 2026-10-20 · port/relative-sources · see git log · relative local sources in a lock resolve from the repo root (`parse_from`, main and channel locks), lenient canonicalisation (`lenient_canonical`, `strip_verbatim`) for the stored path and the cache key (spec §10 item 18); main already stored absolute paths, so `new`/`channel add` were not buggy; `tests/cli_local_source.rs`
 
 ## Blocked
 

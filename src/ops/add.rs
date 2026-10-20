@@ -122,7 +122,7 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
             repo.display()
         ));
     };
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
         Fetcher::from_env().checkout(&src, &lock.template.commit, lock.template.version.clone())?;
     let template = Template::load(&resolved.root)?;
@@ -246,7 +246,7 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
     let cl = sources.channel(name)?;
     let lock = &cl.lock;
     let lock_path = cl.path();
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
         Fetcher::from_env().checkout(&src, &lock.template.commit, lock.template.version.clone())?;
     let template = Template::load(&resolved.root)?;
