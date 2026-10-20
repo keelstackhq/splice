@@ -24,10 +24,7 @@ export function stage({ version, artifacts, out, env = process.env }) {
   mkdirSync(out, { recursive: true });
 
   const docs = (dir) => {
-    // LICENSE lands with plan 03 Task 5; copy it as soon as the repo has one.
-    for (const f of ["LICENSE", "README.md"]) {
-      if (existsSync(join(root, f))) copyFileSync(join(root, f), join(dir, f));
-    }
+    for (const f of ["LICENSE", "README.md"]) copyFileSync(join(root, f), join(dir, f));
   };
 
   for (const p of platforms) {

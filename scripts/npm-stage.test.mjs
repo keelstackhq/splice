@@ -68,13 +68,10 @@ test("launcher pins optionalDependencies and ships platforms.json", () => {
   );
 });
 
-// LICENSE lands with plan 03 Task 5; until then it is copied only when the repo has one.
-const hasLicense = existsSync(new URL("../LICENSE", import.meta.url));
-
 test("README and LICENSE are copied into every package", () => {
   const out = setup();
   for (const d of readdirSync(out)) {
-    assert.equal(existsSync(join(out, d, "LICENSE")), hasLicense, `${d} LICENSE`);
+    assert.ok(existsSync(join(out, d, "LICENSE")), `${d} LICENSE`);
     assert.ok(existsSync(join(out, d, "README.md")), `${d} README`);
   }
 });

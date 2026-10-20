@@ -195,12 +195,12 @@ test("exit 3 throws with messages", () => { assert.throws(() => summarize(load("
 **Interfaces:**
 - Consumes: final CLI (plan 01/02), Action inputs (Task 4).
 
-- [ ] **Step 1: Write failing test** — `docs_mention_only_real_flags`: extract `--[a-z-]+` tokens from both files, assert each appears in the help of some subcommand (plus an allowlist for `--json` examples of other tools, e.g. `pnpm`).
-- [ ] **Step 2: Run — FAIL (files missing)**
-- [ ] **Step 3: Write the docs.** `SKILL.md` frontmatter `name: splice`, `description:` "Use when a repo has .splice/lock.toml or the user asks to create, update or check a project from a keelstack template…". Body ≤ 80 lines: always `--json`; read `changes`/exit code table; before editing a file run `splice explain <path> --json` (owned → change the template or accept drift; shared → edit freely; seed → yours); resolving conflicts (edit marker blocks, keep intent of both, then `splice check --json --offline`); never edit `.splice/lock.toml`; dirty tree → commit or stash first, never `--allow-dirty` without being asked; restore command after a failed update. README.product sections: install (`pnpm dlx`, release binaries), quick start with hull, commands table, ownership classes (link to `docs/template-format.md`), update bot workflow example (weekly cron + `workflow_dispatch`), Renovate alternative (spec §13, with the self-hosted caveat), writing templates (link to contract), comparison with Copier (one paragraph), license.
-- [ ] **Step 3b: Channel lines in `SKILL.md` (≤ 10, from channels plan 04 Task 19):** channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source (`source=main` or `source=channel:NAME`); never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel.
-- [ ] **Step 4: Run — PASS**
-- [ ] **Step 5: Commit** — `docs: agent skill and product README`
+- [x] **Step 1: Write failing test** — `docs_mention_only_real_flags`: extract `--[a-z-]+` tokens from both files, assert each appears in the help of some subcommand (plus an allowlist for `--json` examples of other tools, e.g. `pnpm`).
+- [x] **Step 2: Run — FAIL (files missing)**
+- [x] **Step 3: Write the docs.** `SKILL.md` frontmatter `name: splice`, `description:` "Use when a repo has .splice/lock.toml or the user asks to create, update or check a project from a keelstack template…". Body ≤ 80 lines: always `--json`; read `changes`/exit code table; before editing a file run `splice explain <path> --json` (owned → change the template or accept drift; shared → edit freely; seed → yours); resolving conflicts (edit marker blocks, keep intent of both, then `splice check --json --offline`); never edit `.splice/lock.toml`; dirty tree → commit or stash first, never `--allow-dirty` without being asked; restore command after a failed update. README.product sections: install (`pnpm dlx`, release binaries), quick start with hull, commands table, ownership classes (link to `docs/template-format.md`), update bot workflow example (weekly cron + `workflow_dispatch`), Renovate alternative (spec §13, with the self-hosted caveat), writing templates (link to contract), comparison with Copier (one paragraph), license.
+- [x] **Step 3b: Channel lines in `SKILL.md` (≤ 10, from channels plan 04 Task 19):** channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source (`source=main` or `source=channel:NAME`); never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel.
+- [x] **Step 4: Run — PASS**
+- [x] **Step 5: Commit** — `docs: agent skill and product README`
 
 ---
 
