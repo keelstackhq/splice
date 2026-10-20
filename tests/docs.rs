@@ -41,42 +41,91 @@ const SUBS: [&str; 7] = [
     "new", "add", "update", "check", "diff", "explain", "channel",
 ];
 
-/// Flags written after an explicit `splice <cmd>` must be in that command's help.
-fn check_prefixed(file: &str, text: &str) {
-    let root = flags_in(&help(&[]));
+const TRIM: &str = "`|()[]";
+
+fn is_splice_word(w: &str) -> bool {
+    w == "splice" || w.starts_with("@keelstackhq/splice")
+}
+
+/// Text that is code: whole lines inside fences, backtick spans elsewhere.
+fn code_segments(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut fenced = false;
     for line in text.lines() {
-        let words: Vec<&str> = line.split_whitespace().collect();
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        } else if fenced {
+            out.push(line);
+        } else {
+            out.extend(line.split('`').skip(1).step_by(2));
+        }
+    }
+    out
+}
+
+/// Flags written after an explicit `splice <cmd>` (also `pnpm dlx @keelstackhq/splice <cmd>` and
+/// `npx @keelstackhq/splice <cmd>`) must be in that command's help, and `<cmd>` must exist.
+/// Returns one message per problem.
+fn problems(file: &str, text: &str) -> Vec<String> {
+    let root = flags_in(&help(&[]));
+    let mut bad = Vec::new();
+    for line in code_segments(text) {
+        let words: Vec<&str> = line
+            .split_whitespace()
+            .map(|w| w.trim_matches(|c: char| TRIM.contains(c)))
+            .collect();
         let mut cur: Option<BTreeSet<String>> = None;
         for (i, w) in words.iter().enumerate() {
-            let w = w.trim_matches(|c: char| "`|()".contains(c));
-            if w == "splice" && i + 1 < words.len() {
-                let next = words[i + 1].trim_matches(|c: char| "`|()".contains(c));
-                // `splice channel add|remove` has its own help page.
-                let sub = if next == "channel" {
-                    words
-                        .get(i + 2)
-                        .map(|w| w.trim_matches(|c: char| "`|()".contains(c)))
-                        .filter(|w| ["add", "remove"].contains(w))
-                        .map(|w| vec![next, w])
-                } else {
-                    Some(vec![next])
-                };
-                cur = sub.filter(|_| SUBS.contains(&next)).map(|args| {
+            if is_splice_word(w) && i + 1 < words.len() {
+                let next = words[i + 1];
+                cur = None;
+                if SUBS.contains(&next) {
+                    // `splice channel add|remove` has its own help page.
+                    let args = if next == "channel" {
+                        match words.get(i + 2).filter(|w| ["add", "remove"].contains(w)) {
+                            Some(w) => vec![next, w],
+                            None => vec![next],
+                        }
+                    } else {
+                        vec![next]
+                    };
                     let mut k = flags_in(&help(&args));
                     k.extend(root.iter().cloned());
-                    k
-                });
+                    cur = Some(k);
+                } else if !next.starts_with('-')
+                    && next.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                {
+                    bad.push(format!("{file}: unknown subcommand `{next}`: {line}"));
+                }
             }
             if let (Some(k), true) = (&cur, w.starts_with("--")) {
                 for f in flags_in(w) {
-                    assert!(
-                        k.contains(&f),
-                        "{file}: `{f}` is not a flag of that subcommand: {line}"
-                    );
+                    if !k.contains(&f) {
+                        bad.push(format!(
+                            "{file}: `{f}` is not a flag of that subcommand: {line}"
+                        ));
+                    }
                 }
             }
         }
     }
+    bad
+}
+
+#[test]
+fn checker_reports_unknown_subcommand_and_flag() {
+    let doc = "Run `splice frobnicate` first.\n\
+               Then `pnpm dlx @keelstackhq/splice check --nope`.\n\
+               ```\nnpx @keelstackhq/splice update --bogus\n```\n\
+               Fine: `splice check --offline` and `[splice diff]`.\n";
+    let bad = problems("fake.md", doc);
+    assert_eq!(bad.len(), 3, "{bad:#?}");
+    assert!(
+        bad.iter()
+            .any(|m| m.contains("unknown subcommand `frobnicate`"))
+    );
+    assert!(bad.iter().any(|m| m.contains("`--nope`")));
+    assert!(bad.iter().any(|m| m.contains("`--bogus`")));
 }
 
 #[test]
@@ -104,7 +153,8 @@ fn docs_mention_only_real_flags() {
     ] {
         let text = std::fs::read_to_string(format!("{root}/{file}"))
             .unwrap_or_else(|e| panic!("{file}: {e}"));
-        check_prefixed(file, &text);
+        let bad = problems(file, &text);
+        assert!(bad.is_empty(), "{bad:#?}");
         if text.contains("-C <") {
             assert!(known.contains("-C") || all_help.contains("-C <DIR>"));
         }

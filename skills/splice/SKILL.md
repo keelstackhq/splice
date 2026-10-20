@@ -22,7 +22,7 @@ Run it as `splice`, or `pnpm dlx @keelstackhq/splice` if it is not installed.
 |---|---|
 | 0 | ok; `check` found nothing |
 | 1 | `check`: owned drift, conflict markers or an update is available. `update`: conflicts were written, or refused because of owned drift. `add`: a conflict or owned drift, nothing written |
-| 2 | usage: bad flags, missing `--data` value, dirty git tree, downgrade, no lock |
+| 2 | usage: bad flags, missing `--data` value, dirty git tree, downgrade, no lock; `new` into a non-empty `dest` or one that already has a lock; `add` with an unmet `requires` or a duplicate instance name |
 | 3 | template or environment error: bad manifest, `min_splice` too new, render error, git failure, failed migration or post command |
 
 ## Before editing a generated file
@@ -41,7 +41,7 @@ Run `splice explain <path> --json`. The class is in `changes[0].class`.
   looks for a newer template tag.
 - `splice diff --json`: what `update` would change. Never writes, needs no clean tree.
 - `splice update --json --yes [--to VERSION]`: needs a clean git tree (else exit 2).
-- `splice add <piece> --json --yes [--name N]`: same tree rule and merge rules as `update`.
+- `splice add <piece> --json --yes [--name N]`: same tree rule as `update`; conflicts write nothing.
 - `splice new <source> [dest] --json --yes [--piece ID[:NAME]] [--data K=V]`
 
 Dirty tree: ask the user to commit or stash, then run it again.

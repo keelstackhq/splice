@@ -55,7 +55,7 @@ exit 2
 A complete non-interactive run (local fixture, shortened):
 
 ```
-$ splice new ./tpl my-app --data project=demo --yes
+$ splice new ./tpl my-app --data project=demo --yes --ref v1.0.0
 create  .editorconfig  owned
 create  .github/workflows/ci.yml  shared
 create  README.md  seed
@@ -138,6 +138,7 @@ create  apps/web/tsconfig.json  owned
 create  only-with-app.txt  owned
 update  package.json  shared
 $ splice add app --name docs --yes
+create  apps/docs/package.json  shared
 create  apps/docs/src/index.html  seed
 ...
 $ splice add app --name docs --yes
@@ -303,7 +304,7 @@ Store it under Settings, Secrets and variables, Actions, as `SPLICE_BOT_TOKEN`. 
 |---|---|---|
 | 0 | ok; `check` found nothing | |
 | 1 | drift, conflicts, or an update available | `update available: A → B`: run `splice diff`, then `splice update`. `... is owned by the template but was edited locally`: revert it or use `--force`. `... has conflicts` or `unresolved conflict markers` in `check`: resolve them (section 6). |
-| 2 | usage error | `the working tree has uncommitted changes; commit or stash them first (or pass --allow-dirty)`. `missing value for var `X`; pass --data X=…`. `unknown piece `P``. `piece `app` already has an instance named `docs``. `<dir> has no .splice/lock.toml; run `splice new` first` (run in the project, or pass `-C <dir>`). `<dir> already has a .splice/lock.toml; use `splice update` or `splice add``. `target X is older than the locked Y; splice does not downgrade`. |
+| 2 | usage error | `the working tree has uncommitted changes; commit or stash them first (or pass --allow-dirty)`. `missing value for var `X`; pass --data X=…`. `unknown piece `P``. `piece `app` already has an instance named `docs``. `<dir> has no .splice/lock.toml; run `splice new` first` (run in the project, or pass `-C <dir>`). `<dir> already has a .splice/lock.toml; use `splice update` or `splice add``. `target X is older than the locked Y`. |
 | 3 | template or environment error | `template source X is not a git repository`: wrong path or URL, or no access. `template needs splice >= X (running Y); run `pnpm dlx @keelstackhq/splice@latest ...``: upgrade splice. Bad manifest, render error, a git failure, or a failed migration step or post command: read the message on stderr. After a failed update the lock still matches the old state, so fix the cause and rerun. |
 
 Add `--json` to any command for one machine-readable object on stdout (`ok`, `command`,
