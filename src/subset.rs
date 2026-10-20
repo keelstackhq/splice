@@ -57,6 +57,12 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
     };
     let mut stack: Vec<Frame> = Vec::new();
     let mut i = 0;
+    // Start of the plain text since the last tag: a `#}` in it is stray (spec §10 item 17).
+    let mut plain = 0;
+    let stray = |from: usize, to: usize| match text[from..to].find("#}") {
+        Some(off) => fail(from + off, "`#}` outside a comment".to_string()),
+        None => Ok(()),
+    };
     while let Some(found) = text[i..].find('{') {
         let start = i + found;
         let close = match text.as_bytes().get(start + 1) {
@@ -68,6 +74,32 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
                 continue;
             }
         };
+        stray(plain, start)?;
+        if close == "%}"
+            && blocks
+            && let Some((name, strict, _)) = lax_tag(&text[start + 2..])
+        {
+            if name == "endraw" {
+                return fail(
+                    start,
+                    "`{% endraw %}` without a matching `{% raw %}`".into(),
+                );
+            }
+            if !strict {
+                return fail(
+                    start,
+                    "`raw` allows no whitespace control (`-`, `+`) and only space, tab, CR or LF inside the tag".into(),
+                );
+            }
+            match raw_end(text, start + 2) {
+                Ok(after) => {
+                    i = after;
+                    plain = after;
+                    continue;
+                }
+                Err((at, msg)) => return fail(at.unwrap_or(start), msg),
+            }
+        }
         let open = &text[start..start + 2];
         let Some(len) = text[start + 2..].find(close) else {
             return fail(start, format!("unterminated `{open}` tag"));
@@ -76,6 +108,7 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         let end = start + 2 + len + 2;
         let tag = &text[start..end];
         i = end;
+        plain = end;
         let res = match open {
             "{{" => check_output(inner),
             _ if !blocks => Err("only `{{ var }}` is allowed in a path segment".to_string()),
@@ -89,6 +122,7 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
             );
         }
     }
+    stray(plain, text.len())?;
     if let Some(frame) = stack.last() {
         let (line, what) = match frame {
             Frame::If { line, .. } => (*line, "if"),
@@ -99,6 +133,63 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Whitespace as either engine's lexer may read it inside a tag (MiniJinja: ASCII whitespace,
+/// Nunjucks: JS `\s`). Only space, tab, CR and LF are allowed; the rest is detected to reject it.
+fn lax_ws(c: char) -> bool {
+    c.is_whitespace() || c == '\u{feff}'
+}
+
+/// Recognise `raw` / `endraw` as either engine would, on the text right after `{%`: optional
+/// whitespace control and any whitespace around the name, then `%}`. Returns the name, whether
+/// the spelling is the strict one (only space/tab/CR/LF, no `-`/`+`), and the length consumed.
+fn lax_tag(after: &str) -> Option<(&'static str, bool, usize)> {
+    let skip = |c: char| lax_ws(c) || c == '-' || c == '+';
+    let a = after.trim_start_matches(skip);
+    let (name, rest) = if let Some(r) = a.strip_prefix("endraw") {
+        ("endraw", r)
+    } else {
+        ("raw", a.strip_prefix("raw")?)
+    };
+    let b = rest.trim_start_matches(skip);
+    let tail = b.strip_prefix("%}")?;
+    let consumed = after.len() - tail.len();
+    let head = &after[..consumed - 2];
+    let strict = head.trim_matches([' ', '\t', '\n', '\r']) == name;
+    Some((name, strict, consumed))
+}
+
+type RawErr = (Option<usize>, String);
+
+/// Find the `{% endraw %}` closing a raw block whose body starts at `from`; returns the offset
+/// just after it. Mirrors MiniJinja (every `{%` is tried in turn). Spellings on which MiniJinja
+/// and Nunjucks disagree are rejected: dashes, odd whitespace, and an inner `{% raw %}` (Nunjucks
+/// nests raw blocks, MiniJinja does not). `None` as the offset means "the opening tag".
+fn raw_end(text: &str, from: usize) -> std::result::Result<usize, RawErr> {
+    let mut p = from;
+    while let Some(off) = text[p..].find("{%") {
+        let q = p + off + 2;
+        if let Some((name, strict, len)) = lax_tag(&text[q..]) {
+            if name == "raw" {
+                return Err((
+                    Some(q - 2),
+                    "a `raw` tag inside a raw block is not allowed (engines disagree on nesting)"
+                        .into(),
+                ));
+            }
+            if !strict {
+                return Err((
+                    Some(q - 2),
+                    "this `endraw` spelling is ambiguous inside a raw block (no `-`/`+`, only space, tab, CR or LF)"
+                        .into(),
+                ));
+            }
+            return Ok(q + len);
+        }
+        p = q;
+    }
+    Err((None, "`{% raw %}` is never closed".into()))
 }
 
 fn is_ident(s: &str) -> bool {
@@ -223,9 +314,71 @@ mod tests {
             "{% if a %}x{% elif \"app\" in pieces %}y{% else %}z{% endif %}",
             "{% for p in pieces %}{{ p }}{% endfor %}",
             "{# any } thing #}",
+            "{% raw %}a #} b{% endraw %}",
+            "{{ a }}{% raw %}#}{% endraw %}",
+            "{% raw %}{% endraw %}",
+            "{%raw%}{{ x }}{%endraw%}",
+            "{%\n\traw\r\n%}x{% \tendraw\n%}",
+            "{% raw %}{{ x }}{% endraw %}",
+            "{% raw %}{% if %}{% endraw %}",
+            "{% raw %}{# #}{% endraw %}",
+            "{% raw %}{{ ~ }} {% set %} {# open {{ open{% endraw %}",
+            "{% raw %}{% endraw x %}{% endrawx %}{%- endraw{% endraw %}",
+            "{% if a %}{% raw %}{% endif %}{% endraw %}{% endif %}",
+            "{% for p in pieces %}{% raw %}{% for %}{% endraw %}{% endfor %}",
+            "{% raw %}a{% endraw %}{% raw %}b{% endraw %}",
+            "{# {% raw %} #}",
         ] {
             assert!(validate(t, "t").is_ok(), "{t}");
         }
+    }
+
+    #[test]
+    fn rejects_raw_and_stray_comment_end() {
+        for t in [
+            "foo #} bar",
+            "{{ a }} #}",
+            "#}{{ a }}",
+            "{# c #} #}",
+            "{% raw %}x{% endraw %} #}",
+            "{% raw %}x",
+            "{% raw %}{% endraw",
+            "{% endraw %}",
+            "{%- raw %}x{% endraw %}",
+            "{% raw -%}x{% endraw %}",
+            "{%+ raw %}x{% endraw %}",
+            "{% raw +%}x{% endraw %}",
+            "{% raw %}x{%- endraw %}",
+            "{% raw %}x{% endraw -%}",
+            "{% raw %}x{%+ endraw %}",
+            "{% raw x %}x{% endraw %}",
+            "{% raw %}x{% endraw %}{% endraw %}",
+            "{%\u{a0}raw %}x{% endraw %}",
+            "{% raw %}x{%\u{a0}endraw %}",
+            "{% raw %}x{%\u{c}endraw %}",
+            "{% raw %}{% raw %}{% endraw %}{% endraw %}",
+            "{% raw %}{%- raw %}{% endraw %}",
+            "{% RAW %}x{% ENDRAW %}",
+            "{% if a %}{% raw %}{% endraw %}",
+        ] {
+            let e = validate(t, "f.jinja").unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{t}");
+            assert!(e.to_string().contains("f.jinja:1"), "{t}: {e}");
+        }
+    }
+
+    #[test]
+    fn raw_errors_name_the_line() {
+        let e = validate("a\nb\n{% raw %}\nx\ny", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
+        let e = validate("a\n{% raw %}\nx\n{%- endraw %}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:4"), "{e}");
+        let e = validate("{% raw %}a\n{% endraw %}\n{{ x ~ y }}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
+        let e = validate("{% raw %}\n\n{% endraw %}{% set %}", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
+        let e = validate("a\nb\nc #} d", "f.jinja").unwrap_err();
+        assert!(e.to_string().contains("f.jinja:3"), "{e}");
     }
 
     #[test]
@@ -241,7 +394,6 @@ mod tests {
             "{% if not a %}{% endif %}",
             "{% if pieces %}{% endif %}",
             "{% for x in items %}{% endfor %}",
-            "{% raw %}{% endraw %}",
             "{{ \"lit\" }}",
         ] {
             let e = validate(t, "f.jinja").unwrap_err();
@@ -372,6 +524,8 @@ mod tests {
             "{{ \"x\" }}",
             "{{ a ~ b }}",
             "{{ name",
+            "{% raw %}x{% endraw %}",
+            "a #} b",
         ] {
             let e = validate_path_segment(bad, "target").unwrap_err();
             assert_eq!(e.exit_code(), 3, "{bad}");

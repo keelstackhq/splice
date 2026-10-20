@@ -55,6 +55,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · 03/T5 · a44d3ae · `skills/splice/SKILL.md` (with the channel lines of Step 3b), product README merged with the Channels section, `LICENSE` (MIT), `tests/docs.rs` drift guard (README and SKILL.md name only real flags, `channel add|remove` aware), `npm-stage` requires LICENSE again; docs 1 passing, node tests passing
 - 2026-10-20 · port/getting-started · c26784e · `docs/getting-started.md` ported from PR #1 and re-verified against this CLI (outputs recaptured from the 0.2.0 binary; adds a short Channels section, `add` never writes markers, `check` prints nothing when clean); linked from the README; covered by `tests/docs.rs`
 - 2026-10-20 · port/npm-bot-review · see git log · npm launcher exits 3 (not 1) on missing binary, unsupported platform or spawn failure; update bot reads bare and literal-quoted lock keys, names channel versions in the `scope: all` title, rejects `to` with a newline or leading `-`, and refuses to overwrite a bot branch whose head is not the bot's; specs aligned (channels §3 `*.toml` lock, §13 install prefix)
+- 2026-10-20 · port/raw · see git log · `{% raw %}` blocks in the subset gate and a stray `#}` rejected (spec §10 items 16, 17), adapted from PR #1 to this gate; 4 raw conformance cases; contract sign-off is Blocked
 
 ## Blocked
 
@@ -65,6 +66,9 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
+  Add to the same PR: `{% raw %}...{% endraw %}` blocks in the §6 subset and rejecting a stray
+  `#}` (spec §10 items 16, 17; hull agreed raw blocks). splice already accepts raw; until the
+  contract lists it, templates using it work with splice only.
 - **Plan 03:** all five tasks done; what is left is human-only (items below). C2's dogfood step and C3 wait for the release.
 - **Release 0.2.0 (npm):** the release workflow exists (03/T2) but needs `LICENSE`, which 03/T5 adds. After that: run its `workflow_dispatch` dry run once on keelstackhq/splice (plan 03 Task 2 Step 4) and check all five targets build and smoke-test. Then: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).

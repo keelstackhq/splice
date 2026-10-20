@@ -1,0 +1,6 @@
+{{ a }} start 1
+end {{ b }}
+{{ c }}
+x 
+{# multi #}
+line  y
