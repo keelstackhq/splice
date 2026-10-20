@@ -21,7 +21,8 @@ There are no install scripts.
 Or download a binary from the GitHub release for your target (`splice-<target>.tar.gz`, `.zip` on
 Windows) and check it against `SHA256SUMS`. Targets: `x86_64-unknown-linux-musl`,
 `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`, `aarch64-apple-darwin`,
-`x86_64-pc-windows-msvc`. `git` must be on `PATH`: all fetching goes through it.
+`x86_64-pc-windows-msvc`. `git` must be on `PATH`: all fetching goes through it. Template commands (`[[post]]`, migration
+steps) run with POSIX `sh -c` on every OS; on Windows that is Git for Windows' `sh.exe`.
 
 ## Quick start
 

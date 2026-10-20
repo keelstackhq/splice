@@ -524,6 +524,13 @@ into the contract at its next `format` bump.
     the stored absolute path and for the cache key, so the key and the stored path do not change
     when the source folder is later deleted or renamed, nor with Windows short names. The cache
     key of a source that exists is unchanged.
+19. Template commands run with POSIX `sh -c` on every OS (ported from PR #1, adapted): the `run`
+    strings of `[[post]]` and `[[step]]` are shell text written by template authors (hull writes
+    POSIX), so `cmd /C` on Windows would break them. On Windows splice uses the first `sh.exe` or
+    `sh` on `PATH`, else Git for Windows' `sh.exe`, found by walking up from `git --exec-path`
+    to the first `bin\sh.exe` or `usr\bin\sh.exe`. No sh found is exit 3 and the message names
+    the missing `sh`. Pending hull's decision (shared document section 6) and the contract: until
+    both say POSIX sh, this is splice's own decision.
 
 ## 11. Testing
 

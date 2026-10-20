@@ -57,6 +57,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · port/npm-bot-review · see git log · npm launcher exits 3 (not 1) on missing binary, unsupported platform or spawn failure; update bot reads bare and literal-quoted lock keys, names channel versions in the `scope: all` title, rejects `to` with a newline or leading `-`, and refuses to overwrite a bot branch whose head is not the bot's; specs aligned (channels §3 `*.toml` lock, §13 install prefix)
 - 2026-10-20 · port/raw · see git log · `{% raw %}` blocks in the subset gate and a stray `#}` rejected (spec §10 items 16, 17), adapted from PR #1 to this gate; 4 raw conformance cases; contract sign-off is Blocked
 - 2026-10-20 · port/relative-sources · see git log · relative local sources in a lock resolve from the repo root (`parse_from`, main and channel locks), lenient canonicalisation (`lenient_canonical`, `strip_verbatim`) for the stored path and the cache key (spec §10 item 18); main already stored absolute paths, so `new`/`channel add` were not buggy; `tests/cli_local_source.rs`
+- 2026-10-20 · port/posix-sh · see git log · template commands run with POSIX `sh -c` on every OS; on Windows `sh` from PATH else Git for Windows' `sh.exe` via `git --exec-path` (`sh_from_exec_path`), exit 3 naming the missing sh (spec §10 item 19); main prints no shell-specific restore command, so `restore_cmd`/`Undo` were not needed
 
 ## Blocked
 
@@ -70,6 +71,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
   Add to the same PR: `{% raw %}...{% endraw %}` blocks in the §6 subset and rejecting a stray
   `#}` (spec §10 items 16, 17; hull agreed raw blocks). splice already accepts raw; until the
   contract lists it, templates using it work with splice only.
+- **POSIX sh for template commands:** hull to confirm POSIX `sh` for `[[post]]`/`[[step]]` `run` (shared document section 6), then the joint contract PR (add to the one above). Until then spec §10 item 19 is splice's own decision.
 - **Plan 03:** all five tasks done; what is left is human-only (items below). C2's dogfood step and C3 wait for the release.
 - **Release 0.2.0 (npm):** the release workflow exists (03/T2) but needs `LICENSE`, which 03/T5 adds. After that: run its `workflow_dispatch` dry run once on keelstackhq/splice (plan 03 Task 2 Step 4) and check all five targets build and smoke-test. Then: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
