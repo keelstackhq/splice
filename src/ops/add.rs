@@ -122,7 +122,7 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
             repo.display()
         ));
     };
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
         Fetcher::from_env().checkout(&src, &lock.template.commit, lock.template.version.clone())?;
     let template = Template::load(&resolved.root)?;
@@ -204,7 +204,10 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         steps: Vec::new(),
         from: lock.template.version.clone(),
         to: resolved.version.clone(),
-        lock: LockOut::Main(Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)),
+        lock: LockOut::Main(
+            Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)
+                .keep_relative_source(&lock.template.source),
+        ),
         post,
         when: When::Add,
         no_post: a.no_post,
@@ -246,7 +249,7 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
     let cl = sources.channel(name)?;
     let lock = &cl.lock;
     let lock_path = cl.path();
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
         Fetcher::from_env().checkout(&src, &lock.template.commit, lock.template.version.clone())?;
     let template = Template::load(&resolved.root)?;
@@ -330,7 +333,8 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
     }
     let lock_new = ChannelLock {
         meta: cl.meta.clone(),
-        lock: Lock::from_tree(&resolved, &lock.vars, &instances, &theirs),
+        lock: Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)
+            .keep_relative_source(&lock.template.source),
         sections: splan.locked.clone(),
     };
     let applied = apply(ApplyCtx {

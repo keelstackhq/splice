@@ -228,7 +228,7 @@ fn prepare_lock(
     // 2. Target: `--to`, the latest stable tag or the tracked branch head; never older than
     // the lock (tracked heads `0.0.0+g…` are never compared: semver orders build metadata as
     // text, B5).
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, g.dir.as_path())?;
     let fetcher = Fetcher::from_env();
     let (target, mut up_to_date, no_newer, tracked) = match target {
         Target::Branch(branch) => {
@@ -506,7 +506,8 @@ pub fn prepare(
         removes,
         force,
     });
-    let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
+    let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .keep_relative_source(&lock.template.source);
     Ok(Prepared {
         plan,
         lock_new,
@@ -656,7 +657,8 @@ pub fn prepare_channel(
         meta.only = only.to_vec();
         meta.exclude = exclude.to_vec();
     }
-    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
+    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .keep_relative_source(&cl.lock.template.source);
     let lock_new = ChannelLock {
         meta,
         lock: lock.clone(),

@@ -15,7 +15,8 @@ fn s(d: &TempDir) -> &str {
 fn redact(snapshot: &str) -> String {
     let mut out = snapshot.to_string();
     for (re, to) in [
-        (r#"source = ".*""#, r#"source = "[source]""#),
+        // the lock writer uses a literal ('...') string for Windows paths with backslashes
+        (r#"source = (".*"|'.*')"#, r#"source = "[source]""#),
         (r#"commit = ".*""#, r#"commit = "[commit]""#),
         (r#"splice = ".*""#, r#"splice = "[splice]""#),
         (

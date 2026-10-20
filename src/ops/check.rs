@@ -16,8 +16,8 @@ use crate::sources::Sources;
 type Result<T> = std::result::Result<T, SpliceError>;
 
 /// The newest stable version of the locked template, if it is newer than the lock.
-fn newer_stable(lock: &Lock) -> Result<Option<semver::Version>> {
-    let src = TemplateSource::parse(&lock.template.source)?;
+fn newer_stable(repo: &Path, lock: &Lock) -> Result<Option<semver::Version>> {
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let versions = Fetcher::from_env().available_versions(&src, false)?;
     Ok(versions
         .into_iter()
@@ -103,9 +103,9 @@ fn check_sections(repo: &Path, cl: &ChannelLock, report: &mut Report) -> Result<
 
 /// `Some("A → B (tag)")` when the channel's source has something newer whose template subtree
 /// differs from the locked commit; a tracked channel compares branch heads (short shas).
-fn channel_update(cl: &ChannelLock) -> Result<Option<String>> {
+fn channel_update(repo: &Path, cl: &ChannelLock) -> Result<Option<String>> {
     let lock = &cl.lock;
-    let src = TemplateSource::parse(&lock.template.source)?;
+    let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let fetcher = Fetcher::from_env();
     let (target, label) = match &cl.meta.track {
         Some(branch) => {
@@ -183,7 +183,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
     if let Some(lock) = main {
         check_files(repo, lock, "", &mut report)?;
         if !a.offline {
-            match newer_stable(lock) {
+            match newer_stable(repo, lock) {
                 Ok(Some(v)) => {
                     update_available = true;
                     report.msg(format!("update available: {} → {v}", lock.template.version));
@@ -206,7 +206,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
             ));
         }
         if !a.offline {
-            match channel_update(cl) {
+            match channel_update(repo, cl) {
                 Ok(Some(what)) => {
                     update_available = true;
                     report.msg(format!("{prefix}update available {what}"));

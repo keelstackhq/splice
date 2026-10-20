@@ -3,7 +3,6 @@
 mod common;
 
 use common::{commit_all, splice_cmd, template_repo};
-use std::process::Command as Proc;
 use tempfile::TempDir;
 
 /// A repo at v1 of `tpl`, committed, with a shared edit that conflicts with v2 (`ci.yml`) and a
@@ -38,13 +37,7 @@ fn edited_repo(tpl: &TempDir) -> TempDir {
 }
 
 fn porcelain(repo: &TempDir) -> String {
-    let out = Proc::new("git")
-        .current_dir(repo.path())
-        .args(["status", "--porcelain"])
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    String::from_utf8(out.stdout).unwrap()
+    common::git_stdout(repo.path(), &["status", "--porcelain"])
 }
 
 fn json(out: &[u8]) -> serde_json::Value {

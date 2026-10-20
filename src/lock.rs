@@ -10,6 +10,7 @@ use crate::fetch::{ResolvedTemplate, validate_commit};
 use crate::fsio::{self, sha256_hex};
 use crate::output::Class;
 use crate::render::{PieceInstance, RenderedTree};
+use crate::source::TemplateSource;
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -206,6 +207,17 @@ impl Lock {
                 .collect(),
             files,
         }
+    }
+
+    /// Keep the `source` of the lock this one replaces when that was a relative local path:
+    /// `from_tree` writes the resolved absolute path, but a hand-written `../tpl` should stay
+    /// as it was (spec §10 item 18).
+    #[must_use]
+    pub fn keep_relative_source(mut self, old: &str) -> Lock {
+        if TemplateSource::parse(old).is_ok_and(|s| s.is_relative_local()) {
+            self.template.source = old.to_string();
+        }
+        self
     }
 
     /// `None` when the repo has no lock. An unknown `format`, a malformed lock, a commit that is
