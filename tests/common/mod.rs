@@ -376,3 +376,18 @@ pub fn redact(snapshot: &str) -> String {
     }
     out
 }
+
+/// Every `--flag` word in `text`.
+pub fn flags(text: &str) -> Vec<&str> {
+    let flag = regex::Regex::new(r"--[a-z][a-z-]*").unwrap();
+    flag.find_iter(text).map(|m| m.as_str()).collect()
+}
+
+/// Flags in `section` that `help` does not show.
+pub fn unknown_flags<'a>(section: &'a str, help: &str) -> Vec<&'a str> {
+    let known: std::collections::BTreeSet<&str> = flags(help).into_iter().collect();
+    flags(section)
+        .into_iter()
+        .filter(|f| !known.contains(f))
+        .collect()
+}

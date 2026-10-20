@@ -1,10 +1,22 @@
 # splice
 
 Start a repo from versioned template pieces and keep it up to date. A Copier alternative in one
-static binary: no Python, no Rust toolchain. Part of [keelstack](https://github.com/keelstackhq):
+static binary: no Python, no Rust toolchain. Part of [keelstackhq](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
-> Status: under construction. See `docs/superpowers/specs/2026-10-14-splice-design.md`.
+> Status: version 0.2.0 (`Cargo.toml`), unreleased until the `v0.2.0` tag is pushed and the npm
+> packages are published; until then the install paths below do not work yet. Design:
+> `docs/superpowers/specs/2026-10-14-splice-design.md`.
+
+## Install
+
+- **npm:** `pnpm dlx @keelstackhq/splice <command>` (or `npx`). The launcher runs the prebuilt
+  binary of your platform; there are no install scripts. `SPLICE_BINARY` runs a specific binary.
+- **Release archives:** download `splice-<target>.tar.gz` (`.zip` on Windows) and `SHA256SUMS` from
+  the GitHub release, check the sum, put `splice` on your `PATH`. Targets: Linux x86_64 and
+  aarch64 (static musl), macOS x86_64 and aarch64, Windows x86_64.
+- **From source:** `cargo install --locked --git https://github.com/keelstackhq/splice keel-splice`
+  (the binary is `splice`).
 
 ```bash
 pnpm dlx @keelstackhq/splice new gh:keelstackhq/hull//template my-app
@@ -22,6 +34,8 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 | `splice check` | Fail on edited owned files, leftover conflict markers, or a newer version |
 | `splice diff [--to V]` | Show what `update` would change, as a unified diff; writes nothing |
 | `splice explain <path>` | Which piece owns a file and how splice treats it |
+| `splice channel add <source>` | Apply a second template next to the main one, with its own lock (see Channels) |
+| `splice channel remove <name>` | Remove a channel: delete its unedited files and blocks, then its lock |
 
 Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts). Exit codes:
 0 ok, 1 drift/conflict/update available, 2 usage error, 3 template error. `add` and `update`
@@ -35,7 +49,21 @@ refuse a dirty git tree (exit 2) unless `--allow-dirty`.
 | `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). Conflicts get diff3 markers. |
 | `seed` | Written once, then yours. |
 
-Template authors: see [`docs/template-format.md`](docs/template-format.md).
+## Writing templates
+
+A template is a directory with `splice.toml` and pieces. The format (manifests, the Jinja subset,
+ownership classes, merges, migrations) is specified in
+[`docs/template-format.md`](docs/template-format.md). It is shared with
+[hull](https://github.com/keelstackhq/hull), the first template, and is binding for both repos.
+
+## Compared with Copier
+
+Copier is the closest tool: it also renders a template and updates it later. splice is one static
+binary with no Python, so `pnpm dlx` is enough, and it classifies every file (`owned`, `shared`,
+`seed`) so that `update` knows what may be replaced, merged or left alone. Templates use a small
+Jinja subset that any implementation can follow, not Python-specific features. splice does not
+run arbitrary template code; it runs only the `post` commands and migration steps a template
+declares. It does not read Copier templates.
 
 ## Channels
 
@@ -116,4 +144,14 @@ Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows;
 App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials. The job needs
 `contents: write` and `pull-requests: write`.
 
-License: MIT.
+### Renovate instead of the Action
+
+Renovate can do the same job with a `customManagers` regex entry on `.splice/lock.toml`
+(`version = "..."`, datasource `github-tags`) plus a `postUpgradeTasks` entry that runs
+`splice update --to {{newVersion}} --yes`. `postUpgradeTasks` only run on self-hosted Renovate
+with `allowedCommands` set. Without them Renovate only bumps the version string, which breaks the
+lock. That is why the Action is the default. This setup is documented, not shipped.
+
+## License
+
+MIT, see [`LICENSE`](LICENSE).

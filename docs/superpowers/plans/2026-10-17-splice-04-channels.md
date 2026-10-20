@@ -888,7 +888,7 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 **Interfaces:** none (docs). The other main-spec sections were updated by the tasks that changed them (B6); the channels spec was updated in the plan revision.
 
 - [x] **Step 1: Write failing test** — every `--[a-z-]+` in the README Channels section appears in `splice channel add --help`, `splice update --help`, `splice check --help` or `splice add --help`.
-- [x] **Step 2: Run — FAIL.**  **Step 3: Write.** SKILL.md (after plan 03; not done — see PROGRESS Blocked) gains ≤ 10 lines: channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source; never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel. **Step 4: Run — PASS.**
+- [x] **Step 2: Run — FAIL.**  **Step 3: Write.** SKILL.md (done in plan 03 Task 5) gains ≤ 10 lines: channels exist when `.splice/channels/` has files; `splice explain <path> --json` names the source; never edit inside `<!-- splice:NAME:begin …` blocks, change the channel source instead; `splice check --json` covers every channel. **Step 4: Run — PASS.**
 - [x] **Step 5: Commit** — `docs: channels in spec index and README`
 
 ---

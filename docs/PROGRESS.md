@@ -60,7 +60,6 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
-- SKILL.md channel lines: plan 03 not executed. The lines are in plan 03 Task 5 (Step 3b); add them when `skills/splice/SKILL.md` is created.
 - **Plan 03:** Task 19's SKILL.md part, C2's dogfood step and C3 still wait for it (Task 20 and Task 21's npm part are done).
 - **Release 0.2.0 (npm):** after plan 03's release workflow exists: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
