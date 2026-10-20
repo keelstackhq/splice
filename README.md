@@ -99,7 +99,9 @@ jobs:
 It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
 
 Inputs: `version` (`latest`, `next`, a semver, or `none` to use the `splice` on `PATH`), `to`
-(template version, default latest), `token` (default `github.token`), `branch` (default
+(template version, default latest), `scope` (`main` or `all`; default `all` when
+`.splice/channels/` holds a `*.toml`, else `main`; `all` runs `splice update --all` and groups the PR
+body by source; `to` needs `scope: main`), `token` (default `github.token`), `branch` (default
 `splice/update`), `labels` (default `splice`), `working-directory` (default `.`). Outputs:
 `result` and `pr-url`. `result` is one of:
 

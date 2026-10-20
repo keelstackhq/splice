@@ -7,6 +7,9 @@ inputs:
   to:
     description: Template version to update to (default latest)
     default: ""
+  scope:
+    description: "main or all; default all when .splice/channels/ holds a *.toml, else main"
+    default: ""
   token:
     description: Token for pushing the branch and managing the pull request
     default: ${{ github.token }}
@@ -35,6 +38,7 @@ runs:
         VERSION: ${{ inputs.version }}
         TO: ${{ inputs.to }}
         BRANCH: ${{ inputs.branch }}
+        SCOPE: ${{ inputs.scope }}
       run: |
         set -euo pipefail
         node "$GITHUB_ACTION_PATH/args.mjs" validate
@@ -53,6 +57,7 @@ runs:
       shell: bash
       env:
         TO: ${{ inputs.to }}
+        SCOPE: ${{ inputs.scope }}
         WORKDIR: ${{ inputs.working-directory }}
         TOKEN: ${{ inputs.token }}
       run: |

@@ -5,11 +5,12 @@
 //   drift.json     append a line to the owned .editorconfig, commit, `update --to v2.0.0`
 //   updated.json   clean tree, `update --to v2.0.0`
 //   current.json   commit that result, `update --to v2.0.0` again
+//   all.json       two sources: main template (app:web) and channel rig; `update --all` from v1.0.0 to v2.0.0
 //   error.json     clean tree, `update --to v3.0.0` (v3 has min_splice = "99.0.0")
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { parseLockVersion, parseReport, summarize } from "../summary.mjs";
+import { lockFiles, parseLockVersion, parseReport, summarize } from "../summary.mjs";
 
 const load = (name) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
@@ -72,4 +73,32 @@ test("lock version must be semver, so no newline reaches GITHUB_OUTPUT", () => {
   assert.equal(parseLockVersion('[template]\nversion = "2.0.0"\n'), "2.0.0");
   assert.throws(() => parseLockVersion('[template]\nversion = "2.0.0\\nresult=evil"\n'), /lock/);
   assert.throws(() => parseLockVersion("[vars]\n"), /lock/);
+});
+
+test("update --all groups rows by source", () => {
+  const lock = '[files]\n".claude/agents/reviewer.md" = { class = "owned", sha256 = "a" }\n';
+  const owners = Object.fromEntries(lockFiles(lock).map((path) => [path, "rig"]));
+  const s = summarize(load("all.json"), 0, { version: "2.0.0", dirty: true, owners });
+  assert.equal(s.title, "chore: splice update to 2.0.0");
+  const main = s.body.indexOf("### main");
+  const rig = s.body.indexOf("### rig");
+  assert.ok(main >= 0 && rig > main, s.body);
+  const at = (needle) => s.body.indexOf(needle);
+  assert.ok(at("`.claude/agents/reviewer.md`") > rig);
+  assert.ok(at("`AGENTS.md#rig`") > rig);
+  assert.ok(at("`package.json`") > main && at("`package.json`") < rig);
+  assert.ok(at("`CHANGELOG.md`") < rig);
+});
+
+test("update --all title without a main lock", () => {
+  const report = { ok: true, command: "update", changes: [], messages: ["source=channel:rig"] };
+  const s = summarize(report, 0, { version: null, dirty: true });
+  assert.equal(s.title, "chore: splice update");
+  assert.match(s.body, /### rig/);
+  assert.doesNotMatch(s.body, /### main/);
+});
+
+test("lockFiles reads the [files] table only", () => {
+  const text = '[files]\n"a.txt" = { class = "owned" }\n"b#x" = { class = "shared" }\n\n[sections]\n"H.md" = { created = true }\n';
+  assert.deepEqual(lockFiles(text), ["a.txt", "b#x"]);
 });

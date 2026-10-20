@@ -893,9 +893,9 @@ Multi-command tests use `chan_commit` between mutating calls (D3).
 
 ---
 
-### Task 20: Update-bot `scope` input — **after plan 03**
+### Task 20: Update-bot `scope` input
 
-Depends on plan 03 Task 4 (`action/action.yml`, `action/summary.mjs`), not started at 999179b (no `action/`). Leave this task unchecked and add the PROGRESS Blocked line `Task 20: plan 03 not executed` until it lands (D4).
+Built on plan 03 Task 4 (`action/action.yml`, `action/summary.mjs`); landed as plan 03 Task 4b.
 
 **Files:**
 - Modify: `action/action.yml`, `action/summary.mjs`, `action/test/*.test.mjs`, README bot section
@@ -904,9 +904,9 @@ Depends on plan 03 Task 4 (`action/action.yml`, `action/summary.mjs`), not start
 **Interfaces:**
 - Produces: input `scope` (`main` | `all`; default: `all` when `.splice/channels/` has a `*.toml`, else `main`). `all` runs `splice update --all --json --yes`; `main` runs today's command. One PR either way; the PR body groups rows by the `source=` messages. `scope: main` in a channel-only repo fails with splice's exit-2 message.
 
-- [ ] **Step 1: Write failing tests** — `scopeDefault({channels: ["rig.toml"]}) === "all"`, `scopeDefault({channels: []}) === "main"`, `command("all")` equals `["update","--all","--json","--yes"]`, `summary()` groups `source=channel:rig` rows under a `rig` heading.
-- [ ] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS; actionlint clean.**
-- [ ] **Step 5: Commit** — `feat: update bot scope input for channels`
+- [x] **Step 1: Write failing tests** — `scopeDefault({channels: ["rig.toml"]}) === "all"`, `scopeDefault({channels: []}) === "main"`, `command("all")` equals `["update","--all","--json","--yes"]`, `summary()` groups `source=channel:rig` rows under a `rig` heading.
+- [x] **Step 2: Run — FAIL.**  **Step 3: Implement.** **Step 4: Run — PASS; actionlint clean.**
+- [x] **Step 5: Commit** — `feat: update bot scope input for channels`
 
 ---
 

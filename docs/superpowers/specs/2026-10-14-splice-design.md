@@ -557,7 +557,11 @@ Steps: install via `npm i -g @keelstackhq/splice@<version>` (unless `none`), run
 
 The push fetches the remote bot branch first, then `git push --force-with-lease`; it
 always authenticates with `token` (`gh auth setup-git`; the push resets `http.https://github.com/.extraheader`, so credentials left by checkout are ignored). The PR body
-is a summary table from the JSON, grouped by source (`main`, each channel) for `scope: all`.
+is a summary table from the JSON. For `scope: all` it has one table per source under a heading
+(`main`, then each channel): rows carry no source, so a `HOST#NAME` section row belongs to channel
+`NAME` and any other path to the source whose lock (current or at `HEAD`) lists it, else `main`.
+The title is `chore: splice update to <version>`, without the version when there is no main lock.
+`scope: main` in a channel-only repo is left to splice (exit 2, the job fails with its message).
 Labels are added after the PR exists; a label failure is a warning.
 The job needs `permissions: contents: write, pull-requests: write`. `action-selftest.yml`
 (`workflow_dispatch`) runs the Action three times against a local bare origin with a stub `gh`
