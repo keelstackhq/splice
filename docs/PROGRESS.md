@@ -53,6 +53,8 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · 03/T2 · cf0bd9a · release workflow for five targets with `SHA256SUMS`; Windows check fixed with cfg(unix); actionlint clean
 - 2026-10-20 · 03/T4 · 76dea13, 80e999c, 8490dcc · update-bot composite action; fix round proves lease fetch (stale tracking ref) and clears checkout credentials; selftest fails if run 2 opens a new PR; node tests 39 passed, actionlint and shellcheck clean
 - 2026-10-20 · 03/T5 · 5c96f2f · agent skill (`skills/splice/SKILL.md`, body 65 lines) and product README; `cargo nextest run`: 467 passed; review approved
+- 2026-10-18 · 04/C1 · keelstackhq/decisions#2 (3bfa3ec, 75a0ab1; merged 32f618a) · `channel/` template and D-004; dry run 2026-10-20 with local splice 0.2.0 on a scratch hull 42fd8c3: stale snapshot → `channel add` exit 1 (owned conflict, nothing written); after syncing the snapshot → exit 0, `CLAUDE.md#decisions` created, `splice check --json --offline` exit 0
+- 2026-10-18 · 04/C2 · keelstackhq/hull#5 (merged 42fd8c3) · `rigging/` channel template, `AGENTS.md` seed, `section-fragment` in hull's conformance run; hull owner sign-off recorded in hull PROGRESS; dogfood and the hull release stay Blocked
 
 ## Blocked
 
@@ -64,7 +66,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
-- **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists.
+- **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists. C3 per repo: sync the snapshot first (copy `DECISIONS.md`), then `channel add` (see plan 04 C3).
 - Repo settings on `keelstackhq/splice`: make `ci-ok` the only required check; merge queue optional.
 - **Visibility:** make `keelstackhq/splice` public before the first tag (npm provenance needs a public repo; the `npm` job fails fast otherwise).
 - **Environment:** create the GitHub environment `release` (Settings → Environments) with a tag rule `v*` and required reviewers; the reviewers are the only gate before publishing. Both the `release` and `npm` jobs use environment `release`, so a release needs two approvals. That is intended.
@@ -73,11 +75,10 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - The x86_64-apple-darwin binary is cross-built on arm64 and only checked with `file`; it is never run.
 - Push tag `v0.2.0` after plan 03 is on `main` and only after the `workflow_dispatch` dry run is green on all five targets (Windows has never run the binary before that smoke); check the five archives, `SHA256SUMS` and the six npm packages; run `pnpm dlx @keelstackhq/splice@0.2.0 --version` on a clean machine.
 - Tag `v1` for the Action (`git tag -f v1 && git push -f origin v1`; the human does this, agents never force-push; it does not trigger a release) and enable the bot in a consumer (plan 04 C3) with a token secret.
-- **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
-- **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
+- **`[sections]` contract note:** hull publishes `rigging/` with the splice-only piece key `[sections]`; agree a joint note in `docs/template-format.md` with hull in the same week (D-003), or confirm none is needed.
 - **Bot tokens:** each adopting repo needs the bot workflow enabled and a token that can read `keelstackhq/decisions` and `keelstackhq/hull` if they are private (repo secret, e.g. a GitHub App token passed as `token`).
 - **hull release** removing the four agent files (C2 last step): tag a hull version.
 
 ## Status
 
-Milestones 2 and 3 done (release workflow, npm launcher, update-bot Action, skill file, product README). Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the first release (visibility, `release` environment, npm first publish, tags `v0.2.0` and `v1`) and the cross-repo tasks (C1–C3) are Blocked above.
+Milestones 2 and 3 done (release workflow, npm launcher, update-bot Action, skill file, product README). Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the first release (visibility, `release` environment, npm first publish, tags `v0.2.0` and `v1`) are Blocked above. Cross-repo C1 (decisions channel, D-004) and C2 (hull `rigging/`) are merged; C3 (six repos adopt the channel), the C2 dogfood step and the hull release wait for 0.2.0 on npm.

@@ -930,19 +930,19 @@ Built on plan 03 Task 4 (`action/action.yml`, `action/summary.mjs`); landed as p
 
 **Files (in keelstackhq/decisions):** `channel/splice.toml` (`name = "decisions"`, `base = "snapshot"`, `min_splice = "0.2.0"`), `channel/pieces/snapshot/{piece.toml,files/docs/agents/org-decisions.md}` (owned), `channel/pieces/import-project/` (`[sections] "docs/agents/project.md"`), `channel/pieces/import-claude/` (`"CLAUDE.md"`), `channel/pieces/import-agents/` (`"AGENTS.md"`: "Read docs/agents/org-decisions.md"), `scripts/check-index.sh` (fails unless `channel/pieces/snapshot/files/docs/agents/org-decisions.md` equals `DECISIONS.md`), `adopt/adopt.sh` (prints `deprecated: run splice channel add gh:keelstackhq/decisions//channel --track main --piece import-project`), `adopt/README.md`, `decisions/004-decisions-channel.md` (copy of `decisions/000-template.md`) and a D-004 row in `DECISIONS.md` (E4).
 
-- [ ] Step 1: Make `check-index.sh` fail on a deliberately different copy; then copy `DECISIONS.md`; `bash scripts/check-index.sh` passes.
-- [ ] Step 2: D-004 — row `| D-004 | <date> | all | Org decisions reach repos as the splice channel gh:keelstackhq/decisions//channel (--track main; --piece import-project, else import-claude), kept fresh by the update bot and splice check; adopt/adopt.sh and the SessionStart sync-decisions.sh hooks are retired. [why](decisions/004-decisions-channel.md) |`; the record names the repos (hull, splice, hoard, example-app, keelstack, berth), the files deleted per repo and the command. `DECISIONS.md` ≤ 60 lines; `npx prettier --write DECISIONS.md`; `bash scripts/check-index.sh` passes (the snapshot copy gets the row too).
-- [ ] Step 3: With a local splice ≥ 0.2.0 build (`cargo build --release` in splice; npm is not needed for this dry run): `splice channel add <decisions checkout>//channel --track <branch> --piece import-project` into a scratch copy of hull — the existing snapshot adopts without `--force`; paste output.
-- [ ] Step 4: PR `feat: decisions channel for splice` (owner merges, D-002). The SessionStart `sync-decisions.sh` stays until C3 replaces it per repo.
+- [x] Step 1: Make `check-index.sh` fail on a deliberately different copy; then copy `DECISIONS.md`; `bash scripts/check-index.sh` passes.
+- [x] Step 2: D-004 — row `| D-004 | <date> | all | Org decisions reach repos as the splice channel gh:keelstackhq/decisions//channel (--track main; --piece import-project, else import-claude), kept fresh by the update bot and splice check; adopt/adopt.sh and the SessionStart sync-decisions.sh hooks are retired. [why](decisions/004-decisions-channel.md) |`; the record names the repos (hull, splice, hoard, example-app, keelstack, berth), the files deleted per repo and the command. `DECISIONS.md` ≤ 60 lines; `npx prettier --write DECISIONS.md`; `bash scripts/check-index.sh` passes (the snapshot copy gets the row too).
+- [x] Step 3: With a local splice ≥ 0.2.0 build (`cargo build --release` in splice; npm is not needed for this dry run): `splice channel add <decisions checkout>//channel --track <branch> --piece import-project` into a scratch copy of hull — the existing snapshot adopts without `--force`; paste output.
+- [x] Step 4: PR `feat: decisions channel for splice` (owner merges, D-002). The SessionStart `sync-decisions.sh` stays until C3 replaces it per repo.
 
 ### Task C2 (repo `keelstackhq/hull`): `rigging/` channel and `AGENTS.md` → seed
 
 Inside the contract (no `docs/template-format.md` change); hull's own plan/PR.
 
-- [ ] First: a hull spec change (AI layer: `AGENTS.md` becomes seed; `rigging/` is a second template) signed off by the hull owner; record it in hull's `docs/PROGRESS.md` Blocked until then. Ask the owner whether hull publishing `[sections]` (a key outside contract §4) needs a contract note under D-003 before `rigging/` ships (E3).
-- [ ] `rigging/` (format 1, `name = "rigging"`, `base = "core"`, `min_splice = "0.2.0"`): `core` (`[sections] "AGENTS.md"` with the harness-neutral rules), `claude` (`.claude/agents/{explorer,implementer,reviewer,ci-fixer}.md` owned; **no** `CLAUDE.md` section — hull owns `CLAUDE.md`, which imports `@AGENTS.md`, E1), `skills` (`multiple`, `target = ".{{ dir }}/skills"`, `dir` pattern `^(claude|agents)$`). Harness dirs checked against current Claude Code and Codex docs at write time.
-- [ ] Reclassify `AGENTS.md` from owned to seed in hull's base piece; hull test for the class.
-- [ ] Add splice's `section-fragment` corpus case to hull's Nunjucks conformance run.
+- [x] First: a hull spec change (AI layer: `AGENTS.md` becomes seed; `rigging/` is a second template) signed off by the hull owner; record it in hull's `docs/PROGRESS.md` Blocked until then. Ask the owner whether hull publishing `[sections]` (a key outside contract §4) needs a contract note under D-003 before `rigging/` ships (E3).
+- [x] `rigging/` (format 1, `name = "rigging"`, `base = "core"`, `min_splice = "0.2.0"`): `core` (`[sections] "AGENTS.md"` with the harness-neutral rules), `claude` (`.claude/agents/{explorer,implementer,reviewer,ci-fixer}.md` owned; **no** `CLAUDE.md` section — hull owns `CLAUDE.md`, which imports `@AGENTS.md`, E1), `skills` (`multiple`, `target = ".{{ dir }}/skills"`, `dir` pattern `^(claude|agents)$`). Harness dirs checked against current Claude Code and Codex docs at write time.
+- [x] Reclassify `AGENTS.md` from owned to seed in hull's base piece; hull test for the class.
+- [x] Add splice's `section-fragment` corpus case to hull's Nunjucks conformance run.
 - [ ] dogfood renders `rigging/` with splice once 0.2.0 is published (**after plan 03**; Blocked until then).
 - [ ] A later hull release: `migrations/<v>.toml` `[[remove]]` for the four agent files; README + generated `CLAUDE.md` say: run `splice update`, then `splice channel add gh:keelstackhq/hull//rigging --piece claude` (not a post/step: the main lock is not yet written then).
 
@@ -950,6 +950,7 @@ Inside the contract (no `docs/template-format.md` change); hull's own plan/PR.
 
 One PR per repo, after plan 03 is executed and released (splice 0.2.0 on npm via its release workflow, bot Action available) and C1 is merged (E5). hoist has not adopted the snapshot; leave it out unless the owner asks (E6).
 
+- [ ] Sync the snapshot first (copy `DECISIONS.md` of decisions `main` to `docs/agents/org-decisions.md`, commit `chore: sync org decisions`): a stale snapshot makes `channel add` exit 1 with an owned conflict (dry run 2026-10-20 on hull 42fd8c3).
 - [ ] Delete `.claude/hooks/session-start.d/sync-decisions.sh` (or `.claude/hooks/sync-decisions.sh` and its `settings.json` entry — berth uses this form); delete the hand-written "## Org decisions" block.
 - [ ] `pnpm dlx @keelstackhq/splice@0.2.0 channel add gh:keelstackhq/decisions//channel --track main --piece import-project` (repos with `docs/agents/project.md`: hull-generated example-app, keelstack); else `--piece import-claude` (hull, splice, hoard, berth). In hull-generated repos `CLAUDE.md` is owned by hull, so use `import-project`.
 - [ ] Enable the update bot (plan 03 Action, Task 20 `scope` default `all`); `splice check --json` exit 0; CI green. Commit `chore: adopt decisions channel`.
@@ -957,7 +958,7 @@ One PR per repo, after plan 03 is executed and released (splice 0.2.0 on npm via
 
 ## Blocked (human-only; copy into `docs/PROGRESS.md`)
 
-- **Plan 03:** not executed at 999179b. Task 19's SKILL.md part, Task 20, Task 21's npm part, C2's dogfood step and C3 wait for it.
+- ~~**Plan 03:** not executed at 999179b.~~ Done: keelstackhq/splice#5 (8022231) landed Task 19's SKILL.md part, Task 20 and Task 21's npm part. C2's dogfood step and C3 now wait only for the 0.2.0 release (splice `docs/PROGRESS.md` Blocked).
 - **Release 0.2.0 (npm):** after plan 03's release workflow exists: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after Task 21 is on `main`.
 - **Decisions PR merge:** the owner merges C1 (incl. D-004) in keelstackhq/decisions (D-002).
 - **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md → seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
