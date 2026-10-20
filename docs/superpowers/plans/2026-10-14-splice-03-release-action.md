@@ -55,7 +55,7 @@ README.md (from README.md.product), LICENSE (MIT)
 **Interfaces:**
 - Produces: required check name `ci-ok`.
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
 
 ```yaml
 on:
@@ -80,9 +80,9 @@ jobs:
 
 `RUSTFLAGS` unset (keeps the cache valid); `CARGO_TERM_COLOR: always`; `timeout-minutes: 15`.
 
-- [ ] **Step 2: Run actionlint locally (`docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`, or the binary) — expect no findings**
-- [ ] **Step 3: Run the same commands locally — expect PASS; note wall time in PROGRESS (target < 2 min warm)**
-- [ ] **Step 4: Commit** — `ci: single-job CI with ci-ok aggregate`
+- [x] **Step 2: Run actionlint locally (`docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest`, or the binary) — expect no findings**
+- [x] **Step 3: Run the same commands locally — expect PASS; note wall time in PROGRESS (target < 2 min warm)**
+- [x] **Step 4: Commit** — `ci: single-job CI with ci-ok aggregate`
 
 ---
 

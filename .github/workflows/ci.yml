@@ -1,19 +1,57 @@
 name: ci
 on:
-  push:
-    branches: [main]
   pull_request:
   merge_group:
+  push:
+    branches: [main]
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
 jobs:
-  ci:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: nextest,shellcheck
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo nextest run --locked
+      - run: cargo nextest run --locked --no-fail-fast
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # Quoted globs: node expands them itself and passes when nothing matches yet.
+      - name: node tests
+        run: node --test 'scripts/**/*.test.mjs' 'npm/splice/test/**/*.test.mjs' 'action/test/**/*.test.mjs'
+      - name: no OpenSSL or rustls in the dependency tree
+        run: |
+          for c in openssl openssl-sys native-tls rustls; do
+            if cargo tree --locked --target all -i "$c"; then echo "$c is in the tree"; exit 1; fi
+          done
+      # install-action has no actionlint; fetch the release and check its sha256.
+      - name: actionlint
+        env:
+          AL_VERSION: 1.7.7
+          AL_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+        run: |
+          tgz="actionlint_${AL_VERSION}_linux_amd64.tar.gz"
+          curl -sSLf -o "$RUNNER_TEMP/$tgz" "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/$tgz"
+          echo "$AL_SHA256  $RUNNER_TEMP/$tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tgz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -shellcheck "$(command -v shellcheck)"
+  ci-ok:
+    needs: [test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.test.result }}" = success ]'
