@@ -6,6 +6,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SEMVER } from "./args.mjs";
 
 export function summarize(report, exitCode, { version, dirty }) {
   const messages = report.messages ?? [];
@@ -41,19 +42,32 @@ export function summarize(report, exitCode, { version, dirty }) {
   return { title, body: parts.join("\n\n") + "\n", result };
 }
 
-function lockVersion() {
-  const lock = readFileSync(".splice/lock.toml", "utf8");
+export function parseReport(text, exitCode) {
+  if (text.trim() === "") {
+    throw new Error(`splice exited ${exitCode} without a JSON report; see its stderr above`);
+  }
+  return JSON.parse(text);
+}
+
+export function parseLockVersion(lock) {
   const section = lock.split(/^\[template\]\s*$/m)[1] ?? "";
-  return /^version\s*=\s*"([^"]*)"/m.exec(section)?.[1] ?? "unknown";
+  const version = /^version\s*=\s*"([^"]*)"/m.exec(section)?.[1];
+  if (version === undefined || !SEMVER.test(version)) {
+    throw new Error("`[template] version` in .splice/lock.toml is missing or not a semver");
+  }
+  return version;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [reportPath, code] = process.argv.slice(2);
   try {
-    const report = JSON.parse(readFileSync(reportPath, "utf8"));
-    const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim() !== "";
     const exitCode = Number(code);
-    const version = exitCode === 0 || exitCode === 1 ? lockVersion() : "unknown";
+    const report = parseReport(readFileSync(reportPath, "utf8"), exitCode);
+    const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim() !== "";
+    const version =
+      exitCode === 0 || exitCode === 1
+        ? parseLockVersion(readFileSync(".splice/lock.toml", "utf8"))
+        : "unknown";
     const s = summarize(report, exitCode, { version, dirty });
     const bodyFile = join(process.env.RUNNER_TEMP || tmpdir(), "splice-pr-body.md");
     writeFileSync(bodyFile, s.body);

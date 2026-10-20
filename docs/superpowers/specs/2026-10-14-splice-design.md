@@ -556,7 +556,7 @@ Steps: install via `npm i -g @keelstackhq/splice@<version>` (unless `none`), run
 | 2, 3 | — | — | fail with splice's messages |
 
 The push fetches the remote bot branch first, then `git push --force-with-lease`; it
-authenticates with `token` (`gh auth setup-git`), not with checkout's credentials. The PR body
+always authenticates with `token` (`gh auth setup-git`; the push resets `http.https://github.com/.extraheader`, so credentials left by checkout are ignored). The PR body
 is a summary table from the JSON, grouped by source (`main`, each channel) for `scope: all`.
 Labels are added after the PR exists; a label failure is a warning.
 The job needs `permissions: contents: write, pull-requests: write`. `action-selftest.yml`

@@ -54,6 +54,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 <!-- Task, what is missing, exact action a human must take. -->
 
+- Task 03/T4 · Run `action-selftest.yml` once via `workflow_dispatch` on GitHub (real `gh auth setup-git`, `pr create`, `pr edit`); the local dry run stubs `gh`.
 - Contract wording: `docs/template-format.md` still says `keelstack` (org and scope). Change it
   jointly with hull in the same week (D-003: byte-identical in both repos); never edit it here alone.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,

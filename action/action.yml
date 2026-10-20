@@ -89,6 +89,7 @@ runs:
       env:
         BODY_FILE: ${{ steps.update.outputs.body-file }}
       run: |
+        set -euo pipefail
         cat "$BODY_FILE" >&2
         exit 1
     - name: Push the branch and open or edit the pull request
@@ -110,7 +111,8 @@ runs:
         git commit -m "$TITLE"
         # --force-with-lease needs the remote-tracking ref, else it reports "stale info".
         git fetch --no-tags --depth=1 origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
-        git push --force-with-lease="$BRANCH" origin "HEAD:refs/heads/$BRANCH"
+        # The empty extraheader resets one checkout left with persist-credentials: true.
+        git -c "http.https://github.com/.extraheader=" push --force-with-lease="$BRANCH" origin "HEAD:refs/heads/$BRANCH"
         number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
         if [ -n "$number" ]; then
           out=$(gh pr edit "$number" --title "$TITLE" --body-file "$BODY_FILE")

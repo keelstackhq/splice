@@ -36,18 +36,21 @@ jobs:
           cp target/debug/splice "$RUNNER_TEMP/bin/splice"
           cat > "$RUNNER_TEMP/bin/gh" <<'STUB'
           #!/usr/bin/env bash
-          # Minimal gh: no pull requests exist, creating one prints a fake URL.
+          # Minimal stateful gh: `pr create` makes the pull request exist; calls are logged.
+          echo "$1 $2" >> "$GH_STUB_DIR/calls.log"
           case "$1 $2" in
             "auth setup-git") ;;
-            "pr list") ;;
-            "pr create") echo "https://example.invalid/pull/1" ;;
+            "pr list") [ -e "$GH_STUB_DIR/pr-exists" ] && echo 1 || true ;;
+            "pr create") touch "$GH_STUB_DIR/pr-exists"; echo "https://example.invalid/pull/1" ;;
             "pr edit") echo "https://example.invalid/pull/1" ;;
             "repo view") echo main ;;
             *) echo "gh stub: unexpected $*" >&2; exit 1 ;;
           esac
           STUB
           chmod +x "$RUNNER_TEMP/bin/gh"
+          mkdir "$RUNNER_TEMP/gh-stub"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "GH_STUB_DIR=$RUNNER_TEMP/gh-stub" >> "$GITHUB_ENV"
       - name: Create the template repo, the consumer at v1 and a bare origin
         run: |
           set -euo pipefail
@@ -89,6 +92,11 @@ jobs:
           git -C "$RUNNER_TEMP/origin.git" rev-parse --verify refs/heads/splice/update
           git switch -q main
           git reset -q --hard origin/main
+          # Leave the bot branch's remote-tracking ref stale (an older run pushed it since); the
+          # action must fetch it first, or the push fails with "stale info". Deleting the ref
+          # would not prove this: a missing ref makes git skip the lease check.
+          git update-ref refs/remotes/origin/splice/update refs/remotes/origin/main
+          : > "$GH_STUB_DIR/calls.log"
       - name: Bot, second run (the bot branch exists on origin and is rewritten)
         id: second
         uses: ./action
@@ -102,6 +110,8 @@ jobs:
         run: |
           set -euo pipefail
           [ "$RESULT" = updated ] || { echo "second run: result is '$RESULT'" >&2; exit 1; }
+          grep -qx "pr edit" "$GH_STUB_DIR/calls.log"
+          ! grep -qx "pr create" "$GH_STUB_DIR/calls.log"
           cd "$RUNNER_TEMP/consumer"
           git switch -q main
           git reset -q --hard origin/main

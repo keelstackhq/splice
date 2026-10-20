@@ -111,7 +111,7 @@ Inputs: `version` (`latest`, `next`, a semver, or `none` to use the `splice` on 
 | `drift` | owned files edited locally | fails with splice's messages, pushes nothing |
 
 Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
-App or fine-grained token as `token` to get CI on the bot PR. The job needs
+App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials. The job needs
 `contents: write` and `pull-requests: write`.
 
 License: MIT.

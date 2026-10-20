@@ -4,7 +4,7 @@
 //   node args.mjs command    env TO; prints the splice arguments, one per line
 import { fileURLToPath } from "node:url";
 
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+export const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 export function validateInputs({ version, to, branch }) {
   if (!["latest", "next", "none"].includes(version) && !SEMVER.test(version ?? "")) {

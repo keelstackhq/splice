@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { summarize } from "../summary.mjs";
+import { parseLockVersion, parseReport, summarize } from "../summary.mjs";
 
 const load = (name) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
@@ -58,4 +58,18 @@ test("exit 2 throws", () => {
     () => summarize({ ok: false, command: "update", changes: [], messages: ["dirty tree"] }, 2, {}),
     /dirty tree/,
   );
+});
+
+test("no JSON on stdout names the exit code", () => {
+  assert.throws(
+    () => parseReport("  \n", 3),
+    /splice exited 3 without a JSON report; see its stderr above/,
+  );
+  assert.deepEqual(parseReport('{"ok":true}', 0), { ok: true });
+});
+
+test("lock version must be semver, so no newline reaches GITHUB_OUTPUT", () => {
+  assert.equal(parseLockVersion('[template]\nversion = "2.0.0"\n'), "2.0.0");
+  assert.throws(() => parseLockVersion('[template]\nversion = "2.0.0\\nresult=evil"\n'), /lock/);
+  assert.throws(() => parseLockVersion("[vars]\n"), /lock/);
 });
