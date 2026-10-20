@@ -59,10 +59,13 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · port/relative-sources · see git log · relative local sources in a lock resolve from the repo root (`parse_from`, main and channel locks), lenient canonicalisation (`lenient_canonical`, `strip_verbatim`) for the stored path and the cache key (spec §10 item 18); main already stored absolute paths, so `new`/`channel add` were not buggy; `tests/cli_local_source.rs`
 - 2026-10-20 · port/posix-sh · see git log · template commands run with POSIX `sh -c` on every OS; on Windows `sh` from PATH else Git for Windows' `sh.exe` via `git --exec-path` (`sh_from_exec_path`), exit 3 naming the missing sh (spec §10 item 19); main prints no shell-specific restore command, so `restore_cmd`/`Undo` were not needed
 - 2026-10-20 · port/windows-ci · see git log · `windows-latest` leg in the CI `test` job (matrix, `fail-fast: false`; shellcheck, node tests, dependency-tree check and actionlint stay Linux-only; `ci-ok` still aggregates `test`); test portability audit from PR #1: symlink tests gated `#[cfg(unix)]`, `stage_all` + `assert_head_matches` (same-size edits, byte-exact fixture commits), `-c core.autocrlf=false` for test git, empty gitconfig file instead of `/dev/null`, lock `source = '...'` redaction; `cargo clippy --target x86_64-pc-windows-gnu` clean. First Windows run happens on GitHub
+- 2026-10-20 · port/review-fixes · see git log · test git env for every raw `git`/`sh` in tests (`sh_with_git_env`, `GIT_CONFIG_COUNT` autocrlf=false, porcelain via `git_stdout`); shellcheck installed on Linux only; `update`/`add`/`channel update` keep a relative lock source (`Lock::keep_relative_source`, 2 tests); Windows looks up only `sh.exe`; spec §10 items 17, 18 reworded (`#}` behaviour change, one-time Windows refetch)
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
+
+- **Required checks / Windows CI:** a human checks the repo's branch protection requires `ci-ok` (the `test` job names are now `test (ubuntu-latest)` and `test (windows-latest)`, so a required check named `test` never reports), and confirms the first `windows-latest` run is green.
 
 - Contract wording: `docs/template-format.md` still says `keelstack` (org and scope). Change it
   jointly with hull in the same week (D-003: byte-identical in both repos); never edit it here alone.

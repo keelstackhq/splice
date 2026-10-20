@@ -506,7 +506,8 @@ pub fn prepare(
         removes,
         force,
     });
-    let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
+    let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .keep_relative_source(&lock.template.source);
     Ok(Prepared {
         plan,
         lock_new,
@@ -656,7 +657,8 @@ pub fn prepare_channel(
         meta.only = only.to_vec();
         meta.exclude = exclude.to_vec();
     }
-    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs);
+    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .keep_relative_source(&cl.lock.template.source);
     let lock_new = ChannelLock {
         meta,
         lock: lock.clone(),

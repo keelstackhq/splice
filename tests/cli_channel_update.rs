@@ -717,11 +717,7 @@ fn all_failure_in_second_source_writes_no_lock() {
     }
     // rig's files were written before rigb failed.
     assert!(read(r, ".claude/agents/reviewer.md").contains("v2."));
-    let out = std::process::Command::new("sh")
-        .args(["-c", "git checkout -- . && git clean -fdq"])
-        .current_dir(r)
-        .output()
-        .unwrap();
+    let out = sh_with_git_env(r, "git checkout -- . && git clean -fdq");
     assert!(out.status.success());
     assert_eq!(status(r), "");
     update_all(r).success();

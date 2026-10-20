@@ -23,6 +23,10 @@ fn apply_git_env(cmd: &mut Proc, date: &str) {
     cmd.env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
+        // `-c core.autocrlf=false` for every git a test runs, also one started by `sh -c`.
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "core.autocrlf")
+        .env("GIT_CONFIG_VALUE_0", "false")
         .env("GIT_AUTHOR_DATE", date)
         .env("GIT_COMMITTER_DATE", date);
     for (k, v) in AUTHOR {
@@ -43,6 +47,15 @@ pub fn git(dir: &Path, date: &str, args: &[&str]) {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// Run `script` with `sh -c` in `dir` under the same git environment as [`git`] (the restore
+/// command an error message tells the user to run).
+pub fn sh_with_git_env(dir: &Path, script: &str) -> std::process::Output {
+    let mut cmd = Proc::new("sh");
+    cmd.current_dir(dir).args(["-c", script]);
+    apply_git_env(&mut cmd, STATE_DATE);
+    cmd.output().expect("run sh")
 }
 
 /// Stage the whole work tree, rebuilding the index from file contents.

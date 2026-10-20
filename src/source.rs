@@ -124,6 +124,11 @@ impl TemplateSource {
         }
     }
 
+    /// A local source written as a relative path.
+    pub fn is_relative_local(&self) -> bool {
+        matches!(&self.kind, SourceKind::Local { path } if path.is_relative())
+    }
+
     /// First 16 hex digits of sha256 of the URL (git) or canonical path (local).
     pub fn cache_key(&self) -> String {
         let id = match &self.kind {

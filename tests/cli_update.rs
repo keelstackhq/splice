@@ -7,7 +7,6 @@ use common::{
     tree_snapshot,
 };
 use splice::lock::Lock;
-use std::process::Command as Proc;
 use tempfile::TempDir;
 
 /// `splice new` from `tpl` into a fresh repo, then commit everything so the tree is clean.
@@ -63,13 +62,7 @@ fn lock(repo: &TempDir) -> Lock {
 }
 
 fn porcelain(repo: &TempDir) -> String {
-    let out = Proc::new("git")
-        .current_dir(repo.path())
-        .args(["status", "--porcelain"])
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    String::from_utf8(out.stdout).unwrap()
+    common::git_stdout(repo.path(), &["status", "--porcelain"])
 }
 
 #[test]

@@ -162,13 +162,10 @@ fn check_writes_nothing() {
         std::fs::read(repo.path().join(".splice/lock.toml")).unwrap(),
         lock
     );
-    let st = std::process::Command::new("git")
-        .current_dir(repo.path())
-        .args(["status", "--porcelain"])
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
-    assert!(st.stdout.is_empty());
+    assert_eq!(
+        common::git_stdout(repo.path(), &["status", "--porcelain"]),
+        ""
+    );
 }
 
 #[test]

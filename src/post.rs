@@ -46,7 +46,7 @@ pub fn sh_from_exec_path(exec_path: &str, exists: impl Fn(&str) -> bool) -> Opti
 fn find_sh() -> Result<std::path::PathBuf, SpliceError> {
     let on_path = std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
-            .flat_map(|d| [d.join("sh.exe"), d.join("sh")])
+            .map(|d| d.join("sh.exe"))
             .find(|c| c.is_file())
     });
     if let Some(p) = on_path {

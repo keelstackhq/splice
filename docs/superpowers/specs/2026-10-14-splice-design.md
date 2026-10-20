@@ -88,7 +88,7 @@ or a local path (`./x`, `/x`, `../x`, `C:\x`) with optional `//<subdir>`. The lo
 spec as given (`gh:keelstackhq/hull//template`), except that a local path is stored as an absolute
 path (`splice new tpl out` locks `/abs/tpl`), so later commands work from any directory and with
 `-C`. A relative local source typed on the command line is resolved against the current
-directory, not against `-C`; a relative one found in a lock resolves against the repo root (§10 item 18).
+directory, not against `-C`; a relative one found in a lock resolves against the repo root and is written back as it was (§10 item 18).
 
 All git work shells out to the `git` CLI (present wherever repos live), so the user's credentials,
 proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c core.eol=lf` and
@@ -513,17 +513,21 @@ into the contract at its next `format` bump.
 17. A `#}` in plain text (outside a comment and outside a raw body) is exit 3 naming file:line
     (pending contract, with item 16): Nunjucks' lexer throws "unexpected end of comment" on it
     while MiniJinja prints it, so the gate rejects it. Inside a raw body it stays allowed. It also
-    applies to path segments.
+    applies to path segments. **Behaviour change:** splice <= 0.2.0-pre accepted a literal `#}` in
+    plain template text (for example the shell `${#}`); from this release it is exit 3. Write it
+    inside `{% raw %}...{% endraw %}` (item 16).
 18. Local sources (ported from PR #1, adapted). `new`, `add` and `channel add` already lock an
     absolute path (§4), so a relative `../tpl` given on the command line never reaches a lock. A
     relative local source found in a lock anyway (hand-written, or from another splice that stores
     it relative to the repo) resolves against the repo root (the `-C` dir), never the process cwd,
     and becomes absolute before any git call; this holds for the main lock and every channel
-    lock. A local path is canonicalised leniently (made absolute, `.` and `..` collapsed, symlinks
-    followed before `..` for the longest existing ancestor, a Windows `\\?\` prefix removed), for
+    lock. `update` and `add` (and `channel update`) write such a lock back with the relative spec
+    it had; only `new` and `channel add` store an absolute path. A local path is canonicalised leniently
+    (made absolute, `.` and `..` collapsed, symlinks followed before `..` for the longest existing ancestor, a Windows `\\?\` prefix removed), for
     the stored absolute path and for the cache key, so the key and the stored path do not change
     when the source folder is later deleted or renamed, nor with Windows short names. The cache
-    key of a source that exists is unchanged.
+    key of an existing source is unchanged on Unix; on Windows the key used to hash a `\\?\C:\...`
+    path, so the first fetch of a local source there after this change is a one-time refetch.
 19. Template commands run with POSIX `sh -c` on every OS (ported from PR #1, adapted): the `run`
     strings of `[[post]]` and `[[step]]` are shell text written by template authors (hull writes
     POSIX), so `cmd /C` on Windows would break them. On Windows splice uses the first `sh.exe` or
