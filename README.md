@@ -119,6 +119,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # `@v1` exists after the first release (tagged by a human; see docs/PROGRESS.md Blocked).
       - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI

@@ -44,11 +44,15 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-17 · 04/T16 · 23bed57..b7857ce · `diff --channel`, `explain` across sources; fix round 1: drift reporting per command family, `HOST#NAME` paths
 - 2026-10-17 · 04/T17 · fdee2f2..10954a7 · `splice channel remove`; fix round 1: overlap guard (exit 3) and more remove tests
 - 2026-10-17 · 04/T18 · cedf673 · golden main + channel `update --all` (snapshots; fixed --all conflict attribution); review approved
-- 2026-10-18 · 04/T19 · df7c542 · spec index (§10 item 15) and README Channels section; `readme_channel_flags_exist`; SKILL.md part after plan 03 (Blocked)
-- 2026-10-20 · 04/T20 · 8db06ce · update-bot `scope` input (`main` | `all`, default by `.splice/channels/*.toml`); `to` with `all` refused; PR body grouped by source; node tests 45 passed, actionlint clean
+- 2026-10-18 · 04/T19 · df7c542 · spec index (§10 item 15) and README Channels section; `readme_channel_flags_exist`; SKILL.md part landed in 03/T5
+- 2026-10-20 · 04/T20 (03/T4b) · 8db06ce, 7c80eea · update-bot `scope` input (`main` | `all`, default by `.splice/channels/*.toml`); `to` with `all` refused; PR body grouped by source; fix 7c80eea reads bare/basic/literal lock keys; node tests 49 passed, actionlint and shellcheck clean
 - 2026-10-18 · 04/T21 · splice 0.2.0 (Cargo.toml, Cargo.lock) · `cargo fmt --check` and `clippy --all-targets --locked -D warnings` clean; `cargo nextest run`: 461 tests run, 461 passed, 0 skipped; no `.snap.new` (snapshots redact the version); node tests: n/a (plan 03 not landed); npm package versions: after plan 03
 - 2026-10-18 · 04/final · 0b68121 · final-review fix wave: section rerun after a failed step/post/lock write converges (no false drift), fragments refuse any channel's marker line, `--all` checks every source's targets before the first write, explain `source=` only with channel locks, `add --channel` refusal names `channel NAME`, Task 11/18 deferred minors; `cargo test` 465 passing, fmt and clippy -D warnings clean
-- 2026-10-20 · 04/T21 npm part · af72999 · npm launcher at 0.2.0 · node tests run: 26 passed (launcher, npm-stage, check-version); installed launcher + linux-x64 package prints `splice 0.2.0`; release.yml `npm` job added, actionlint clean
+- 2026-10-20 · 04/T21 npm part (03/T3) · af72999, b60f287 · npm launcher at 0.2.0 · node tests run: 26 passed (launcher, npm-stage, check-version); installed launcher + linux-x64 package prints `splice 0.2.0`; release.yml `npm` job added; fix b60f287 (pipefail, E404-only check); node tests 27 passed, actionlint clean
+- 2026-10-20 · 03/T1 · 6e09191, fd5bce1, f6e73ff · toolchain pinned to 1.97; single-job CI with `ci-ok`; actionlint installed from its release with a pinned sha256; first CI run green (ci 77 s, ci-ok 4 s)
+- 2026-10-20 · 03/T2 · cf0bd9a · release workflow for five targets with `SHA256SUMS`; Windows check fixed with cfg(unix); actionlint clean
+- 2026-10-20 · 03/T4 · 76dea13, 80e999c, 8490dcc · update-bot composite action; fix round proves lease fetch (stale tracking ref) and clears checkout credentials; selftest fails if run 2 opens a new PR; node tests 39 passed, actionlint and shellcheck clean
+- 2026-10-20 · 03/T5 · 5c96f2f · agent skill (`skills/splice/SKILL.md`, body 65 lines) and product README; `cargo nextest run`: 467 passed; review approved
 
 ## Blocked
 
@@ -60,8 +64,15 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
   `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
   collisions. Until it lands, splice does not reject these paths. Open it against both repos.
-- **Plan 03:** Task 19's SKILL.md part, C2's dogfood step and C3 still wait for it (Task 20 and Task 21's npm part are done).
-- **Release 0.2.0 (npm):** after plan 03's release workflow exists: the `NPM_TOKEN` repo secret, an owner of the npm scope `keelstackhq`, then push tag `v0.2.0` on keelstackhq/splice after this work is on `main`.
+- **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists.
+- Repo settings on `keelstackhq/splice`: make `ci-ok` the only required check; merge queue optional.
+- **Visibility:** make `keelstackhq/splice` public before the first tag (npm provenance needs a public repo; the `npm` job fails fast otherwise).
+- **Environment:** create the GitHub environment `release` (Settings → Environments) with a tag rule `v*` and required reviewers; the reviewers are the only gate before publishing.
+- **npm:** an owner of the npm scope `keelstackhq` publishes each of the six package names once by hand (e.g. `0.0.0-placeholder` with `--tag next`, or 0.2.0 from a local stage), then adds a trusted publisher on each package (repo `keelstackhq/splice`, workflow `release.yml`, environment `release`); tag within 2 days.
+- Run the `release` workflow by `workflow_dispatch` once (dry run: check, build, smoke on all five targets).
+- The x86_64-apple-darwin binary is cross-built on arm64 and only checked with `file`; it is never run.
+- Push tag `v0.2.0` after plan 03 is on `main`; check the five archives, `SHA256SUMS` and the six npm packages; run `pnpm dlx @keelstackhq/splice@0.2.0 --version` on a clean machine.
+- Tag `v1` for the Action (`git tag -f v1 && git push -f origin v1`; the human does this, agents never force-push; it does not trigger a release) and enable the bot in a consumer (plan 04 C3) with a token secret.
 - **Decisions PR merge:** the owner merges C1 (`channel/` template and D-004) in keelstackhq/decisions (D-002).
 - **hull sign-off:** the hull owner approves the hull spec change (AGENTS.md to seed, `rigging/`) and answers whether `[sections]` in a hull-published template needs a contract note (D-003).
 - **Bot tokens:** each adopting repo needs the bot workflow enabled and a token that can read `keelstackhq/decisions` and `keelstackhq/hull` if they are private (repo secret, e.g. a GitHub App token passed as `token`).
@@ -69,4 +80,4 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 
 ## Status
 
-Milestone 2 done. Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the npm release, skill file and cross-repo tasks (C1–C3) are Blocked above.
+Milestones 2 and 3 done (release workflow, npm launcher, update-bot Action, skill file, product README). Milestone 4 (channels) code complete at 0.2.0 (final review fixes in 0b68121); the first release (visibility, `release` environment, npm first publish, tags `v0.2.0` and `v1`) and the cross-repo tasks (C1–C3) are Blocked above.

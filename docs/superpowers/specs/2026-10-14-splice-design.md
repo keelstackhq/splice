@@ -596,9 +596,9 @@ channel's section block.
    (reduced planner), lock, `--json`, `explain`, fixture template.
 2. **Update + check** — planner, merges, migrations, post, atomic apply, `update`, `check`,
    `diff`, `add` on the full planner, golden v1→v2 tests.
-3. **Release + action** — CI, release workflow, npm launcher, update-bot Action, skill file,
-   product README.
+3. **Release + action** (done) — CI, release workflow, npm launcher, update-bot Action, skill file,
+   product README. The first release itself is Blocked on human steps (docs/PROGRESS.md).
 4. **Channels** — extra templates next to the main one with their own locks, `[sections]`
    blocks in shared Markdown files, filters, `--track`, `--channel`/`--all` on `update`, `add`,
    `check`, `diff`, `explain`, `channel add|remove`, version 0.2.0 (channels spec; plan 04).
-   The npm release, the update-bot channel scope and the skill file follow plan 03.
+   The npm release waits on the Blocked first-release steps of milestone 3 (docs/PROGRESS.md).

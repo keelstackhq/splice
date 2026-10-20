@@ -10,6 +10,8 @@ const OTHER_TOOLS: &[&str] = &[
 
 #[test]
 fn docs_mention_only_real_flags() {
+    // Help is pooled across subcommands and the allowlist applies to both files on purpose:
+    // this catches invented flags, not flags used on the wrong subcommand.
     let mut help = String::new();
     for args in [
         vec!["new", "--help"],
