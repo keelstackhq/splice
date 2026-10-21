@@ -151,7 +151,7 @@ Exit codes: 0 ok, 1 drift/conflict/update available (`check`), 2 usage error, 3 
 13. **File modes are not carried.** Every file is written as a regular, non-executable file, and templates invoke scripts through their interpreter (`bash path`, `node path`). `or` stays forbidden: use `if/elif` branches with identical bodies.
 14. **Minimal CLI both repos rely on:** `splice new <source> [dest] --piece <id>[:<name>]… --data <key>=<value>… --yes --json`, `splice add <id> [--name <name>] --data <key>=<value>… --yes --json`, `splice update [--to <version>] --yes --json`, `splice check --json`.
 15. **Required and default keys.** `[[post]].when` is required (no default). A piece's `description` defaults to `""` and a var's `prompt` defaults to the var name.
-16. **Reserved names.** No var, template or piece, may be named `pieces`, `piece` or `template`. Bare `{{ pieces }}`, `{{ piece }}` and `{{ template }}` are rejected (MiniJinja and Nunjucks print lists differently); use a dotted path (§9.3) or `for`.
+16. **Reserved names.** No template var or piece var may be named `pieces`, `piece` or `template`. Bare `{{ pieces }}`, `{{ piece }}` and `{{ template }}` are rejected (MiniJinja and Nunjucks print lists differently); use a dotted path (§9.3) or `for`.
 17. **Identifiers.** A var, loop variable or dotted segment is ASCII `[a-z_][a-z0-9_]*`. It may not be `true`, `false`, `none`, `not`, `and`, `or`, `in`, `is`, `loop`, `self`, `range` or `namespace`.
 18. **`else` and comments.** `{% else %}` is allowed only inside `if`, and no `elif` follows an `else`. A comment may not start or end with `-` or `+` (`{#-`, `-#}`).
 19. **Whitespace inside tags** is optional space, tab, CR or LF, also around `|`: `{{var|lower}}` and `{{ var | lower }}` are both valid.
