@@ -66,12 +66,14 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · port/docs-review · the port merge · getting-started samples re-captured (`--ref v1.0.0`, real `add --name docs` lines); `tests/docs.rs` trims `[]`, treats `pnpm dlx`/`npx @keelstackhq/splice` as `splice`, rejects unknown subcommands in code spans, with a negative test of the checker; SKILL.md exit-2 row and `add` merge wording fixed
 - 2026-10-21 · contract/§9.21 · 2af3559 · portable path segments (`:`, control chars, trailing dot/space, Windows reserved names, `.git`) for rendered paths, piece ids and instance names (exit 2 user-chosen, 3 piece default), case-insensitive collisions incl. directory prefixes in `render_tree`; `cargo nextest run`: 492 passed
 - 2026-10-21 · contract/§9.15-20,23,26 · 7382258 · `description`/`prompt` defaults, keyword var names reserved, comment `-`/`+` and non-ASCII tag whitespace rejected, symlinked manifests/piece dirs/migrations rejected, raw or `[sections]` need `min_splice` >= 0.2.0 (channel fixtures and `inline_template` moved to 0.2.0; spec §10 G15); `cargo nextest run`: 500 passed
-- 2026-10-21 · contract/§9.22 · this commit · `[[remove]]` paths render with the from-version (test tells 1.0.0 from 2.0.0); 0-byte non-`.jinja` file test (§4, already passed); spec §10 maps items to contract §9, new item 20; `cargo nextest run`: 501 passed
+- 2026-10-21 · contract/§9.22 · 5734ee9 · `[[remove]]` paths render with the from-version (test tells 1.0.0 from 2.0.0); 0-byte non-`.jinja` file test (§4, already passed); spec §10 maps items to contract §9, new item 20; `cargo nextest run`: 501 passed
+- 2026-10-21 · contract/review · follow-up to 5734ee9 · merge base of `update` loads and renders leniently (`Template::load_merge_base`); instance-name exit code by source (`NameSource`), locked names re-checked (exit 3 naming the lock); duplicates and collisions count empty `.jinja` renders; `cargo nextest run`: 509 passed
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
+- Merge the §9.15–26 contract change to `main` in both repos in the same week (D-003): hull and splice PRs from `claude/friendly-hamilton-mn95h1`.
 - Task 03/T4 · Real `gh auth setup-git`, `pr create` and `pr edit` with a token: `action-selftest.yml` passed on GitHub but stubs `gh`, so the first consumer run (plan 04 C3) is the first real check.
 - **Windows CI:** the `ci` job is now a matrix, `ci (ubuntu-latest)` and `ci (windows-latest)`; `ci-ok` still aggregates it. A human checks that branch protection requires `ci-ok` (a required check named `ci` never reports) and confirms the first `windows-latest` run is green.
 - **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists. C3 per repo: sync the snapshot first (copy `DECISIONS.md`), then `channel add` (see plan 04 C3).

@@ -16,23 +16,28 @@ type Result<T> = std::result::Result<T, SpliceError>;
 
 /// Names a variable may not take: contract context keys (§4) and MiniJinja/Nunjucks keywords
 /// that behave differently in the two engines (spec §5, controller ruling C1).
-const RESERVED_VARS: [&str; 15] = [
+const RESERVED_VARS: [&str; 7] = [
     "pieces",
     "piece",
     "template",
-    "true",
-    "false",
-    "none",
-    "not",
-    "and",
-    "or",
-    "in",
-    "is",
     "loop",
     "self",
     "range",
     "namespace",
 ];
+
+/// Keyword and literal names no var may take since contract §9.17 (not checked in a merge base).
+const KEYWORD_VARS: [&str; 8] = ["true", "false", "none", "not", "and", "or", "in", "is"];
+
+/// How strictly to load. A merge base (the template a lock points at, rendered only as the base
+/// of `update`) skips the rules added in contract §9.15-26 that an older template may break:
+/// the raw/`[sections]` `min_splice` floor, keyword var names, piece-id segment rules, and (in
+/// `render_tree`) portable path segments and case collisions. Symlinks stay rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Strictness {
+    Strict,
+    MergeBase,
+}
 
 /// The first splice that reads `{% raw %}` and `[sections]` (contract §9.23, §9.26).
 const RAW_AND_SECTIONS_SPLICE: Version = Version::new(0, 2, 0);
@@ -103,6 +108,9 @@ pub struct Template {
     pub migrations: Vec<Migration>,
     /// Unknown keys found while loading (newer templates stay readable).
     pub warnings: Vec<String>,
+    /// Rendered paths are checked against contract §9.21 (portable segments, case collisions).
+    /// False only for a merge base ([`Template::load_merge_base`]).
+    pub portable_paths: bool,
 }
 
 #[derive(Deserialize)]
@@ -227,7 +235,11 @@ fn valid_var_name(name: &str) -> bool {
         && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_'))
 }
 
-fn convert_vars(file: &Path, raw: IndexMap<String, RawVar>) -> Result<IndexMap<String, VarSpec>> {
+fn convert_vars(
+    file: &Path,
+    raw: IndexMap<String, RawVar>,
+    strict: Strictness,
+) -> Result<IndexMap<String, VarSpec>> {
     let mut out = IndexMap::new();
     for (name, v) in raw {
         let f = file.display();
@@ -236,7 +248,9 @@ fn convert_vars(file: &Path, raw: IndexMap<String, RawVar>) -> Result<IndexMap<S
                 "{f}: variable `{name}` must match [a-z_][a-z0-9_]*"
             ));
         }
-        if RESERVED_VARS.contains(&name.as_str()) {
+        if RESERVED_VARS.contains(&name.as_str())
+            || (strict == Strictness::Strict && KEYWORD_VARS.contains(&name.as_str()))
+        {
             return err(format!("{f}: variable name `{name}` is reserved"));
         }
         let pattern = match &v.pattern {
@@ -305,7 +319,12 @@ fn check_sections(dir: &Path, f: &str, sections: &IndexMap<String, String>) -> R
     Ok(())
 }
 
-fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<PieceManifest> {
+fn load_piece(
+    dir: &Path,
+    dir_name: &str,
+    warnings: &mut Vec<String>,
+    strict: Strictness,
+) -> Result<PieceManifest> {
     let file = dir.join("piece.toml");
     let (text, table) = read_toml(&file)?;
     warn_unknown(
@@ -332,7 +351,9 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
     }
     let raw: RawPiece = parse(&file, &text)?;
     let f = file.display();
-    if let Some(why) = crate::paths::segment_problem(dir_name) {
+    if strict == Strictness::Strict
+        && let Some(why) = crate::paths::segment_problem(dir_name)
+    {
         return err(format!("{f}: piece id `{dir_name}` {why}"));
     }
     if raw.id != dir_name {
@@ -378,7 +399,7 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
         multiple: raw.multiple,
         requires: raw.requires,
         target: raw.target,
-        vars: convert_vars(&file, raw.vars)?,
+        vars: convert_vars(&file, raw.vars, strict)?,
         owned: raw.files.owned,
         shared: raw.files.shared,
         seed: raw.files.seed,
@@ -436,9 +457,20 @@ fn check_raw_and_sections(
 }
 
 impl Template {
+    /// Load the template a lock points at, used only as the merge base of `update`.
+    /// Skips the contract §9.15-26 gates an older template may break (see `Strictness`); the
+    /// result renders without portable-path and case-collision checks.
+    pub fn load_merge_base(root: &Path) -> Result<Template> {
+        Self::load_with(root, Strictness::MergeBase)
+    }
+
     /// Load `splice.toml` and every `pieces/<id>/piece.toml`, running every check in spec §5
     /// except `min_splice` (see [`Template::check_min_splice`]).
     pub fn load(root: &Path) -> Result<Template> {
+        Self::load_with(root, Strictness::Strict)
+    }
+
+    fn load_with(root: &Path, strict: Strictness) -> Result<Template> {
         let mut warnings = Vec::new();
         let file = root.join("splice.toml");
         let (text, table) = read_toml(&file)?;
@@ -464,7 +496,7 @@ impl Template {
                 raw.min_splice
             ))
         })?;
-        let vars = convert_vars(&file, raw.vars)?;
+        let vars = convert_vars(&file, raw.vars, strict)?;
 
         let pieces_dir = root.join("pieces");
         no_symlink(&pieces_dir)?;
@@ -485,7 +517,7 @@ impl Template {
         names.sort();
         let mut pieces = IndexMap::new();
         for name in names {
-            let piece = load_piece(&pieces_dir.join(&name), &name, &mut warnings)?;
+            let piece = load_piece(&pieces_dir.join(&name), &name, &mut warnings, strict)?;
             pieces.insert(name, piece);
         }
 
@@ -522,7 +554,9 @@ impl Template {
                 }
             }
         }
-        check_raw_and_sections(&f.to_string(), &min_splice, &pieces)?;
+        if strict == Strictness::Strict {
+            check_raw_and_sections(&f.to_string(), &min_splice, &pieces)?;
+        }
         Ok(Template {
             root: root.to_path_buf(),
             manifest: TemplateManifest {
@@ -535,6 +569,7 @@ impl Template {
             pieces,
             migrations: load_migrations(root)?,
             warnings,
+            portable_paths: strict == Strictness::Strict,
         })
     }
 

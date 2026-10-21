@@ -110,6 +110,18 @@ pub(crate) fn render_segments(
     ctx: &minijinja::Value,
     origin: &str,
 ) -> Result<Vec<String>> {
+    render_segments_with(raw, renderer, ctx, origin, true)
+}
+
+/// [`render_segments`]; `portable = false` (a merge base) skips the contract §9.21 rules and
+/// keeps only the escape checks (empty, `.`, `..`, separators).
+fn render_segments_with(
+    raw: &str,
+    renderer: &Renderer,
+    ctx: &minijinja::Value,
+    origin: &str,
+    portable: bool,
+) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for seg in raw.split('/') {
         let value = renderer.render_path_segment(seg, ctx, origin)?;
@@ -128,7 +140,7 @@ pub(crate) fn render_segments(
                 &format!("segment `{seg}` renders to `{value}`, which contains a path separator"),
             ));
         }
-        if let Some(why) = segment_problem(&value) {
+        if portable && let Some(why) = segment_problem(&value) {
             return Err(bad(origin, &format!("segment `{value}` {why}")));
         }
         out.push(value);
@@ -144,11 +156,23 @@ pub fn render_rel_path(
     renderer: &Renderer,
     ctx: &minijinja::Value,
 ) -> Result<(String, String)> {
+    render_rel_path_with(src_rel, target, renderer, ctx, true)
+}
+
+/// [`render_rel_path`] with the contract §9.21 segment rules on or off (off for a merge base).
+pub fn render_rel_path_with(
+    src_rel: &str,
+    target: Option<&str>,
+    renderer: &Renderer,
+    ctx: &minijinja::Value,
+    portable: bool,
+) -> Result<(String, String)> {
     let src = src_rel.strip_suffix(".jinja").unwrap_or(src_rel);
-    let key = render_segments(src, renderer, ctx, src_rel)?.join("/");
+    let key = render_segments_with(src, renderer, ctx, src_rel, portable)?.join("/");
     let path = match target {
         Some(t) => {
-            let mut segs = render_segments(t, renderer, ctx, &format!("target `{t}`"))?;
+            let mut segs =
+                render_segments_with(t, renderer, ctx, &format!("target `{t}`"), portable)?;
             segs.push(key.clone());
             segs.join("/")
         }

@@ -24,7 +24,9 @@ use crate::render::{
 use crate::sections::{SectionChange, SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
 use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
-use crate::vars::{VarSource, check_instance_name, instance_name, interactive, resolve_vars};
+use crate::vars::{
+    VarSource, check_instance_name, instance_name, interactive, name_source, resolve_vars,
+};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -147,7 +149,11 @@ pub(crate) fn instances_for(
         }
         let vars = resolve_vars(&piece.vars, &known, &source)?;
         let name = instance_name(piece, explicit.as_deref(), &vars);
-        check_instance_name(piece, &name)?;
+        check_instance_name(
+            piece,
+            &name,
+            name_source(piece, explicit.as_deref(), &source),
+        )?;
         if instances.iter().any(|i| i.id == *id && i.name == name) {
             return usage(format!("piece `{id}` has two instances named `{name}`"));
         }
@@ -365,9 +371,21 @@ fn prepare_lock(
     };
     // Lock values are kept; vars new in the target are resolved; dropped vars disappear.
     let vars = resolve_vars(&template.manifest.vars, &lock.vars, &source)?;
+    let lock_path = match kind {
+        Kind::Main => crate::lock::LOCK_PATH,
+        Kind::Channel { lock_path, .. } => lock_path,
+    };
     let mut instances = Vec::new();
     for inst in &lock.pieces {
         let piece = &template.pieces[&inst.id];
+        // The target is strict (contract §9.21): a locked name it rejects is a template error.
+        if let Some(why) = crate::paths::segment_problem(&inst.name) {
+            return Err(SpliceError::Template(format!(
+                "{lock_path}: instance name `{}` of piece `{}` {why}; the template no longer \
+                 accepts it (contract §9.21)",
+                inst.name, inst.id
+            )));
+        }
         instances.push(PieceInstance {
             id: inst.id.clone(),
             name: inst.name.clone(),
@@ -395,7 +413,8 @@ fn prepare_lock(
             None
         } else {
             let old = fetcher.checkout(&src, &lock.template.commit, from.clone())?;
-            let old_template = Template::load(&old.root)?;
+            // Only the merge base: the contract §9.15-26 gates apply to the target alone.
+            let old_template = Template::load_merge_base(&old.root)?;
             Some(render_tree(
                 &old_template,
                 &RenderInput {

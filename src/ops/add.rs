@@ -16,7 +16,9 @@ use crate::render::{PieceInstance, RenderInput, render_sections, render_tree};
 use crate::sections::{SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
 use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
-use crate::vars::{VarSource, check_instance_name, instance_name, interactive, resolve_vars};
+use crate::vars::{
+    VarSource, check_instance_name, instance_name, interactive, name_source, resolve_vars,
+};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -93,7 +95,7 @@ fn new_instance(
     }
     let vars = resolve_vars(&piece.vars, &known, &source)?;
     let name = instance_name(piece, a.name.as_deref(), &vars);
-    check_instance_name(piece, &name)?;
+    check_instance_name(piece, &name, name_source(piece, a.name.as_deref(), &source))?;
     if locked.iter().any(|p| p.id == id && p.name == name) {
         return usage(format!(
             "piece `{id}` already has an instance named `{name}`"

@@ -434,3 +434,40 @@ fn non_portable_var_value_in_path_is_error() {
         assert!(err.to_string().contains("unsafe path"), "{err}");
     }
 }
+
+#[test]
+fn empty_jinja_still_collides() {
+    // hull's buildPlan records the path before it drops an empty render.
+    let dir = temp_template();
+    std::fs::write(
+        dir.path().join("pieces/lib/files/readme.md.jinja"),
+        "{% if \"zzz\" in pieces %}x{% endif %}",
+    )
+    .unwrap();
+    let err = render_in(
+        dir.path(),
+        &["base", "app:web", "lib"],
+        &[("project", "demo")],
+    )
+    .unwrap_err();
+    assert_eq!(err.exit_code(), 3);
+    let msg = err.to_string();
+    assert!(
+        msg.contains("README.md") && msg.contains("readme.md"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn merge_base_renders_without_portable_path_rules() {
+    let dir = temp_template();
+    std::fs::write(dir.path().join("pieces/lib/files/readme.md"), "x\n").unwrap();
+    let t = Template::load_merge_base(dir.path()).unwrap();
+    let tree = render_tree(
+        &t,
+        &input(&["base", "app:web", "lib"], &[("project", "CON")]),
+    )
+    .unwrap();
+    assert!(tree.contains_key("readme.md") && tree.contains_key("README.md"));
+    assert!(tree.contains_key("CON.code-workspace"));
+}

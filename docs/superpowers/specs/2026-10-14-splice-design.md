@@ -420,10 +420,9 @@ error with the restore hint.
 
 ## 10. Decisions on gaps in the contract
 
-These decisions are now part of the contract itself (`docs/template-format.md` §9). If this section and §9 ever differ, §9 wins.
-
 These are splice's reading of points the contract leaves open. Items 1–9 are contract §9.1–§9.9.
-Contract §9 now also holds items 10 (§9.16–§9.18), 15 (`[sections]`, §9.26), 16 (raw, §9.23), 17
+Contract §9 now also holds items 10 (§9.16–§9.18), 15 (only the `[sections]` key and its
+`min_splice` rule, §9.26), 16 (raw, §9.23), 17
 (stray `#}`, §9.24) and 19 (POSIX sh, §9.25), and the rules of item 20 (§9.15, §9.19–§9.22).
 Items 11–14 and 18 stay splice's own decisions.
 
@@ -475,8 +474,9 @@ Items 11–14 and 18 stay splice's own decisions.
     be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
     piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). `update --channel`
     takes no `--data` (exit 2): a channel's vars are set at `channel add`; vars new in a later
-    channel version take their defaults or prompts. Now contract §9.26; an older `min_splice` is
-    exit 3 at load.
+    channel version take their defaults or prompts. Only the `[sections]` key and its `min_splice`
+    rule are contract §9.26 (an older `min_splice` is exit 3 at load); G1–G17 below stay
+    splice-only.
 
     Channel rulings (G1–G17; the channels spec has the detail, `docs/superpowers/specs/
     2026-10-17-splice-channels-design.md`). Splice-only; offered to hull at the next `format`
@@ -549,7 +549,12 @@ Items 11–14 and 18 stay splice's own decisions.
     naming both (paths of different sources are not compared). An invalid instance name is exit 2
     when the user chose it (`--piece id:name`, `add --name`, `--data name=`) and exit 3 when it is
     the piece's own default. §9.22: `[[remove]]` paths render with `template.version` = the
-    version updated from.
+    version updated from. The from-version template is only the merge base of `update` (and
+    `channel update`): it loads and renders without the §9.15–§9.26 gates an older template may
+    break (the raw/`[sections]` `min_splice` floor, keyword var names, piece-id and path segment
+    rules, case collisions); symlinks stay rejected and the target stays strict. A locked
+    instance name the target rejects is exit 3 naming the lock. Duplicates and case collisions
+    count a `.jinja` that renders empty (as hull's buildPlan does).
 
 ## 11. Testing
 

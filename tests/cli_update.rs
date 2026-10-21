@@ -406,3 +406,66 @@ fn main_lock_identical_with_channels_present() {
     assert_eq!(lock_bytes(&plain), lock_bytes(&with));
     assert_eq!(std::fs::read(&chan_path).unwrap(), chan_before);
 }
+
+#[test]
+fn update_from_a_base_that_breaks_new_rules_succeeds() {
+    // The from-version is only the merge base: it loads and renders without the §9.15-26 gates
+    // (raw with min_splice 0.1.0, a var named `is`); the target stays strict.
+    let tpl = template_repo(&["v1"]);
+    let repo = new_repo(&tpl, &[]);
+    let old_commit = lock(&repo).template.commit.clone();
+    let manifest = tpl.path().join("splice.toml");
+    let compliant = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{compliant}is = {{ prompt = \"p\", default = \"x\" }}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        tpl.path().join("pieces/base/files/raw.txt.jinja"),
+        "{% raw %}{{ x }}{% endraw %}\n",
+    )
+    .unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let new_commit = common::git_stdout(tpl.path(), &["rev-parse", "v1.0.0^{commit}"]);
+    let new_commit = new_commit.trim();
+    assert_ne!(old_commit, new_commit);
+    let lock_path = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    std::fs::write(&lock_path, text.replace(&old_commit, new_commit)).unwrap();
+    std::fs::write(repo.path().join("raw.txt"), "{{ x }}\n").unwrap();
+    commit_all(repo.path());
+    // v2: compliant (min_splice 0.2.0, no `is`).
+    std::fs::write(
+        &manifest,
+        compliant.replace("min_splice = \"0.1.0\"", "min_splice = \"0.2.0\""),
+    )
+    .unwrap();
+    commit_tag(tpl.path(), "v2", "v2.0.0");
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert_eq!(
+        lock(&repo).template.version.to_string(),
+        "2.0.0",
+        "{}",
+        messages(&json(&out))
+    );
+}
+
+#[test]
+fn locked_instance_name_that_breaks_rules_is_exit_3_naming_the_lock() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app:web"]);
+    let lock_path = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(text.contains("\"web\""));
+    std::fs::write(&lock_path, text.replace("\"web\"", "\"nul\"")).unwrap();
+    commit_all(repo.path());
+    let before = lock_bytes(&repo);
+    let out = update(&repo, &[]).code(3).get_output().stdout.clone();
+    let msgs = messages(&json(&out));
+    assert!(
+        msgs.contains(".splice/lock.toml") && msgs.contains("nul"),
+        "{msgs}"
+    );
+    assert_eq!(lock_bytes(&repo), before);
+}

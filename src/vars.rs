@@ -80,10 +80,29 @@ pub fn resolve_vars(
     Ok(out)
 }
 
-/// Check an instance name against the portable segment rules (contract §9.21).
-/// A name the piece itself supplies (its `name` default or its id) is a template error (exit 3);
-/// a name the user chose is a usage error (exit 2).
-pub fn check_instance_name(piece: &PieceManifest, name: &str) -> Result<()> {
+/// Where an instance name came from; it picks the exit code of an invalid name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameSource {
+    /// Typed by the user: `--piece ID:NAME`, `add --name`, `--data name=…` or a prompt (exit 2).
+    Typed,
+    /// The piece's own `name` default or its id (exit 3).
+    Template,
+}
+
+/// The source of the name [`instance_name`] picks for `piece` with `explicit` and `src`.
+pub fn name_source(piece: &PieceManifest, explicit: Option<&str>, src: &VarSource) -> NameSource {
+    let from_var =
+        piece.vars.contains_key("name") && (src.data.contains_key("name") || src.interactive);
+    if piece.multiple && (explicit.is_some() || from_var) {
+        NameSource::Typed
+    } else {
+        NameSource::Template
+    }
+}
+
+/// Check an instance name against the portable segment rules (contract §9.21): exit 2 for a
+/// typed name, exit 3 for one the template supplies.
+pub fn check_instance_name(piece: &PieceManifest, name: &str, source: NameSource) -> Result<()> {
     let Some(why) = crate::paths::segment_problem(name) else {
         return Ok(());
     };
@@ -91,15 +110,9 @@ pub fn check_instance_name(piece: &PieceManifest, name: &str) -> Result<()> {
         "invalid instance name `{name}` for piece `{}`: {why}",
         piece.id
     );
-    let default = piece
-        .vars
-        .get("name")
-        .and_then(|v| v.default.as_deref())
-        .unwrap_or(&piece.id);
-    Err(if name == default {
-        SpliceError::Template(msg)
-    } else {
-        SpliceError::Usage(msg)
+    Err(match source {
+        NameSource::Typed => SpliceError::Usage(msg),
+        NameSource::Template => SpliceError::Template(msg),
     })
 }
 
@@ -217,17 +230,39 @@ mod tests {
     #[test]
     fn non_portable_instance_names_rejected() {
         let p = piece(true, true);
-        check_instance_name(&p, "web").unwrap();
+        check_instance_name(&p, "web", NameSource::Typed).unwrap();
         for bad in ["con", "a:b", "x.", ".git", "COM1.txt"] {
-            // A name the user chose is a usage error.
-            let e = check_instance_name(&p, bad).unwrap_err();
+            let e = check_instance_name(&p, bad, NameSource::Typed).unwrap_err();
             assert_eq!(e.exit_code(), 2, "{bad}");
             assert!(e.to_string().contains("instance name"), "{e}");
+            let e = check_instance_name(&p, bad, NameSource::Template).unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{bad}");
         }
-        // The piece's own default is a template error.
-        let mut p = piece(true, true);
-        p.vars["name"].default = Some("nul".into());
-        assert_eq!(check_instance_name(&p, "nul").unwrap_err().exit_code(), 3);
+    }
+
+    #[test]
+    fn name_source_follows_where_the_name_came_from() {
+        let empty = map(&[]);
+        let named = map(&[("name", "x")]);
+        let quiet = |d| VarSource {
+            data: d,
+            interactive: false,
+        };
+        let p = piece(true, true);
+        assert_eq!(
+            name_source(&p, Some("x"), &quiet(&empty)),
+            NameSource::Typed
+        );
+        assert_eq!(name_source(&p, None, &quiet(&named)), NameSource::Typed);
+        assert_eq!(name_source(&p, None, &quiet(&empty)), NameSource::Template);
+        assert_eq!(
+            name_source(&piece(true, false), None, &quiet(&named)),
+            NameSource::Template
+        );
+        assert_eq!(
+            name_source(&piece(false, true), Some("x"), &quiet(&named)),
+            NameSource::Template
+        );
     }
 
     #[test]

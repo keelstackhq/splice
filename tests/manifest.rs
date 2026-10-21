@@ -343,3 +343,22 @@ mod manifest_symlinks {
         assert!(m.contains("symlink") && m.contains("q"), "{m}");
     }
 }
+
+#[test]
+fn merge_base_loads_without_the_new_gates() {
+    let raw: &[(&str, &str)] = &[("a.txt.jinja", "{% raw %}x{% endraw %}\n")];
+    let dir = one_piece("0.1.0", "[vars]\nis = { prompt = \"p\" }\n", raw);
+    std::fs::create_dir_all(dir.path().join("pieces/con/files")).unwrap();
+    std::fs::write(dir.path().join("pieces/con/piece.toml"), "id = \"con\"\n").unwrap();
+    assert_eq!(Template::load(dir.path()).unwrap_err().exit_code(), 3);
+    let t = Template::load_merge_base(dir.path()).unwrap();
+    assert!(t.pieces.contains_key("con") && t.pieces["p"].vars.contains_key("is"));
+    // Old reserved names stay rejected even in a merge base.
+    let dir = one_piece("0.2.0", "[vars]\npieces = { prompt = \"p\" }\n", &[]);
+    assert_eq!(
+        Template::load_merge_base(dir.path())
+            .unwrap_err()
+            .exit_code(),
+        3
+    );
+}
