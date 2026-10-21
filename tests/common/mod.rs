@@ -394,7 +394,7 @@ pub fn inline_template(pieces: &[(&str, &str, FileSpec)]) -> TempDir {
     let base = pieces[0].0;
     std::fs::write(
         dir.path().join("splice.toml"),
-        format!("format = 1\nname = \"t\"\nmin_splice = \"0.1.0\"\nbase = \"{base}\"\n"),
+        format!("format = 1\nname = \"t\"\nmin_splice = \"0.2.0\"\nbase = \"{base}\"\n"),
     )
     .unwrap();
     for (id, toml, files) in pieces {

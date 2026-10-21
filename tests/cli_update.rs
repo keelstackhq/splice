@@ -370,6 +370,10 @@ fn update_refuses_a_target_that_adds_sections() {
     )
     .unwrap();
     std::fs::write(base.join("files/frag.md"), "hello\n").unwrap();
+    // A template with [sections] needs splice 0.2.0 (contract §9.26).
+    let manifest = tpl.path().join("splice.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(&manifest, text.replace("\"0.1.0\"", "\"0.2.0\"")).unwrap();
     commit_tag(tpl.path(), "v2 with sections", "v2.0.0");
     let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
     let out = update(&repo, &[]).code(3).get_output().clone();

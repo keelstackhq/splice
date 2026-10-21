@@ -42,12 +42,24 @@ struct RawMigration {
 /// a file not named `<semver>.toml` or not valid is a template error (exit 3).
 pub fn load_migrations(root: &Path) -> Result<Vec<Migration>> {
     let dir = root.join("migrations");
-    if !dir.is_dir() {
-        return Ok(Vec::new());
+    let symlink = |path: &Path| {
+        SpliceError::Template(format!(
+            "{}: is a symlink; symlinks are not allowed in a template",
+            path.display()
+        ))
+    };
+    match std::fs::symlink_metadata(&dir) {
+        Ok(m) if m.file_type().is_symlink() => return Err(symlink(&dir)),
+        Ok(m) if m.is_dir() => {}
+        _ => return Ok(Vec::new()),
     }
     let mut all = Vec::new();
     for entry in std::fs::read_dir(&dir)? {
-        let path = entry?.path();
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_symlink() {
+            return Err(symlink(&path));
+        }
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())

@@ -34,12 +34,18 @@ const DOTTED: [&str; 4] = [
 
 /// Reject any template syntax outside the portable subset. Errors name `origin:line`.
 pub fn validate(text: &str, origin: &str) -> Result<()> {
-    scan(text, origin, true)
+    scan(text, origin, true).map(drop)
+}
+
+/// True when `text` is inside the subset and has at least one `{% raw %}` block (a raw tag in a
+/// comment does not count). Invalid text is `false`: rendering reports it.
+pub fn uses_raw(text: &str) -> bool {
+    matches!(scan(text, "", true), Ok(n) if n > 0)
 }
 
 /// A rendered path segment may contain only `{{ expr }}` tags.
 pub fn validate_path_segment(seg: &str, origin: &str) -> Result<()> {
-    scan(seg, origin, false)
+    scan(seg, origin, false).map(drop)
 }
 
 enum Frame {
@@ -47,7 +53,14 @@ enum Frame {
     For { line: usize },
 }
 
-fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
+/// Validate `text`; returns the number of raw blocks.
+fn scan(text: &str, origin: &str, blocks: bool) -> Result<usize> {
+    let mut raws = 0;
+    scan_counting(text, origin, blocks, &mut raws)?;
+    Ok(raws)
+}
+
+fn scan_counting(text: &str, origin: &str, blocks: bool, raws: &mut usize) -> Result<()> {
     let line_of = |offset: usize| 1 + text[..offset].bytes().filter(|&b| b == b'\n').count();
     let fail = |offset: usize, msg: String| {
         Err(SpliceError::Template(format!(
@@ -93,6 +106,7 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
             }
             match raw_end(text, start + 2) {
                 Ok(after) => {
+                    *raws += 1;
                     i = after;
                     plain = after;
                     continue;
@@ -112,6 +126,9 @@ fn scan(text: &str, origin: &str, blocks: bool) -> Result<()> {
         let res = match open {
             "{{" => check_output(inner),
             _ if !blocks => Err("only `{{ var }}` is allowed in a path segment".to_string()),
+            "{#" if inner.starts_with(['-', '+']) || inner.ends_with(['-', '+']) => {
+                Err("a comment allows no whitespace control (`-`, `+`)".to_string())
+            }
             "{#" => Ok(()),
             _ => check_statement(inner, line_of(start), &mut stack),
         };
@@ -192,6 +209,12 @@ fn raw_end(text: &str, from: usize) -> std::result::Result<usize, RawErr> {
     Err((None, "`{% raw %}` is never closed".into()))
 }
 
+/// Whitespace allowed inside a tag (contract §9.19): ASCII space, tab, CR and LF only. Other
+/// whitespace (NBSP, form feed, vertical tab) stays part of a token and fails the checks.
+fn tag_ws(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
 fn is_ident(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some('a'..='z' | '_'))
@@ -224,9 +247,9 @@ fn check_path(p: &str) -> std::result::Result<(), String> {
 
 fn check_output(inner: &str) -> std::result::Result<(), String> {
     let mut parts = inner.split('|');
-    check_path(parts.next().unwrap_or_default().trim())?;
+    check_path(parts.next().unwrap_or_default().trim_matches(tag_ws))?;
     if let Some(filter) = parts.next() {
-        if !matches!(filter.trim(), "lower" | "upper") {
+        if !matches!(filter.trim_matches(tag_ws), "lower" | "upper") {
             return Err("only the filters `lower` and `upper` are allowed".into());
         }
         if parts.next().is_some() {
@@ -250,7 +273,7 @@ fn check_statement(
     line: usize,
     stack: &mut Vec<Frame>,
 ) -> std::result::Result<(), String> {
-    let words: Vec<&str> = inner.split_whitespace().collect();
+    let words: Vec<&str> = inner.split(tag_ws).filter(|w| !w.is_empty()).collect();
     match words.as_slice() {
         ["if" | "elif", cond @ ..] => {
             match cond {
@@ -472,6 +495,41 @@ mod tests {
             assert_eq!(e.exit_code(), 3, "{t}");
             assert!(e.to_string().contains("f.jinja:1"), "{t}: {e}");
         }
+    }
+
+    #[test]
+    fn rejects_comment_whitespace_control() {
+        for t in [
+            "{#- c #}", "{# c -#}", "{#+ c #}", "{# c +#}", "{#-#}", "{#+#}",
+        ] {
+            let e = validate(t, "f.jinja").unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{t}");
+            assert!(e.to_string().contains("f.jinja:1"), "{t}: {e}");
+        }
+        for t in ["{# - c - #}", "{# a-b #}", "{# + #}", "{##}"] {
+            assert!(validate(t, "t").is_ok(), "{t}");
+        }
+    }
+
+    #[test]
+    fn rejects_non_ascii_tag_whitespace() {
+        for t in [
+            "{{\u{a0}name }}",
+            "{{ name\u{a0}}}",
+            "{{ name |\u{a0}lower }}",
+            "{{\u{c}name }}",
+            "{{ name\u{b}}}",
+            "{%\u{a0}if a %}{% endif %}",
+            "{% if\u{c}a %}{% endif %}",
+            "{% if a %}{%\u{b}endif %}",
+            "{% for\u{a0}p in pieces %}{% endfor %}",
+            "{% if \"a\"\u{2003}in pieces %}{% endif %}",
+        ] {
+            let e = validate(t, "f.jinja").unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{t:?}");
+        }
+        assert!(validate("{{\r\n\tname\t|\r\nlower }}", "t").is_ok());
+        assert!(validate("{%\tif\r\na\n%}{%\tendif\t%}", "t").is_ok());
     }
 
     #[test]

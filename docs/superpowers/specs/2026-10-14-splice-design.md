@@ -491,7 +491,7 @@ into the contract at its next `format` bump.
     - G12: `update --all` writes all sources' files, runs deduplicated post commands once, then writes every lock last.
     - G13: a corrupt channel lock or a stray file in `.splice/channels/` is exit 3 naming the file; names starting with `.` are ignored.
     - G14: only `--only`/`--exclude` need `--channel`; `--to` works alone; `--all` excludes `--channel`, `--to`, `--data`, `--only`, `--exclude`.
-    - G15: fixtures use `min_splice = "0.1.0"`; real channel templates using `[sections]` set `0.2.0` (the crate is 0.2.0).
+    - G15: every template using `[sections]` (or raw) sets `min_splice = "0.2.0"` or later, fixtures included; an older `min_splice` is exit 3 at load (contract §9.23, §9.26). The crate is 0.2.0.
     - G16: `--only`/`--exclude` on `update --channel` replace both stored lists.
     - G17: in `update --all`, a section host's disk view includes an earlier source's planned seed write.
     - Drift reporting follows each command family (`add` family: `conflict`/`owned` changes; `update` family: messages; `check`: `update`/`owned`; `diff`: messages, exit 0).

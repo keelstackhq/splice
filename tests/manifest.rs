@@ -228,3 +228,118 @@ mod symlinks {
         assert!(m.contains("piece.toml") && m.contains("sub/s.md"), "{m}");
     }
 }
+
+/// A template dir with `splice.toml` (min_splice `min`) and one base piece `p`.
+fn one_piece(min: &str, piece_extra: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
+    let toml = format!("id = \"p\"\ndescription = \"d\"\n{piece_extra}");
+    let dir = inline_template(&[("p", &toml, files)]);
+    std::fs::write(
+        dir.path().join("splice.toml"),
+        format!("format = 1\nname = \"t\"\nmin_splice = \"{min}\"\nbase = \"p\"\n"),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn description_and_prompt_have_defaults() {
+    let dir = inline_template(&[("p", "id = \"p\"\n[vars]\nname = { default = \"x\" }\n", &[])]);
+    let t = Template::load(dir.path()).unwrap();
+    assert_eq!(t.pieces["p"].description, "");
+    assert_eq!(t.pieces["p"].vars["name"].prompt, "name");
+}
+
+#[test]
+fn keyword_var_names_are_reserved() {
+    for name in ["true", "false", "none", "not", "and", "or", "in", "is"] {
+        let piece = format!("[vars]\n{name} = {{ prompt = \"p\" }}\n");
+        let e = Template::load(one_piece("0.2.0", &piece, &[]).path()).unwrap_err();
+        assert_eq!(e.exit_code(), 3, "{name}");
+        assert!(e.to_string().contains("reserved"), "{name}: {e}");
+    }
+}
+
+#[test]
+fn sections_need_min_splice_0_2_0() {
+    let sections = "[sections]\n\"AGENTS.md\" = \"s.md\"\n";
+    let files: &[(&str, &str)] = &[("s.md", "x\n")];
+    let e = Template::load(one_piece("0.1.0", sections, files).path()).unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(
+        m.contains("[sections]") && m.contains("min_splice") && m.contains("0.2.0"),
+        "{m}"
+    );
+    Template::load(one_piece("0.2.0", sections, files).path()).unwrap();
+    Template::load(one_piece("1.0.0", sections, files).path()).unwrap();
+}
+
+#[test]
+fn raw_needs_min_splice_0_2_0() {
+    let raw: &[(&str, &str)] = &[("sub/a.txt.jinja", "x{% raw %}{{ y }}{% endraw %}\n")];
+    let e = Template::load(one_piece("0.1.0", "", raw).path()).unwrap_err();
+    assert_eq!(e.exit_code(), 3);
+    let m = e.to_string();
+    assert!(
+        m.contains("raw") && m.contains("min_splice") && m.contains("0.2.0"),
+        "{m}"
+    );
+    assert!(m.contains("a.txt.jinja"), "{m}");
+    Template::load(one_piece("0.2.0", "", raw).path()).unwrap();
+    // Not a raw use: a non-`.jinja` file, and a raw tag inside a comment.
+    let plain: &[(&str, &str)] = &[
+        ("a.txt", "{% raw %}x{% endraw %}\n"),
+        ("b.jinja", "{# {% raw %} #}\n"),
+    ];
+    Template::load(one_piece("0.1.0", "", plain).path()).unwrap();
+}
+
+#[cfg(unix)]
+mod manifest_symlinks {
+    use super::*;
+    use std::path::Path;
+
+    /// Move `path` out of the template and leave a symlink to it in its place.
+    fn relink(path: &Path, outside: &Path) {
+        let real = outside.join("real");
+        std::fs::rename(path, &real).unwrap();
+        std::os::unix::fs::symlink(&real, path).unwrap();
+    }
+
+    fn load_err(dir: &Path) -> String {
+        let e = Template::load(dir).unwrap_err();
+        assert_eq!(e.exit_code(), 3);
+        e.to_string()
+    }
+
+    #[test]
+    fn symlinked_manifest_parts_rejected() {
+        for rel in [
+            "splice.toml",
+            "pieces/p/piece.toml",
+            "pieces",
+            "pieces/p",
+            "migrations",
+            "migrations/1.0.0.toml",
+        ] {
+            let dir = one_piece("0.1.0", "", &[]);
+            std::fs::create_dir_all(dir.path().join("migrations")).unwrap();
+            std::fs::write(dir.path().join("migrations/1.0.0.toml"), "").unwrap();
+            Template::load(dir.path()).unwrap();
+            let outside = tempfile::tempdir().unwrap();
+            relink(&dir.path().join(rel), outside.path());
+            let m = load_err(dir.path());
+            assert!(m.contains("symlink"), "{rel}: {m}");
+        }
+    }
+
+    #[test]
+    fn symlinked_extra_piece_dir_is_an_error_not_skipped() {
+        let dir = one_piece("0.1.0", "", &[]);
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("piece.toml"), "id = \"q\"\n").unwrap();
+        std::os::unix::fs::symlink(other.path(), dir.path().join("pieces/q")).unwrap();
+        let m = load_err(dir.path());
+        assert!(m.contains("symlink") && m.contains("q"), "{m}");
+    }
+}
