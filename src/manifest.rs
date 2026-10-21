@@ -722,7 +722,15 @@ mod tests {
 
     #[test]
     fn non_portable_piece_ids_rejected() {
-        for id in ["con", "Nul", "lpt1.x", "a:b", "x.", ".git"] {
+        // The id is also the piece's directory name. Windows cannot create the reserved names,
+        // `:` or a trailing dot, so those run only on Unix; `paths::tests` checks every rule on
+        // all platforms without touching the disk.
+        let ids: &[&str] = if cfg!(windows) {
+            &[".git", ".GIT"]
+        } else {
+            &["con", "Nul", "lpt1.x", "a:b", "x.", ".git"]
+        };
+        for &id in ids {
             let piece = format!("id = \"{id}\"\ndescription = \"x\"\n");
             let e = load_with(
                 &template_toml("0.1.0", ""),
