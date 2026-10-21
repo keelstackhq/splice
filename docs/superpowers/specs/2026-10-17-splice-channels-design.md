@@ -205,9 +205,17 @@ In the host file the channel owns exactly the lines between
 
 ```
 <!-- splice:<channel>:begin — managed by `splice update --channel <channel>`; edit the source -->
+
 …rendered fragment…
+
 <!-- splice:<channel>:end -->
 ```
+
+Splice writes one blank line after the begin marker and one before the end marker, as Markdown
+formatters (oxfmt, prettier) want. The block body is the text between the markers without
+leading and trailing blank lines, ending in one newline; drift, adoption and the lock hash use
+that body, so blocks without the blank lines (written before this layout) or with extra ones
+next to the markers compare equal. Any other change inside the body is drift.
 
 - **Insert** (`channel add`, or a section new in the target): host absent → created containing
   only the block; host present without markers → block appended after one blank line.
@@ -220,7 +228,8 @@ In the host file the channel owns exactly the lines between
 - **Removal** (section gone from target, filtered out, or `channel remove`): delete the block if
   unedited, else keep and report. A host left empty (whitespace only) by a removal is deleted
   only if splice created it (recorded as `created = true` in `[sections]`).
-- **Body rules.** A fragment body is normalised to LF and ends in a newline (empty stays empty);
+- **Body rules.** A fragment body is normalised to LF, loses leading and trailing blank lines and
+  ends in a newline (empty stays empty);
   a CRLF host gets CRLF back. A body line that parses as a begin or end marker of any channel
   (`<!-- splice:<name>:begin …-->` or `<!-- splice:<name>:end -->`) is refused (exit 3, naming
   the channel and the line): it would corrupt this or another channel's block in the host.

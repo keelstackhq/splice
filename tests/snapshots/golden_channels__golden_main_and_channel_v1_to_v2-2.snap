@@ -15,9 +15,9 @@ expression: redact(&tree_snapshot(r))
 .splice/channels/rig.toml [sha]
 .splice/lock.toml [sha]
 .splice/migrated.txt b0a1de67696fb59a924cd5f5b1d51f7e5bcc1352ac47cb9866ee66689c05bb4b
-AGENTS.md b6cf77125f2c79164d9addc698ac3a67e88b24b3017121596ebb64baec159dff
+AGENTS.md 28e1cfda16d7c6b921be0d1f010f9e1fd0f8c3e3fc9ca64309c11f3d38e508c6
 CHANGELOG.md 90d8090f7a103feaaca8b2c27c2f98812814ca8949ee4a276374c9ed1e353b15
-CLAUDE.md bf8ce5867e8d4f68f6221f842dfd61043d6ae685c96ba73673e123ea14b9caf1
+CLAUDE.md 0949ce507feda213b7fa2c943f7a5a69d05513a6a5f39e1d03a2025f55607b9d
 README.md f8dd1a2b2a4208093fbfdc0e73007e1937384f0b560b2f27103f2974ebdaf5a7
 apps/web/package.json 9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9
 apps/web/src/index.html edfac485a8f3748a30377c861db77d3fe0e2c50f18ce54120dfe0a4811c36efd
@@ -177,9 +177,11 @@ migrated
 # My rules
 
 <!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->
+
 - Test first.
 - Keep files small and focused.
 - Subagents live in `.claude/agents`.
+
 <!-- splice:rig:end -->
 
 My footer.
@@ -189,7 +191,9 @@ My footer.
 - 2.0.0: second release
 == CLAUDE.md ==
 <!-- splice:rig:begin — managed by `splice update --channel rig`; edit the source -->
+
 See `AGENTS.md`, mine.
+
 <!-- splice:rig:end -->
 == README.md ==
 # demo

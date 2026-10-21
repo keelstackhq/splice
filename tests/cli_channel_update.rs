@@ -760,8 +760,8 @@ fn all_seed_then_section_same_host() {
             .join("tests/fixtures/template/v2/pieces/base/files/CHANGELOG.md"),
     )
     .unwrap();
-    let block = "<!-- splice:rigb:begin — managed by `splice update --channel rigb`; edit the source -->\n\
-                 - rigb 2.0.0 changed the notes.\n<!-- splice:rigb:end -->\n";
+    let block = "<!-- splice:rigb:begin — managed by `splice update --channel rigb`; edit the source -->\n\n\
+                 - rigb 2.0.0 changed the notes.\n\n<!-- splice:rigb:end -->\n";
     assert_eq!(read(r, "CHANGELOG.md"), format!("{seed}\n{block}"));
     let cl = ChannelLock::read(r, "rigb").unwrap().unwrap();
     assert!(!cl.sections["CHANGELOG.md"].created, "{:?}", cl.sections);
@@ -973,6 +973,8 @@ fn rerun_after_failed_post_converges_without_restore() {
         .skip(1)
         .take_while(|l| !l.starts_with("<!-- splice:rig:end"))
         .collect::<String>();
+    // The hash is over the body without the blank lines next to the markers (G7).
+    let body = format!("{}\n", body.trim_matches('\n'));
     assert_eq!(
         cl.sections["AGENTS.md"].sha256,
         splice::sections::body_sha(&body)

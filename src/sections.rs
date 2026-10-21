@@ -215,7 +215,8 @@ pub fn end_marker(channel: &str) -> String {
 pub struct Block {
     pub begin: usize,
     pub end: usize,
-    /// Text between the markers, LF line endings.
+    /// Text between the markers, LF line endings, without leading and trailing blank lines,
+    /// ending in one newline (empty stays empty).
     pub body: String,
 }
 
@@ -279,13 +280,27 @@ fn is_begin(text: &str, channel: &str) -> bool {
     rest.ends_with("-->") && (rest.starts_with(char::is_whitespace) || rest.starts_with("-->"))
 }
 
-/// LF body ending in a newline (empty stays empty); refuses a line that would parse as any
-/// channel's marker, which would corrupt the host on the next read.
+/// LF text without leading and trailing blank (whitespace-only) lines, ending in one newline;
+/// empty stays empty. Markdown formatters add blank lines next to the markers (G7).
+fn trim_blank_edges(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(first) = lines.iter().position(|l| !l.trim().is_empty()) else {
+        return String::new();
+    };
+    let last = lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty())
+        .unwrap_or(first);
+    let mut out = lines[first..=last].join("\n");
+    out.push('\n');
+    out
+}
+
+/// LF body without leading and trailing blank lines, ending in one newline (empty stays empty);
+/// refuses a line that would parse as any channel's marker, which would corrupt the host on the
+/// next read.
 fn clean_body(channel: &str, body: &str) -> Result<String, SpliceError> {
-    let mut body = body.replace("\r\n", "\n");
-    if !body.is_empty() && !body.ends_with('\n') {
-        body.push('\n');
-    }
+    let body = trim_blank_edges(&body.replace("\r\n", "\n"));
     if let Some(line) = body.lines().find(|l| is_any_marker(l.trim_end())) {
         return Err(SpliceError::Template(format!(
             "channel {channel}: fragment text contains a splice marker line `{line}`; remove it from the source"
@@ -346,10 +361,11 @@ pub fn find_block(host: &str, channel: &str) -> Result<Option<Block>, MarkerErro
     if let Some(&extra) = ends.get(1) {
         return Err(MarkerError::Unbalanced(extra));
     }
-    let body = lines[begin..end_line - 1]
+    let raw: String = lines[begin..end_line - 1]
         .iter()
         .map(|l| format!("{}\n", l.trim_end_matches(['\r', '\n'])))
         .collect();
+    let body = trim_blank_edges(&raw);
     Ok(Some(Block {
         begin,
         end: end_line,
@@ -363,7 +379,8 @@ pub fn body_sha(body: &str) -> String {
 }
 
 /// Add a block: alone when the host is absent or empty, else after exactly one blank line. A CRLF
-/// host (first line ending) gets CRLF.
+/// host (first line ending) gets CRLF. A blank line follows the begin marker and precedes the
+/// end marker, as Markdown formatters want (G7).
 pub fn insert(host: Option<&str>, channel: &str, body: &str) -> Result<String, SpliceError> {
     let body = clean_body(channel, body)?;
     let host = host.unwrap_or("");
@@ -377,7 +394,7 @@ pub fn insert(host: Option<&str>, channel: &str, body: &str) -> Result<String, S
     let block = format!(
         "{}\n{}{}\n",
         begin_marker(channel),
-        body,
+        padded(&body),
         end_marker(channel)
     );
     let mut out = String::from(host);
@@ -403,9 +420,18 @@ pub fn replace(
     let lines: Vec<&str> = host.split_inclusive('\n').collect();
     let eol = eol_of(lines[block.begin - 1]);
     let mut out: String = lines[..block.begin].concat();
-    out.push_str(&to_eol(&body, eol));
+    out.push_str(&to_eol(&padded(&body), eol));
     out.push_str(&lines[block.end - 1..].concat());
     Ok(out)
+}
+
+/// A clean body with one blank line before and after it (only one line when empty), LF.
+fn padded(body: &str) -> String {
+    if body.is_empty() {
+        "\n".to_string()
+    } else {
+        format!("\n{body}\n")
+    }
 }
 
 /// Drop the block and the one blank line `insert` put before it. Inverts `insert` exactly for a
@@ -440,15 +466,15 @@ mod tests {
     fn insert_into_absent_and_present() {
         assert_eq!(
             insert(None, "rig", "x\n").unwrap(),
-            format!("{B}\nx\n{E}\n")
+            format!("{B}\n\nx\n\n{E}\n")
         );
         assert_eq!(
             insert(Some("# T\n"), "rig", "x\n").unwrap(),
-            format!("# T\n\n{B}\nx\n{E}\n")
+            format!("# T\n\n{B}\n\nx\n\n{E}\n")
         );
         assert_eq!(
             insert(Some("# T"), "rig", "x\n").unwrap(),
-            format!("# T\n\n{B}\nx\n{E}\n")
+            format!("# T\n\n{B}\n\nx\n\n{E}\n")
         );
     }
 
@@ -456,7 +482,7 @@ mod tests {
     fn insert_into_crlf_host_stays_crlf() {
         assert_eq!(
             insert(Some("# T\r\n"), "rig", "x\n").unwrap(),
-            format!("# T\r\n\r\n{B}\r\nx\r\n{E}\r\n")
+            format!("# T\r\n\r\n{B}\r\n\r\nx\r\n\r\n{E}\r\n")
         );
     }
 
@@ -467,7 +493,7 @@ mod tests {
         assert_eq!((b.begin, b.end, b.body.as_str()), (2, 4, "old\n"));
         assert_eq!(
             replace(&host, "rig", &b, "new\n").unwrap(),
-            format!("a\r\n{B}\r\nnew\r\n{E}\r\nz\r\n")
+            format!("a\r\n{B}\r\n\r\nnew\r\n\r\n{E}\r\nz\r\n")
         );
     }
 
@@ -477,7 +503,7 @@ mod tests {
         let b = find_block(&host, "rig").unwrap().unwrap();
         assert_eq!(
             replace(&host, "rig", &b, "").unwrap(),
-            format!("a\n{B}\n{E}\n")
+            format!("a\n{B}\n\n{E}\n")
         );
     }
 
@@ -561,12 +587,12 @@ mod tests {
     #[test]
     fn body_without_final_newline_is_normalised() {
         let ins = insert(None, "rig", "x").unwrap();
-        assert_eq!(ins, format!("{B}\nx\n{E}\n"));
+        assert_eq!(ins, format!("{B}\n\nx\n\n{E}\n"));
         assert!(find_block(&ins, "rig").unwrap().is_some());
         let host = format!("{B}\nold\n{E}\n");
         let b = find_block(&host, "rig").unwrap().unwrap();
         let rep = replace(&host, "rig", &b, "new").unwrap();
-        assert_eq!(rep, format!("{B}\nnew\n{E}\n"));
+        assert_eq!(rep, format!("{B}\n\nnew\n\n{E}\n"));
         assert!(find_block(&rep, "rig").unwrap().is_some());
     }
 
@@ -576,11 +602,11 @@ mod tests {
         let b = find_block(&host, "rig").unwrap().unwrap();
         assert_eq!(
             replace(&host, "rig", &b, "new\r\nmore\r\n").unwrap(),
-            format!("a\r\n{B}\r\nnew\r\nmore\r\n{E}\r\n")
+            format!("a\r\n{B}\r\n\r\nnew\r\nmore\r\n\r\n{E}\r\n")
         );
         assert_eq!(
             insert(Some("a\r\n"), "rig", "x\r\n").unwrap(),
-            format!("a\r\n\r\n{B}\r\nx\r\n{E}\r\n")
+            format!("a\r\n\r\n{B}\r\n\r\nx\r\n\r\n{E}\r\n")
         );
     }
 
@@ -616,6 +642,55 @@ mod tests {
     }
 
     #[test]
+    fn insert_and_replace_put_blank_lines_around_the_body() {
+        assert_eq!(
+            insert(None, "rig", "x\n").unwrap(),
+            format!("{B}\n\nx\n\n{E}\n")
+        );
+        assert_eq!(
+            insert(Some("# T\r\n"), "rig", "x\n").unwrap(),
+            format!("# T\r\n\r\n{B}\r\n\r\nx\r\n\r\n{E}\r\n")
+        );
+        // the fragment's own leading and trailing blank lines are dropped
+        assert_eq!(
+            insert(None, "rig", "\n\nx\n\n").unwrap(),
+            format!("{B}\n\nx\n\n{E}\n")
+        );
+        // an old-format block is rewritten in the new format
+        let host = format!("a\n{B}\nold\n{E}\nz\n");
+        let b = find_block(&host, "rig").unwrap().unwrap();
+        assert_eq!(
+            replace(&host, "rig", &b, "new\n").unwrap(),
+            format!("a\n{B}\n\nnew\n\n{E}\nz\n")
+        );
+    }
+
+    #[test]
+    fn body_ignores_blank_lines_next_to_the_markers() {
+        let want = "## H\n\nx\n";
+        for host in [
+            format!("{B}\n## H\n\nx\n{E}\n"),
+            format!("{B}\n\n## H\n\nx\n\n{E}\n"),
+            format!("{B}\n\n\n## H\n\nx\n\n\n{E}\n"),
+            format!("{B}\r\n\r\n## H\r\n\r\nx\r\n\r\n{E}\r\n"),
+            format!("{B}\r\n## H\r\n\r\nx\r\n{E}\r\n"),
+        ] {
+            let b = find_block(&host, "rig").unwrap().unwrap();
+            assert_eq!(b.body, want, "{host:?}");
+        }
+        // edits inside the body are still visible
+        let edited = format!("{B}\n\n## H\nx\n\n{E}\n");
+        assert_ne!(find_block(&edited, "rig").unwrap().unwrap().body, want);
+        assert_eq!(
+            find_block(&format!("{B}\n\n\n{E}\n"), "rig")
+                .unwrap()
+                .unwrap()
+                .body,
+            ""
+        );
+    }
+
+    #[test]
     fn begin_match_is_exact_and_bom_is_recognised() {
         assert_eq!(
             find_block(&format!("<!-- splice:rig:beginX -->\nx\n{E}\n"), "rig"),
@@ -625,15 +700,16 @@ mod tests {
         let b = find_block(&host, "rig").unwrap().unwrap();
         assert_eq!((b.begin, b.end, b.body.as_str()), (1, 3, "x\n"));
         let rep = replace(&host, "rig", &b, "y\n").unwrap();
-        assert_eq!(rep, format!("\u{feff}{B}\ny\n{E}\n"));
+        assert_eq!(rep, format!("\u{feff}{B}\n\ny\n\n{E}\n"));
     }
 
     mod planner {
         use super::*;
         use crate::render::RenderedSection;
 
+        /// A block as splice writes it: blank lines around the body (G7).
         fn blk(body: &str) -> String {
-            format!("{B}\n{body}{E}\n")
+            format!("{B}\n\n{body}\n{E}\n")
         }
 
         type Case = (
@@ -908,6 +984,40 @@ mod tests {
                 if let (Some(l), Some(b), false) = (got, theirs, drift) {
                     assert_eq!(l.sha256, body_sha(b), "{name}");
                 }
+            }
+        }
+
+        #[test]
+        fn formatter_blank_lines_and_old_format_are_clean() {
+            let filter = Filter::new(&[], &[]).unwrap();
+            for host in [
+                format!("# T\n\n{B}\n## H\n\nx\n{E}\n"),
+                format!("# T\n\n{B}\n\n## H\n\nx\n\n{E}\n"),
+                format!("# T\r\n\r\n{B}\r\n\r\n## H\r\n\r\nx\r\n\r\n{E}\r\n"),
+            ] {
+                // locked and unchanged fragment, then a changed fragment over a clean block
+                for theirs in ["## H\n\nx\n", "## H\n\ny\n"] {
+                    let plan = run(
+                        Some(theirs),
+                        Some(&host),
+                        Some(("## H\n\nx\n", false)),
+                        false,
+                        &filter,
+                        false,
+                    );
+                    assert!(plan.drift.is_empty(), "{host:?} {theirs:?}");
+                }
+                // not locked, equal after normalisation: adopted, nothing written
+                let plan = run(
+                    Some("## H\n\nx\n"),
+                    Some(&host),
+                    None,
+                    false,
+                    &filter,
+                    false,
+                );
+                assert!(plan.drift.is_empty() && plan.changes.is_empty(), "{host:?}");
+                assert!(plan.locked.contains_key("AGENTS.md"), "{host:?}");
             }
         }
 
