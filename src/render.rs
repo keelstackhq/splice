@@ -224,6 +224,10 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
             }
         }
     }
+    // Case-insensitive file systems would merge these (contract §9.21).
+    if let Some(msg) = crate::paths::case_collision(tree.keys().map(String::as_str)) {
+        return Err(template_err(msg));
+    }
     Ok(tree)
 }
 

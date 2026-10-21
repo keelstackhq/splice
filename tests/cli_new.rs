@@ -454,3 +454,22 @@ fn new_refuses_sections() {
     );
     assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn non_portable_instance_name_is_usage() {
+    let tpl = template_repo(&["v1"]);
+    for p in ["app:con", "app:nul", "app:lpt1"] {
+        let dest = tempfile::tempdir().unwrap();
+        let out = splice_cmd()
+            .args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"])
+            .args(["--piece", p])
+            .assert()
+            .code(2)
+            .get_output()
+            .stderr
+            .clone();
+        let err = String::from_utf8(out).unwrap();
+        assert!(err.contains("instance name"), "{p}: {err}");
+        assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0, "{p}");
+    }
+}

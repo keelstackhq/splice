@@ -305,6 +305,9 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
     }
     let raw: RawPiece = parse(&file, &text)?;
     let f = file.display();
+    if let Some(why) = crate::paths::segment_problem(dir_name) {
+        return err(format!("{f}: piece id `{dir_name}` {why}"));
+    }
     if raw.id != dir_name {
         return err(format!(
             "{f}: id `{}` must equal the directory name `{dir_name}`",
@@ -600,6 +603,20 @@ mod tests {
                 e.to_string().contains(needle),
                 "{e} should mention {needle}"
             );
+        }
+    }
+
+    #[test]
+    fn non_portable_piece_ids_rejected() {
+        for id in ["con", "Nul", "lpt1.x", "a:b", "x.", ".git"] {
+            let piece = format!("id = \"{id}\"\ndescription = \"x\"\n");
+            let e = load_with(
+                &template_toml("0.1.0", ""),
+                &[("base", BASE_PIECE), (id, &piece)],
+            )
+            .unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{id}");
+            assert!(e.to_string().contains("piece id"), "{id}: {e}");
         }
     }
 

@@ -80,6 +80,29 @@ pub fn resolve_vars(
     Ok(out)
 }
 
+/// Check an instance name against the portable segment rules (contract §9.21).
+/// A name the piece itself supplies (its `name` default or its id) is a template error (exit 3);
+/// a name the user chose is a usage error (exit 2).
+pub fn check_instance_name(piece: &PieceManifest, name: &str) -> Result<()> {
+    let Some(why) = crate::paths::segment_problem(name) else {
+        return Ok(());
+    };
+    let msg = format!(
+        "invalid instance name `{name}` for piece `{}`: {why}",
+        piece.id
+    );
+    let default = piece
+        .vars
+        .get("name")
+        .and_then(|v| v.default.as_deref())
+        .unwrap_or(&piece.id);
+    Err(if name == default {
+        SpliceError::Template(msg)
+    } else {
+        SpliceError::Usage(msg)
+    })
+}
+
 /// Instance name (spec §8.1): a `multiple` piece takes `explicit` (`--piece ID:NAME`), else its
 /// `name` var if it declares one, else its id; any other piece is named by its id.
 pub fn instance_name(
@@ -189,6 +212,22 @@ mod tests {
             sections: IndexMap::new(),
             files_dir: "files".into(),
         }
+    }
+
+    #[test]
+    fn non_portable_instance_names_rejected() {
+        let p = piece(true, true);
+        check_instance_name(&p, "web").unwrap();
+        for bad in ["con", "a:b", "x.", ".git", "COM1.txt"] {
+            // A name the user chose is a usage error.
+            let e = check_instance_name(&p, bad).unwrap_err();
+            assert_eq!(e.exit_code(), 2, "{bad}");
+            assert!(e.to_string().contains("instance name"), "{e}");
+        }
+        // The piece's own default is a template error.
+        let mut p = piece(true, true);
+        p.vars["name"].default = Some("nul".into());
+        assert_eq!(check_instance_name(&p, "nul").unwrap_err().exit_code(), 3);
     }
 
     #[test]

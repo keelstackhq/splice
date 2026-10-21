@@ -401,3 +401,36 @@ mod symlinked_template {
         assert!(err.to_string().contains("symlink"), "{err}");
     }
 }
+
+#[test]
+fn case_insensitive_collision_is_error_naming_both() {
+    for (extra, a, b) in [
+        ("readme.md", "README.md", "readme.md"),
+        ("Apps/x.txt", "Apps/x.txt", "apps/web/"),
+        ("LOGO.PNG/x.txt", "LOGO.PNG/x.txt", "logo.png"),
+    ] {
+        let dir = temp_template();
+        let f = dir.path().join("pieces/lib/files").join(extra);
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, "x\n").unwrap();
+        let err = render_in(
+            dir.path(),
+            &["base", "app:web", "lib"],
+            &[("project", "demo")],
+        )
+        .unwrap_err();
+        assert_eq!(err.exit_code(), 3, "{extra}");
+        let msg = err.to_string();
+        assert!(msg.contains("case-insensitive"), "{msg}");
+        assert!(msg.contains(a) && msg.contains(b), "{extra}: {msg}");
+    }
+}
+
+#[test]
+fn non_portable_var_value_in_path_is_error() {
+    for v in ["CON", "a:b", "nul", "a\u{1}b"] {
+        let err = render_in(&fixture_root(), &["base"], &[("project", v)]).unwrap_err();
+        assert_eq!(err.exit_code(), 3, "{v}");
+        assert!(err.to_string().contains("unsafe path"), "{err}");
+    }
+}

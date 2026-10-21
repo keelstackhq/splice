@@ -24,7 +24,7 @@ use crate::render::{
 use crate::sections::{SectionChange, SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
 use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
-use crate::vars::{VarSource, instance_name, interactive, resolve_vars};
+use crate::vars::{VarSource, check_instance_name, instance_name, interactive, resolve_vars};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -147,6 +147,7 @@ pub(crate) fn instances_for(
         }
         let vars = resolve_vars(&piece.vars, &known, &source)?;
         let name = instance_name(piece, explicit.as_deref(), &vars);
+        check_instance_name(piece, &name)?;
         if instances.iter().any(|i| i.id == *id && i.name == name) {
             return usage(format!("piece `{id}` has two instances named `{name}`"));
         }

@@ -573,3 +573,17 @@ fn main_add_claim_conflict_with_channel() {
         ""
     );
 }
+
+#[test]
+fn non_portable_instance_name_is_usage() {
+    let (_tpl, repo) = new_repo(&[]);
+    let before = lock_bytes(&repo);
+    let out = add(&repo, &["app", "--name", "aux"])
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("instance name"), "{out}");
+    assert_eq!(lock_bytes(&repo), before);
+}
