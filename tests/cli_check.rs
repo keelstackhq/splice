@@ -290,6 +290,59 @@ mod channels {
         );
     }
 
+    /// `text` with the blank lines next to the rig markers removed (the pre-0.2 layout).
+    fn without_marker_padding(text: &str) -> String {
+        let lines: Vec<&str> = text.split_inclusive('\n').collect();
+        let mut out = String::new();
+        for (i, l) in lines.iter().enumerate() {
+            let blank = l.trim().is_empty();
+            let after_begin = i > 0 && lines[i - 1].contains("splice:rig:begin");
+            let before_end = lines
+                .get(i + 1)
+                .is_some_and(|n| n.contains("splice:rig:end"));
+            if !(blank && (after_begin || before_end)) {
+                out.push_str(l);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn check_section_is_clean_with_formatter_old_and_crlf_layouts() {
+        let (repo, _ch, _tpl) = main_and_rig(&["v1"]);
+        let p = repo.path().join("AGENTS.md");
+        let written = std::fs::read_to_string(&p).unwrap();
+        let old = without_marker_padding(&written);
+        assert_ne!(old, written, "splice writes blank lines around the body");
+        // What oxfmt/prettier leave: one blank line after begin and before end; extra blank
+        // lines next to the markers are tolerated too.
+        let formatted = old
+            .replace("edit the source -->\n", "edit the source -->\n\n")
+            .replace("\n<!-- splice:rig:end -->", "\n\n<!-- splice:rig:end -->");
+        let roomy = old
+            .replace("edit the source -->\n", "edit the source -->\n\n\n")
+            .replace("\n<!-- splice:rig:end -->", "\n\n\n<!-- splice:rig:end -->");
+        for (name, text) in [
+            ("old layout, old lock", old.clone()),
+            ("formatter layout", formatted.clone()),
+            ("extra blank lines", roomy),
+            ("crlf old", old.replace('\n', "\r\n")),
+            ("crlf formatter", formatted.replace('\n', "\r\n")),
+        ] {
+            std::fs::write(&p, &text).unwrap();
+            let (code, v) = check(&repo, &["--offline"]);
+            assert_eq!(code, 0, "{name}: {v}");
+        }
+        // a real edit inside the formatter-shaped body is still drift
+        std::fs::write(&p, formatted.replace("Test first", "EDITED")).unwrap();
+        let (code, v) = check(&repo, &["--offline"]);
+        assert_eq!(code, 1);
+        assert_eq!(
+            v["changes"],
+            serde_json::json!([{"path":"AGENTS.md#rig","action":"update","class":"owned"}])
+        );
+    }
+
     #[test]
     fn check_section_markers_broken_and_host_gone() {
         let (repo, _ch, _tpl) = main_and_rig(&["v1"]);

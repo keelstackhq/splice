@@ -609,6 +609,39 @@ fn add_channel_updates_section_with_new_piece() {
     assert_eq!(rig(r, "rig").sections.len(), 2);
 }
 
+/// Markdown formatters want a blank line after the begin and before the end marker (G7).
+fn assert_padded(host: &str, channel: &str) {
+    let begin = format!(
+        "<!-- splice:{channel}:begin — managed by `splice update --channel {channel}`; edit the source -->\n\n"
+    );
+    let end = format!("\n\n<!-- splice:{channel}:end -->\n");
+    assert!(host.contains(&begin) && host.contains(&end), "{host}");
+    assert!(
+        !host.contains(&format!("{begin}\n")) && !host.contains(&format!("\n{end}")),
+        "{host}"
+    );
+}
+
+#[test]
+fn channel_add_and_add_channel_put_blank_lines_around_the_body() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    std::fs::write(r.join("AGENTS.md"), "# Mine\n").unwrap();
+    commit_all(r);
+    chan_commit(r, &["channel", "add", &src(&ch)]);
+    let agents = read(r, "AGENTS.md");
+    assert_padded(&agents, "rig");
+    assert!(
+        agents.contains("edit the source -->\n\n- Test first.\n"),
+        "{agents}"
+    );
+    chan_commit(r, &["add", "claude", "--channel", "rig"]);
+    assert_padded(&read(r, "AGENTS.md"), "rig");
+    assert_padded(&read(r, "CLAUDE.md"), "rig");
+    chan(r, &["check", "--offline"]).success();
+}
+
 #[test]
 fn add_channel_drift_writes_nothing() {
     // G11: `add --channel` follows `add`: drift or conflict → nothing written, exit 1.
