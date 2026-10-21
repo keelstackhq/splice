@@ -309,7 +309,8 @@ L. `sha(O) == L.sha256` means "unedited".
 "skip" for seeds means no change entry at all (nothing is reported for an existing seed).
 
 `[[remove]]` paths are rendered with each instance of `piece` (template vars only when `piece` is
-absent), and in both cases with `template` (name, target version) and `pieces`, as files are; they
+absent), and in both cases with `template` (name, and the version updated FROM, contract §9.22)
+and `pieces`, as files are; they
 are repo-root relative. A `[[remove]]` path that the target still renders is ignored
 with a warning. Renames are a removal plus an addition; a migration step may move user content
 between them (it runs after both).
@@ -419,10 +420,11 @@ error with the restore hint.
 
 ## 10. Decisions on gaps in the contract
 
-These decisions are now part of the contract itself (`docs/template-format.md` §9). If this section and §9 ever differ, §9 wins.
-
-These are splice's reading of points the contract leaves open. They go to hull for agreement and
-into the contract at its next `format` bump.
+These are splice's reading of points the contract leaves open. Items 1–9 are contract §9.1–§9.9.
+Contract §9 now also holds items 10 (§9.16–§9.18), 15 (only the `[sections]` key and its
+`min_splice` rule, §9.26), 16 (raw, §9.23), 17
+(stray `#}`, §9.24) and 19 (POSIX sh, §9.25), and the rules of item 20 (§9.15, §9.19–§9.22).
+Items 11–14 and 18 stay splice's own decisions.
 
 1. Globs and `[merge]` keys match the rendered path relative to `files/`, minus `.jinja`, before
    `target`; `*` does not cross `/`.
@@ -440,7 +442,7 @@ into the contract at its next `format` bump.
 10. Subset gate (task 5 review): keyword literals (`true false none not and or in is`) and
     `loop self range namespace` are never variables; bare `pieces`/`piece`/`template` are rejected;
     dotted access is limited to `piece.id|name`, `template.name|version`; `else` only inside `if`.
-    These go to hull and the contract at the next `format` bump.
+    Now contract §9.16–§9.18 (also: a comment may not start or end with `-` or `+`).
 
 11. Merge formatting (task 3 review): json/yaml merge text-first (§8.5) so the common case of
     disjoint edits never rewrites the user's file; hull's `pnpm-workspace.yaml` is the reference
@@ -472,7 +474,9 @@ into the contract at its next `format` bump.
     be symlinks or sit below a symlinked directory. `add` checks the locked pieces and the asked
     piece for `[sections]` (exit 3) before it reports an unknown piece (exit 2). `update --channel`
     takes no `--data` (exit 2): a channel's vars are set at `channel add`; vars new in a later
-    channel version take their defaults or prompts.
+    channel version take their defaults or prompts. Only the `[sections]` key and its `min_splice`
+    rule are contract §9.26 (an older `min_splice` is exit 3 at load); G1–G17 below stay
+    splice-only.
 
     Channel rulings (G1–G17; the channels spec has the detail, `docs/superpowers/specs/
     2026-10-17-splice-channels-design.md`). Splice-only; offered to hull at the next `format`
@@ -491,13 +495,12 @@ into the contract at its next `format` bump.
     - G12: `update --all` writes all sources' files, runs deduplicated post commands once, then writes every lock last.
     - G13: a corrupt channel lock or a stray file in `.splice/channels/` is exit 3 naming the file; names starting with `.` are ignored.
     - G14: only `--only`/`--exclude` need `--channel`; `--to` works alone; `--all` excludes `--channel`, `--to`, `--data`, `--only`, `--exclude`.
-    - G15: fixtures use `min_splice = "0.1.0"`; real channel templates using `[sections]` set `0.2.0` (the crate is 0.2.0).
+    - G15: every template using `[sections]` (or raw) sets `min_splice = "0.2.0"` or later, fixtures included; an older `min_splice` is exit 3 at load (contract §9.23, §9.26). The crate is 0.2.0.
     - G16: `--only`/`--exclude` on `update --channel` replace both stored lists.
     - G17: in `update --all`, a section host's disk view includes an earlier source's planned seed write.
     - Drift reporting follows each command family (`add` family: `conflict`/`owned` changes; `update` family: messages; `check`: `update`/`owned`; `diff`: messages, exit 0).
 
-16. `{% raw %}` ... `{% endraw %}` (pending contract sign-off: the contract's §6 subset must gain
-    raw blocks in the joint contract PR with hull; never edited here alone). The body is output
+16. `{% raw %}` ... `{% endraw %}` (now contract §9.23). The body is output
     verbatim (after §6 CRLF normalisation) and may be anything except the text of an `endraw`
     tag; `{{`, `{%` and `{#` inside are neither parsed nor validated, and the body's lines still
     count for error line numbers. No whitespace control (`-`, `+`) on either tag; `ws` inside the
@@ -508,10 +511,11 @@ into the contract at its next `format` bump.
     exotic whitespace (vertical tab, NBSP) in the `endraw` tag differently, so the gate also
     rejects, inside a raw body, an inner `raw` tag (any spelling) and any `endraw` spelling other
     than the strict one. A template using raw sets `min_splice` to a splice with raw support
-    (0.2.0 and later); there is no `format` bump. Corpus cases: `raw-braces`,
+    (0.2.0 and later; a `.jinja` file with a raw block under an older `min_splice` is exit 3 at
+    load); there is no `format` bump. Corpus cases: `raw-braces`,
     `raw-final-newline`, `raw-line-edges`, `raw-tags`.
 17. A `#}` in plain text (outside a comment and outside a raw body) is exit 3 naming file:line
-    (pending contract, with item 16): Nunjucks' lexer throws "unexpected end of comment" on it
+    (now contract §9.24): Nunjucks' lexer throws "unexpected end of comment" on it
     while MiniJinja prints it, so the gate rejects it. Inside a raw body it stays allowed. It also
     applies to path segments. **Behaviour change:** splice <= 0.2.0-pre accepted a literal `#}` in
     plain template text (for example the shell `${#}`); from this release it is exit 3. Write it
@@ -533,8 +537,24 @@ into the contract at its next `format` bump.
     POSIX), so `cmd /C` on Windows would break them. On Windows splice uses the first `sh.exe` or
     `sh` on `PATH`, else Git for Windows' `sh.exe`, found by walking up from `git --exec-path`
     to the first `bin\sh.exe` or `usr\bin\sh.exe`. No sh found is exit 3 and the message names
-    the missing `sh`. Pending hull's decision (shared document section 6) and the contract: until
-    both say POSIX sh, this is splice's own decision.
+    the missing `sh`. Now contract §9.25.
+20. Rules added with contract §9.15–§9.26 (splice 0.2.0). §9.15: a piece's `description` defaults
+    to `""`, a var's `prompt` to the var name. §9.19: whitespace inside tags is only space, tab,
+    CR and LF (NBSP, form feed, vertical tab are exit 3). §9.20: a symlinked `splice.toml`,
+    `piece.toml`, `pieces/`, `pieces/<id>`, `migrations/` or migration file is exit 3 (a symlinked
+    piece dir is never skipped). §9.21: every rendered segment, piece id and instance name is
+    checked as hull's `segmentProblem` does (no `:` or control characters, no trailing `.` or
+    space, no Windows reserved name with or without an extension, not `.git` in any case); two
+    rendered paths of one source equal ignoring case, also as directory prefixes, are exit 3
+    naming both (paths of different sources are not compared). An invalid instance name is exit 2
+    when the user chose it (`--piece id:name`, `add --name`, `--data name=`) and exit 3 when it is
+    the piece's own default. §9.22: `[[remove]]` paths render with `template.version` = the
+    version updated from. The from-version template is only the merge base of `update` (and
+    `channel update`): it loads and renders without the §9.15–§9.26 gates an older template may
+    break (the raw/`[sections]` `min_splice` floor, keyword var names, piece-id and path segment
+    rules, case collisions); symlinks stay rejected and the target stays strict. A locked
+    instance name the target rejects is exit 3 naming the lock. Duplicates and case collisions
+    count a `.jinja` that renders empty (as hull's buildPlan does).
 
 ## 11. Testing
 

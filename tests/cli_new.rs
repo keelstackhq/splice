@@ -454,3 +454,84 @@ fn new_refuses_sections() {
     );
     assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 }
+
+#[test]
+fn non_portable_instance_name_is_usage() {
+    let tpl = template_repo(&["v1"]);
+    for p in ["app:con", "app:nul", "app:lpt1"] {
+        let dest = tempfile::tempdir().unwrap();
+        let out = splice_cmd()
+            .args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"])
+            .args(["--piece", p])
+            .assert()
+            .code(2)
+            .get_output()
+            .stderr
+            .clone();
+        let err = String::from_utf8(out).unwrap();
+        assert!(err.contains("instance name"), "{p}: {err}");
+        assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0, "{p}");
+    }
+}
+
+#[test]
+fn empty_non_jinja_file_is_written() {
+    // Contract §4: a copied non-`.jinja` file is written even when empty.
+    let tpl = template_repo(&["v1"]);
+    std::fs::write(tpl.path().join("pieces/base/files/.keep"), "").unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let dest = tempfile::tempdir().unwrap();
+    new_ok(&tpl, dest.path(), &[]);
+    let kept = dest.path().join(".keep");
+    assert!(kept.is_file(), "0-byte file not written");
+    assert_eq!(std::fs::read(kept).unwrap().len(), 0);
+}
+
+#[test]
+fn non_portable_default_instance_name_is_template_error() {
+    let tpl = template_repo(&["v1"]);
+    let toml = tpl.path().join("pieces/app/piece.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(
+        &toml,
+        text.replace("default = \"web\"", "default = \"con\""),
+    )
+    .unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"])
+        .args(["--piece", "app"])
+        .assert()
+        .code(3)
+        .get_output()
+        .stderr
+        .clone();
+    let err = String::from_utf8(out).unwrap();
+    assert!(err.contains("instance name"), "{err}");
+}
+
+#[test]
+fn typed_name_equal_to_a_bad_default_is_usage() {
+    // The exit code follows where the name came from, not whether it equals the default.
+    let tpl = template_repo(&["v1"]);
+    let toml = tpl.path().join("pieces/app/piece.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    std::fs::write(
+        &toml,
+        text.replace("default = \"web\"", "default = \"con\""),
+    )
+    .unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    for extra in [
+        &["--piece", "app:con"][..],
+        &["--piece", "app", "--data", "name=con"],
+    ] {
+        let dest = tempfile::tempdir().unwrap();
+        splice_cmd()
+            .args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"])
+            .args(extra)
+            .assert()
+            .code(2);
+    }
+}

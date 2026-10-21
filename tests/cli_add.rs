@@ -495,6 +495,10 @@ fn add_refuses_a_piece_with_sections() {
     )
     .unwrap();
     std::fs::write(piece.join("files/frag.md"), "hello\n").unwrap();
+    // A template with [sections] needs splice 0.2.0 (contract §9.26).
+    let manifest = tpl.path().join("splice.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(&manifest, text.replace("\"0.1.0\"", "\"0.2.0\"")).unwrap();
     amend_tip(tpl.path(), "v1.0.0");
     let repo = tempfile::tempdir().unwrap();
     splice_cmd()
@@ -572,4 +576,18 @@ fn main_add_claim_conflict_with_channel() {
         ),
         ""
     );
+}
+
+#[test]
+fn non_portable_instance_name_is_usage() {
+    let (_tpl, repo) = new_repo(&[]);
+    let before = lock_bytes(&repo);
+    let out = add(&repo, &["app", "--name", "aux"])
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    assert!(out.contains("instance name"), "{out}");
+    assert_eq!(lock_bytes(&repo), before);
 }

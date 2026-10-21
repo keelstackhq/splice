@@ -9,7 +9,7 @@ use crate::error::SpliceError;
 use crate::fsio;
 use crate::manifest::{MergeStrategy, Template};
 use crate::output::Class;
-use crate::paths::render_rel_path;
+use crate::paths::render_rel_path_with;
 use crate::subset;
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -140,6 +140,9 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
         }
     }
     let mut tree = RenderedTree::new();
+    // Every rendered path, also of a `.jinja` that renders empty and is not written: duplicates
+    // and case collisions are checked on these (as hull's buildPlan does).
+    let mut seen: BTreeMap<String, (String, String)> = BTreeMap::new();
     for inst in &input.instances {
         let piece = t
             .pieces
@@ -188,7 +191,21 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
                      (symlinks are not allowed in a template)"
                 )));
             }
-            let (path, key) = render_rel_path(&rel, piece.target.as_deref(), &renderer, &ctx)?;
+            let (path, key) = render_rel_path_with(
+                &rel,
+                piece.target.as_deref(),
+                &renderer,
+                &ctx,
+                t.portable_paths,
+            )?;
+            if let Some((id, name)) =
+                seen.insert(path.clone(), (inst.id.clone(), inst.name.clone()))
+            {
+                return Err(template_err(format!(
+                    "{path}: rendered twice (pieces `{id}:{name}` and `{}:{}`)",
+                    inst.id, inst.name
+                )));
+            }
             let raw = std::fs::read(entry.path())?;
             let bytes = if rel.ends_with(".jinja") {
                 let text = String::from_utf8(raw)
@@ -216,13 +233,14 @@ pub fn render_tree(t: &Template, input: &RenderInput) -> Result<RenderedTree> {
                 piece_name: inst.name.clone(),
                 glob,
             };
-            if let Some(prev) = tree.insert(path.clone(), file) {
-                return Err(template_err(format!(
-                    "{path}: rendered twice (pieces `{}:{}` and `{}:{}`)",
-                    prev.piece_id, prev.piece_name, inst.id, inst.name
-                )));
-            }
+            tree.insert(path, file);
         }
+    }
+    // Case-insensitive file systems would merge these (contract §9.21).
+    if t.portable_paths
+        && let Some(msg) = crate::paths::case_collision(seen.keys().map(String::as_str))
+    {
+        return Err(template_err(msg));
     }
     Ok(tree)
 }
@@ -245,7 +263,13 @@ pub fn render_sections(t: &Template, input: &RenderInput) -> Result<RenderedSect
             .ok_or_else(|| template_err(format!("unknown piece `{}`", inst.id)))?;
         let ctx = context(t, input, inst, &pieces);
         for (key, fragment) in &piece.sections {
-            let (host, _) = render_rel_path(key, piece.target.as_deref(), &renderer, &ctx)?;
+            let (host, _) = render_rel_path_with(
+                key,
+                piece.target.as_deref(),
+                &renderer,
+                &ctx,
+                t.portable_paths,
+            )?;
             let origin = format!("{}:{fragment}", inst.id);
             // Checked at load too; re-checked right before the read (the template may change).
             if !fsio::is_plain_file_below(&piece.files_dir, fragment) {

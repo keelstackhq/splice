@@ -334,8 +334,9 @@ fn remove_paths_reach_the_planner() {
 }
 
 #[test]
-fn remove_paths_see_the_template_object() {
-    // `template.name` renders in a [[remove]] path (strict undefined would exit 3 otherwise).
+fn remove_paths_render_with_the_from_version() {
+    // Contract §9.22: `template.version` in a [[remove]] path is the version updated FROM
+    // (1.0.0), not the target (2.0.0). `template.name` renders too (strict undefined: exit 3).
     let tpl = template_repo(&["v1", "v2"]);
     let mig = tpl.path().join("migrations/2.0.0.toml");
     let text = std::fs::read_to_string(&mig).unwrap();
@@ -346,15 +347,17 @@ fn remove_paths_see_the_template_object() {
     .unwrap();
     amend_tip(tpl.path(), "v2.0.0");
     let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
-    std::fs::write(repo.path().join("fixture-2.0.0.cfg"), "mine\n").unwrap();
+    std::fs::write(repo.path().join("fixture-1.0.0.cfg"), "from\n").unwrap();
+    std::fs::write(repo.path().join("fixture-2.0.0.cfg"), "to\n").unwrap();
     commit_all(repo.path());
     let out = update(&repo, &[]).success().get_output().stdout.clone();
+    let msgs = messages(&json(&out));
     assert!(
-        messages(&json(&out)).contains("`fixture-2.0.0.cfg` is listed in a [[remove]]"),
-        "{}",
-        messages(&json(&out))
+        msgs.contains("`fixture-1.0.0.cfg` is listed in a [[remove]]"),
+        "{msgs}"
     );
-    assert_eq!(read(&repo, "fixture-2.0.0.cfg"), "mine\n");
+    assert!(!msgs.contains("fixture-2.0.0.cfg"), "{msgs}");
+    assert_eq!(read(&repo, "fixture-1.0.0.cfg"), "from\n");
     assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
 }
 
@@ -370,6 +373,10 @@ fn update_refuses_a_target_that_adds_sections() {
     )
     .unwrap();
     std::fs::write(base.join("files/frag.md"), "hello\n").unwrap();
+    // A template with [sections] needs splice 0.2.0 (contract §9.26).
+    let manifest = tpl.path().join("splice.toml");
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(&manifest, text.replace("\"0.1.0\"", "\"0.2.0\"")).unwrap();
     commit_tag(tpl.path(), "v2 with sections", "v2.0.0");
     let (lock, tree) = (lock_bytes(&repo), tree_snapshot(repo.path()));
     let out = update(&repo, &[]).code(3).get_output().clone();
@@ -398,4 +405,67 @@ fn main_lock_identical_with_channels_present() {
     assert_eq!(lock(&plain).template.version.to_string(), "2.0.0");
     assert_eq!(lock_bytes(&plain), lock_bytes(&with));
     assert_eq!(std::fs::read(&chan_path).unwrap(), chan_before);
+}
+
+#[test]
+fn update_from_a_base_that_breaks_new_rules_succeeds() {
+    // The from-version is only the merge base: it loads and renders without the §9.15-26 gates
+    // (raw with min_splice 0.1.0, a var named `is`); the target stays strict.
+    let tpl = template_repo(&["v1"]);
+    let repo = new_repo(&tpl, &[]);
+    let old_commit = lock(&repo).template.commit.clone();
+    let manifest = tpl.path().join("splice.toml");
+    let compliant = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        format!("{compliant}is = {{ prompt = \"p\", default = \"x\" }}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        tpl.path().join("pieces/base/files/raw.txt.jinja"),
+        "{% raw %}{{ x }}{% endraw %}\n",
+    )
+    .unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let new_commit = common::git_stdout(tpl.path(), &["rev-parse", "v1.0.0^{commit}"]);
+    let new_commit = new_commit.trim();
+    assert_ne!(old_commit, new_commit);
+    let lock_path = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    std::fs::write(&lock_path, text.replace(&old_commit, new_commit)).unwrap();
+    std::fs::write(repo.path().join("raw.txt"), "{{ x }}\n").unwrap();
+    commit_all(repo.path());
+    // v2: compliant (min_splice 0.2.0, no `is`).
+    std::fs::write(
+        &manifest,
+        compliant.replace("min_splice = \"0.1.0\"", "min_splice = \"0.2.0\""),
+    )
+    .unwrap();
+    commit_tag(tpl.path(), "v2", "v2.0.0");
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert_eq!(
+        lock(&repo).template.version.to_string(),
+        "2.0.0",
+        "{}",
+        messages(&json(&out))
+    );
+}
+
+#[test]
+fn locked_instance_name_that_breaks_rules_is_exit_3_naming_the_lock() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app:web"]);
+    let lock_path = repo.path().join(".splice/lock.toml");
+    let text = std::fs::read_to_string(&lock_path).unwrap();
+    assert!(text.contains("\"web\""));
+    std::fs::write(&lock_path, text.replace("\"web\"", "\"nul\"")).unwrap();
+    commit_all(repo.path());
+    let before = lock_bytes(&repo);
+    let out = update(&repo, &[]).code(3).get_output().stdout.clone();
+    let msgs = messages(&json(&out));
+    assert!(
+        msgs.contains(".splice/lock.toml") && msgs.contains("nul"),
+        "{msgs}"
+    );
+    assert_eq!(lock_bytes(&repo), before);
 }

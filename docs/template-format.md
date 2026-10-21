@@ -1,7 +1,8 @@
 # keelstack template format v1 (shared contract: splice ⇄ hull)
 
-This file is identical in `keelstack/splice` and `keelstack/hull` (`docs/template-format.md`).
-Change it only in both repos, in the same week, with a version bump of `format`.
+This file is identical in `keelstackhq/splice` and `keelstackhq/hull` (`docs/template-format.md`).
+Change it only in both repos, in the same week. Bump `format` only when a change makes a valid
+template invalid or renders it differently; syntax a template opts into is gated by `min_splice`.
 
 ## 1. Template repository layout
 
@@ -14,8 +15,8 @@ migrations/<semver>.toml    # optional, run by `splice update` when crossing tha
 ```
 
 A template version is a git tag `v<semver>` on the template repo. `splice` reads the template from
-a git URL (`gh:keelstack/hull` = `https://github.com/keelstack/hull`), optionally with a subdirectory
-(`gh:keelstack/hull//template`), or from a local path (for tests and template development).
+a git URL (`gh:keelstackhq/hull` = `https://github.com/keelstackhq/hull`), optionally with a subdirectory
+(`gh:keelstackhq/hull//template`), or from a local path (for tests and template development).
 
 ## 2. `splice.toml`
 
@@ -62,13 +63,14 @@ when = ["new", "add", "update"]
 - Path segments may contain `{{ var }}`.
 - **Allowed syntax (portable subset):** `{{ var }}`, `{{ var | lower }}`, `{{ var | upper }}`,
   `{% if var %}…{% elif … %}…{% else %}…{% endif %}`, `{% if "piece-id" in pieces %}`,
-  `{% for p in pieces %}…{% endfor %}`, and comments `{# … #}`. Nothing else: no macros, includes,
+  `{% for p in pieces %}…{% endfor %}`, comments `{# … #}` and `{% raw %}…{% endraw %}` (§9.23). Nothing else: no macros, includes,
   custom filters or extensions. MiniJinja (splice) and Nunjucks (hull's dev renderer) must render
   this subset identically.
 - Context: all `[vars]` of the template and of the piece instance, plus `pieces` (list of piece ids
   present in the repo after the operation), `piece` (`{id, name}` of the current instance) and
   `template` (`{name, version}`).
-- Output uses `\n` line endings. A rendered file that ends up empty (only whitespace) is not written.
+- Output uses `\n` line endings. A rendered `.jinja` file that ends up empty (only whitespace) is not
+  written; a copied non-`.jinja` file is written even when empty.
 
 ## 5. Ownership classes
 
@@ -91,7 +93,7 @@ format = 1
 splice = "0.1.0"
 
 [template]
-source = "gh:keelstack/hull//template"
+source = "gh:keelstackhq/hull//template"
 version = "1.2.0"
 commit = "3f2c…"                 # full sha of the rendered tag
 
@@ -148,3 +150,15 @@ Exit codes: 0 ok, 1 drift/conflict/update available (`check`), 2 usage error, 3 
 12. **Undefined variables** are template errors (exit 3). Templates never rely on an undefined variable rendering as empty.
 13. **File modes are not carried.** Every file is written as a regular, non-executable file, and templates invoke scripts through their interpreter (`bash path`, `node path`). `or` stays forbidden: use `if/elif` branches with identical bodies.
 14. **Minimal CLI both repos rely on:** `splice new <source> [dest] --piece <id>[:<name>]… --data <key>=<value>… --yes --json`, `splice add <id> [--name <name>] --data <key>=<value>… --yes --json`, `splice update [--to <version>] --yes --json`, `splice check --json`.
+15. **Required and default keys.** `[[post]].when` is required (no default). A piece's `description` defaults to `""` and a var's `prompt` defaults to the var name.
+16. **Reserved names.** No template var or piece var may be named `pieces`, `piece` or `template`. Bare `{{ pieces }}`, `{{ piece }}` and `{{ template }}` are rejected (MiniJinja and Nunjucks print lists differently); use a dotted path (§9.3) or `for`.
+17. **Identifiers.** A var, loop variable or dotted segment is ASCII `[a-z_][a-z0-9_]*`. It may not be `true`, `false`, `none`, `not`, `and`, `or`, `in`, `is`, `loop`, `self`, `range` or `namespace`.
+18. **`else` and comments.** `{% else %}` is allowed only inside `if`, and no `elif` follows an `else`. A comment may not start or end with `-` or `+` (`{#-`, `-#}`).
+19. **Whitespace inside tags** is optional space, tab, CR or LF, also around `|`: `{{var|lower}}` and `{{ var | lower }}` are both valid.
+20. **No symlinks** anywhere in a template: not under `files/`, not `files/` itself, `splice.toml`, `piece.toml`, `pieces/`, `pieces/<id>`, `migrations/` or a migration file.
+21. **Portable paths.** Each rendered path segment, and each piece id and instance name, is non-empty, not `.` or `..`, has no `/`, `\`, `:` or control characters (U+0000–U+001F, U+007F), does not end in `.` or a space, is not a Windows reserved name (`CON`, `PRN`, `AUX`, `NUL`, `COM1`…`COM9`, `LPT1`…`LPT9`, with or without an extension) and is not `.git` (any case). Within one source (the main template, or one channel), two rendered paths equal ignoring case, also as directory prefixes, collide (exit 3). This applies to literal file names as well as to var values.
+22. **`[[remove]]` paths** render with `template.version` = the version being updated from; `pieces` and `template` are in scope with or without `piece`.
+23. **Raw blocks.** `{% raw %}…{% endraw %}` outputs its body verbatim; tags inside are not parsed. Neither tag takes whitespace control (`-`, `+`). The body may not contain another `raw` tag in any spelling, and only `{% endraw %}` with optional space, tab, CR or LF inside the braces closes it (MiniJinja and Nunjucks disagree on nesting and on other spellings). Raw is allowed wherever text is, also inside `if`/`for` bodies, but never in a path segment. An unterminated `raw` or a stray `endraw` is exit 3. A template that uses raw sets `min_splice = "0.2.0"` or later.
+24. **Stray `#}`.** A `#}` in plain text, outside a comment and outside a raw body, is exit 3 naming file and line (Nunjucks fails on it, MiniJinja prints it). Write it inside a raw block. This also applies to path segments.
+25. **Template commands run with POSIX `sh -c`** on every OS: the `run` strings of `[[post]]` and `[[step]]` are POSIX shell. On Windows splice uses `sh` from `PATH`, else Git for Windows' `sh.exe`; no `sh` is exit 3.
+26. **`[sections]` (channel templates only).** A piece may map a host Markdown path (relative to the piece `target`) to a fragment under `files/`: `[sections] "AGENTS.md" = "sections/rules.md"`. The fragment is not written as a file; splice keeps it between `<!-- splice:<channel>:begin … -->` and `<!-- splice:<channel>:end -->` markers in the host file. Only templates added with `splice channel add` may use it (`new` and `add` of a main template refuse it, exit 3), and they set `min_splice = "0.2.0"` or later.

@@ -26,6 +26,22 @@ const RESERVED_VARS: [&str; 7] = [
     "namespace",
 ];
 
+/// Keyword and literal names no var may take since contract §9.17 (not checked in a merge base).
+const KEYWORD_VARS: [&str; 8] = ["true", "false", "none", "not", "and", "or", "in", "is"];
+
+/// How strictly to load. A merge base (the template a lock points at, rendered only as the base
+/// of `update`) skips the rules added in contract §9.15-26 that an older template may break:
+/// the raw/`[sections]` `min_splice` floor, keyword var names, piece-id segment rules, and (in
+/// `render_tree`) portable path segments and case collisions. Symlinks stay rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Strictness {
+    Strict,
+    MergeBase,
+}
+
+/// The first splice that reads `{% raw %}` and `[sections]` (contract §9.23, §9.26).
+const RAW_AND_SECTIONS_SPLICE: Version = Version::new(0, 2, 0);
+
 #[derive(Debug, Clone)]
 pub struct VarSpec {
     pub prompt: String,
@@ -92,11 +108,15 @@ pub struct Template {
     pub migrations: Vec<Migration>,
     /// Unknown keys found while loading (newer templates stay readable).
     pub warnings: Vec<String>,
+    /// Rendered paths are checked against contract §9.21 (portable segments, case collisions).
+    /// False only for a merge base ([`Template::load_merge_base`]).
+    pub portable_paths: bool,
 }
 
 #[derive(Deserialize)]
 struct RawVar {
-    prompt: String,
+    // Contract §9.15: defaults to the var name (filled in by `convert_vars`).
+    prompt: Option<String>,
     default: Option<String>,
     pattern: Option<String>,
 }
@@ -131,6 +151,8 @@ struct RawPost {
 #[derive(Deserialize)]
 struct RawPiece {
     id: String,
+    // Contract §9.15: defaults to "".
+    #[serde(default)]
     description: String,
     #[serde(default)]
     multiple: bool,
@@ -153,7 +175,19 @@ fn err<T>(msg: String) -> Result<T> {
     Err(SpliceError::Template(msg))
 }
 
+/// Exit 3 when `path` itself is a symlink (contract §9.20). A missing path is not an error here.
+fn no_symlink(path: &Path) -> Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => err(format!(
+            "{}: is a symlink; symlinks are not allowed in a template",
+            path.display()
+        )),
+        _ => Ok(()),
+    }
+}
+
 fn read_toml(path: &Path) -> Result<(String, toml::Table)> {
+    no_symlink(path)?;
     let text = std::fs::read_to_string(path)
         .map_err(|e| SpliceError::Template(format!("cannot read {}: {e}", path.display())))?;
     let table = text
@@ -201,7 +235,11 @@ fn valid_var_name(name: &str) -> bool {
         && chars.all(|c| matches!(c, 'a'..='z' | '0'..='9' | '_'))
 }
 
-fn convert_vars(file: &Path, raw: IndexMap<String, RawVar>) -> Result<IndexMap<String, VarSpec>> {
+fn convert_vars(
+    file: &Path,
+    raw: IndexMap<String, RawVar>,
+    strict: Strictness,
+) -> Result<IndexMap<String, VarSpec>> {
     let mut out = IndexMap::new();
     for (name, v) in raw {
         let f = file.display();
@@ -210,7 +248,9 @@ fn convert_vars(file: &Path, raw: IndexMap<String, RawVar>) -> Result<IndexMap<S
                 "{f}: variable `{name}` must match [a-z_][a-z0-9_]*"
             ));
         }
-        if RESERVED_VARS.contains(&name.as_str()) {
+        if RESERVED_VARS.contains(&name.as_str())
+            || (strict == Strictness::Strict && KEYWORD_VARS.contains(&name.as_str()))
+        {
             return err(format!("{f}: variable name `{name}` is reserved"));
         }
         let pattern = match &v.pattern {
@@ -226,10 +266,11 @@ fn convert_vars(file: &Path, raw: IndexMap<String, RawVar>) -> Result<IndexMap<S
                 "{f}: vars.{name}.default `{d}` does not match its pattern `{re}`"
             ));
         }
+        let prompt = v.prompt.unwrap_or_else(|| name.clone());
         out.insert(
             name,
             VarSpec {
-                prompt: v.prompt,
+                prompt,
                 default: v.default,
                 pattern,
             },
@@ -278,7 +319,12 @@ fn check_sections(dir: &Path, f: &str, sections: &IndexMap<String, String>) -> R
     Ok(())
 }
 
-fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<PieceManifest> {
+fn load_piece(
+    dir: &Path,
+    dir_name: &str,
+    warnings: &mut Vec<String>,
+    strict: Strictness,
+) -> Result<PieceManifest> {
     let file = dir.join("piece.toml");
     let (text, table) = read_toml(&file)?;
     warn_unknown(
@@ -305,6 +351,11 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
     }
     let raw: RawPiece = parse(&file, &text)?;
     let f = file.display();
+    if strict == Strictness::Strict
+        && let Some(why) = crate::paths::segment_problem(dir_name)
+    {
+        return err(format!("{f}: piece id `{dir_name}` {why}"));
+    }
     if raw.id != dir_name {
         return err(format!(
             "{f}: id `{}` must equal the directory name `{dir_name}`",
@@ -348,7 +399,7 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
         multiple: raw.multiple,
         requires: raw.requires,
         target: raw.target,
-        vars: convert_vars(&file, raw.vars)?,
+        vars: convert_vars(&file, raw.vars, strict)?,
         owned: raw.files.owned,
         shared: raw.files.shared,
         seed: raw.files.seed,
@@ -359,10 +410,67 @@ fn load_piece(dir: &Path, dir_name: &str, warnings: &mut Vec<String>) -> Result<
     })
 }
 
+/// A template that uses `[sections]` or `{% raw %}` in a `.jinja` file must set `min_splice` to
+/// 0.2.0 or later: older splices would misread it (contract §9.23, §9.26).
+fn check_raw_and_sections(
+    f: &str,
+    min_splice: &Version,
+    pieces: &IndexMap<String, PieceManifest>,
+) -> Result<()> {
+    if *min_splice >= RAW_AND_SECTIONS_SPLICE {
+        return Ok(());
+    }
+    let need = format!("must set min_splice = \"{RAW_AND_SECTIONS_SPLICE}\" or later");
+    for piece in pieces.values() {
+        if !piece.sections.is_empty() {
+            return err(format!(
+                "{f}: piece `{}` uses [sections]; a template with [sections] {need} \
+                 (contract §9.26)",
+                piece.id
+            ));
+        }
+        if !piece.files_dir.is_dir() {
+            continue;
+        }
+        let walk = walkdir::WalkDir::new(&piece.files_dir)
+            .follow_links(false)
+            .follow_root_links(false);
+        for entry in walk {
+            let entry = entry.map_err(|e| SpliceError::Template(format!("{f}: {e}")))?;
+            let path = entry.path();
+            if !entry.file_type().is_file() || path.extension().is_none_or(|e| e != "jinja") {
+                continue;
+            }
+            // Unreadable or invalid files are reported when they render.
+            let Ok(text) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            if crate::subset::uses_raw(&text) {
+                return err(format!(
+                    "{}: uses `{{% raw %}}`; a template with raw blocks {need} (contract §9.23)",
+                    path.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Template {
+    /// Load the template a lock points at, used only as the merge base of `update`.
+    /// Skips the contract §9.15-26 gates an older template may break (see `Strictness`); the
+    /// result renders without portable-path and case-collision checks.
+    pub fn load_merge_base(root: &Path) -> Result<Template> {
+        Self::load_with(root, Strictness::MergeBase)
+    }
+
     /// Load `splice.toml` and every `pieces/<id>/piece.toml`, running every check in spec §5
     /// except `min_splice` (see [`Template::check_min_splice`]).
     pub fn load(root: &Path) -> Result<Template> {
+        Self::load_with(root, Strictness::Strict)
+    }
+
+    fn load_with(root: &Path, strict: Strictness) -> Result<Template> {
         let mut warnings = Vec::new();
         let file = root.join("splice.toml");
         let (text, table) = read_toml(&file)?;
@@ -388,23 +496,28 @@ impl Template {
                 raw.min_splice
             ))
         })?;
-        let vars = convert_vars(&file, raw.vars)?;
+        let vars = convert_vars(&file, raw.vars, strict)?;
 
         let pieces_dir = root.join("pieces");
+        no_symlink(&pieces_dir)?;
         let mut names = Vec::new();
         let entries = std::fs::read_dir(&pieces_dir).map_err(|e| {
             SpliceError::Template(format!("cannot read {}: {e}", pieces_dir.display()))
         })?;
         for entry in entries {
             let entry = entry?;
-            if entry.file_type()?.is_dir() {
+            let ft = entry.file_type()?;
+            if ft.is_symlink() {
+                no_symlink(&entry.path())?;
+            }
+            if ft.is_dir() {
                 names.push(entry.file_name().to_string_lossy().into_owned());
             }
         }
         names.sort();
         let mut pieces = IndexMap::new();
         for name in names {
-            let piece = load_piece(&pieces_dir.join(&name), &name, &mut warnings)?;
+            let piece = load_piece(&pieces_dir.join(&name), &name, &mut warnings, strict)?;
             pieces.insert(name, piece);
         }
 
@@ -441,6 +554,9 @@ impl Template {
                 }
             }
         }
+        if strict == Strictness::Strict {
+            check_raw_and_sections(&f.to_string(), &min_splice, &pieces)?;
+        }
         Ok(Template {
             root: root.to_path_buf(),
             manifest: TemplateManifest {
@@ -453,6 +569,7 @@ impl Template {
             pieces,
             migrations: load_migrations(root)?,
             warnings,
+            portable_paths: strict == Strictness::Strict,
         })
     }
 
@@ -600,6 +717,28 @@ mod tests {
                 e.to_string().contains(needle),
                 "{e} should mention {needle}"
             );
+        }
+    }
+
+    #[test]
+    fn non_portable_piece_ids_rejected() {
+        // The id is also the piece's directory name. Windows cannot create the reserved names,
+        // `:` or a trailing dot, so those run only on Unix; `paths::tests` checks every rule on
+        // all platforms without touching the disk.
+        let ids: &[&str] = if cfg!(windows) {
+            &[".git", ".GIT"]
+        } else {
+            &["con", "Nul", "lpt1.x", "a:b", "x.", ".git"]
+        };
+        for &id in ids {
+            let piece = format!("id = \"{id}\"\ndescription = \"x\"\n");
+            let e = load_with(
+                &template_toml("0.1.0", ""),
+                &[("base", BASE_PIECE), (id, &piece)],
+            )
+            .unwrap_err();
+            assert_eq!(e.exit_code(), 3, "{id}");
+            assert!(e.to_string().contains("piece id"), "{id}: {e}");
         }
     }
 
