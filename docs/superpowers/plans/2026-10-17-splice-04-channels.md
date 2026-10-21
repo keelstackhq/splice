@@ -943,18 +943,18 @@ Inside the contract (no `docs/template-format.md` change); hull's own plan/PR.
 - [x] `rigging/` (format 1, `name = "rigging"`, `base = "core"`, `min_splice = "0.2.0"`): `core` (`[sections] "AGENTS.md"` with the harness-neutral rules), `claude` (`.claude/agents/{explorer,implementer,reviewer,ci-fixer}.md` owned; **no** `CLAUDE.md` section — hull owns `CLAUDE.md`, which imports `@AGENTS.md`, E1), `skills` (`multiple`, `target = ".{{ dir }}/skills"`, `dir` pattern `^(claude|agents)$`). Harness dirs checked against current Claude Code and Codex docs at write time.
 - [x] Reclassify `AGENTS.md` from owned to seed in hull's base piece; hull test for the class.
 - [x] Add splice's `section-fragment` corpus case to hull's Nunjucks conformance run.
-- [ ] dogfood renders `rigging/` with splice once 0.2.0 is published (**after plan 03**; Blocked until then).
+- [x] dogfood renders `rigging/` with splice once 0.2.0 is published (**after plan 03**; Blocked until then). Done 2026-10-21 with a local 0.2.0 build (see PROGRESS).
 - [ ] A later hull release: `migrations/<v>.toml` `[[remove]]` for the four agent files; README + generated `CLAUDE.md` say: run `splice update`, then `splice channel add gh:keelstackhq/hull//rigging --piece claude` (not a post/step: the main lock is not yet written then).
 
 ### Task C3 (repos hull, splice, hoard, example-app, keelstack, berth): adopt the decisions channel — **after plan 03**
 
 One PR per repo, after plan 03 is executed and released (splice 0.2.0 on npm via its release workflow, bot Action available) and C1 is merged (E5). hoist has not adopted the snapshot; leave it out unless the owner asks (E6).
 
-- [ ] Sync the snapshot first (copy `DECISIONS.md` of decisions `main` to `docs/agents/org-decisions.md`, commit `chore: sync org decisions`): a stale snapshot makes `channel add` exit 1 with an owned conflict (dry run 2026-10-20 on hull 42fd8c3).
-- [ ] Delete `.claude/hooks/session-start.d/sync-decisions.sh` (or `.claude/hooks/sync-decisions.sh` and its `settings.json` entry — berth uses this form); delete the hand-written "## Org decisions" block.
-- [ ] `pnpm dlx @keelstackhq/splice@0.2.0 channel add gh:keelstackhq/decisions//channel --track main --piece import-project` (repos with `docs/agents/project.md`: hull-generated example-app, keelstack); else `--piece import-claude` (hull, splice, hoard, berth). In hull-generated repos `CLAUDE.md` is owned by hull, so use `import-project`.
+- [x] Sync the snapshot first (copy `DECISIONS.md` of decisions `main` to `docs/agents/org-decisions.md`, commit `chore: sync org decisions`): a stale snapshot makes `channel add` exit 1 with an owned conflict (dry run 2026-10-20 on hull 42fd8c3).
+- [x] Delete `.claude/hooks/session-start.d/sync-decisions.sh` (or `.claude/hooks/sync-decisions.sh` and its `settings.json` entry — berth uses this form); delete the hand-written "## Org decisions" block.
+- [x] `pnpm dlx @keelstackhq/splice@0.2.0 channel add gh:keelstackhq/decisions//channel --track main --piece import-project` (repos with `docs/agents/project.md`: hull-generated example-app, keelstack); else `--piece import-claude` (hull, splice, hoard, berth). In hull-generated repos `CLAUDE.md` is owned by hull, so use `import-project`. Done 2026-10-21 with a local 0.2.0 build instead of `pnpm dlx` (the lock is identical).
 - [ ] Enable the update bot (plan 03 Action, Task 20 `scope` default `all`); `splice check --json` exit 0; CI green. Commit `chore: adopt decisions channel`.
-- [ ] After all six: delete `adopt/adopt.sh` in keelstackhq/decisions (PR).
+- [x] After all six: delete `adopt/adopt.sh` in keelstackhq/decisions (PR).
 
 ## Blocked (human-only; copy into `docs/PROGRESS.md`)
 
