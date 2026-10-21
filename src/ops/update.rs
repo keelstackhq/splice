@@ -418,7 +418,8 @@ fn prepare_lock(
         } else {
             let migrations = select(&template.migrations, &from, &target.version);
             let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
-            render_removes(&template, &target.version, &removes, &instances, &vars)?
+            // Contract §9.22: removes render with the version updated FROM.
+            render_removes(&template, &from, &removes, &instances, &vars)?
         };
         Some(Rendered {
             base,

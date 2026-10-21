@@ -334,8 +334,9 @@ fn remove_paths_reach_the_planner() {
 }
 
 #[test]
-fn remove_paths_see_the_template_object() {
-    // `template.name` renders in a [[remove]] path (strict undefined would exit 3 otherwise).
+fn remove_paths_render_with_the_from_version() {
+    // Contract §9.22: `template.version` in a [[remove]] path is the version updated FROM
+    // (1.0.0), not the target (2.0.0). `template.name` renders too (strict undefined: exit 3).
     let tpl = template_repo(&["v1", "v2"]);
     let mig = tpl.path().join("migrations/2.0.0.toml");
     let text = std::fs::read_to_string(&mig).unwrap();
@@ -346,15 +347,17 @@ fn remove_paths_see_the_template_object() {
     .unwrap();
     amend_tip(tpl.path(), "v2.0.0");
     let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
-    std::fs::write(repo.path().join("fixture-2.0.0.cfg"), "mine\n").unwrap();
+    std::fs::write(repo.path().join("fixture-1.0.0.cfg"), "from\n").unwrap();
+    std::fs::write(repo.path().join("fixture-2.0.0.cfg"), "to\n").unwrap();
     commit_all(repo.path());
     let out = update(&repo, &[]).success().get_output().stdout.clone();
+    let msgs = messages(&json(&out));
     assert!(
-        messages(&json(&out)).contains("`fixture-2.0.0.cfg` is listed in a [[remove]]"),
-        "{}",
-        messages(&json(&out))
+        msgs.contains("`fixture-1.0.0.cfg` is listed in a [[remove]]"),
+        "{msgs}"
     );
-    assert_eq!(read(&repo, "fixture-2.0.0.cfg"), "mine\n");
+    assert!(!msgs.contains("fixture-2.0.0.cfg"), "{msgs}");
+    assert_eq!(read(&repo, "fixture-1.0.0.cfg"), "from\n");
     assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
 }
 

@@ -345,8 +345,8 @@ fn gone(input: &PlanInput, path: &str, base: Option<&RenderedFile>, ours: Option
 }
 
 /// Render `[[remove]]` paths (spec §8.4): with each instance of `piece`, or with the template
-/// `vars` only when `piece` is absent. Both contexts also hold `template` (name and the target
-/// `version`) and `pieces`, as file renders do. Repo-root relative, deduplicated, in order. An unknown
+/// `vars` only when `piece` is absent. Both contexts also hold `template` (name and `version`, the
+/// version updated FROM, contract §9.22) and `pieces`, as file renders do. Repo-root relative, deduplicated, in order. An unknown
 /// `piece`, an unsafe path or `.splice/lock.toml` is a template error.
 pub fn render_removes(
     t: &Template,

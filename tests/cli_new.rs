@@ -473,3 +473,16 @@ fn non_portable_instance_name_is_usage() {
         assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0, "{p}");
     }
 }
+
+#[test]
+fn empty_non_jinja_file_is_written() {
+    // Contract §4: a copied non-`.jinja` file is written even when empty.
+    let tpl = template_repo(&["v1"]);
+    std::fs::write(tpl.path().join("pieces/base/files/.keep"), "").unwrap();
+    amend_tip(tpl.path(), "v1.0.0");
+    let dest = tempfile::tempdir().unwrap();
+    new_ok(&tpl, dest.path(), &[]);
+    let kept = dest.path().join(".keep");
+    assert!(kept.is_file(), "0-byte file not written");
+    assert_eq!(std::fs::read(kept).unwrap().len(), 0);
+}

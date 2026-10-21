@@ -64,21 +64,15 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-20 · port/getting-started · c26784e · `docs/getting-started.md` ported from PR #1 and re-verified against this CLI (outputs recaptured from the 0.2.0 binary; adds a short Channels section, `add` never writes markers, `check` prints nothing when clean); linked from the README; covered by `tests/docs.rs`
 - 2026-10-20 · port/review-fixes · acd5965 · test git env for every raw `git`/`sh` in tests (`sh_with_git_env`, `GIT_CONFIG_COUNT` autocrlf=false, porcelain via `git_stdout`); shellcheck installed on Linux only; `update`/`add`/`channel update` keep a relative lock source (`Lock::keep_relative_source`, 2 tests); Windows looks up only `sh.exe`; spec §10 items 17, 18 reworded (`#}` behaviour change, one-time Windows refetch)
 - 2026-10-20 · port/docs-review · the port merge · getting-started samples re-captured (`--ref v1.0.0`, real `add --name docs` lines); `tests/docs.rs` trims `[]`, treats `pnpm dlx`/`npx @keelstackhq/splice` as `splice`, rejects unknown subcommands in code spans, with a negative test of the checker; SKILL.md exit-2 row and `add` merge wording fixed
+- 2026-10-21 · contract/§9.21 · 2af3559 · portable path segments (`:`, control chars, trailing dot/space, Windows reserved names, `.git`) for rendered paths, piece ids and instance names (exit 2 user-chosen, 3 piece default), case-insensitive collisions incl. directory prefixes in `render_tree`; `cargo nextest run`: 492 passed
+- 2026-10-21 · contract/§9.15-20,23,26 · 7382258 · `description`/`prompt` defaults, keyword var names reserved, comment `-`/`+` and non-ASCII tag whitespace rejected, symlinked manifests/piece dirs/migrations rejected, raw or `[sections]` need `min_splice` >= 0.2.0 (channel fixtures and `inline_template` moved to 0.2.0; spec §10 G15); `cargo nextest run`: 500 passed
+- 2026-10-21 · contract/§9.22 · this commit · `[[remove]]` paths render with the from-version (test tells 1.0.0 from 2.0.0); 0-byte non-`.jinja` file test (§4, already passed); spec §10 maps items to contract §9, new item 20; `cargo nextest run`: 501 passed
 
 ## Blocked
 
 <!-- Task, what is missing, exact action a human must take. -->
 
 - Task 03/T4 · Real `gh auth setup-git`, `pr create` and `pr edit` with a token: `action-selftest.yml` passed on GitHub but stubs `gh`, so the first consumer run (plan 04 C3) is the first real check.
-- Contract wording: `docs/template-format.md` still says `keelstack` (org and scope). Change it
-  jointly with hull in the same week (D-003: byte-identical in both repos); never edit it here alone.
-- Joint contract PR for hull's portable-path rules, not yet in contract §9: Windows-reserved names,
-  `.git` segments, trailing dot or space, `:`, control characters, and case-insensitive path
-  collisions. Until it lands, splice does not reject these paths. Open it against both repos.
-  Add to the same PR: `{% raw %}...{% endraw %}` blocks in the §6 subset and rejecting a stray
-  `#}` (spec §10 items 16, 17; hull agreed raw blocks). splice already accepts raw; until the
-  contract lists it, templates using it work with splice only.
-- **POSIX sh for template commands:** hull to confirm POSIX `sh` for `[[post]]`/`[[step]]` `run` (shared document section 6), then the joint contract PR (add to the one above). Until then spec §10 item 19 is splice's own decision.
 - **Windows CI:** the `ci` job is now a matrix, `ci (ubuntu-latest)` and `ci (windows-latest)`; `ci-ok` still aggregates it. A human checks that branch protection requires `ci-ok` (a required check named `ci` never reports) and confirms the first `windows-latest` run is green.
 - **Plan 04 C2 dogfood step and C3** wait until 0.2.0 is on npm and the tag `v1` exists. C3 per repo: sync the snapshot first (copy `DECISIONS.md`), then `channel add` (see plan 04 C3).
 - Repo settings on `keelstackhq/splice`: make `ci-ok` the only required check; merge queue optional.
@@ -88,7 +82,6 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - The x86_64-apple-darwin binary is cross-built on arm64 and only checked with `file`; it is never run.
 - Push tag `v0.2.0` after plan 03 is on `main` and (the `workflow_dispatch` dry run is green on all five targets, run 39487980036); check the five archives, `SHA256SUMS` and the six npm packages; run `pnpm dlx @keelstackhq/splice@0.2.0 --version` on a clean machine.
 - Tag `v1` for the Action (`git tag -f v1 && git push -f origin v1`; the human does this, agents never force-push; it does not trigger a release) and enable the bot in a consumer (plan 04 C3) with a token secret.
-- **`[sections]` contract note:** hull publishes `rigging/` with the splice-only piece key `[sections]`; agree a joint note in `docs/template-format.md` with hull in the same week (D-003), or confirm none is needed.
 - **Bot tokens:** each adopting repo needs the bot workflow enabled and a token that can read `keelstackhq/decisions` and `keelstackhq/hull` if they are private (repo secret, e.g. a GitHub App token passed as `token`).
 - **hull release** removing the four agent files (C2 last step): tag a hull version.
 
