@@ -953,7 +953,7 @@ One PR per repo, after plan 03 is executed and released (splice 0.2.0 on npm via
 - [x] Sync the snapshot first (copy `DECISIONS.md` of decisions `main` to `docs/agents/org-decisions.md`, commit `chore: sync org decisions`): a stale snapshot makes `channel add` exit 1 with an owned conflict (dry run 2026-10-20 on hull 42fd8c3).
 - [x] Delete `.claude/hooks/session-start.d/sync-decisions.sh` (or `.claude/hooks/sync-decisions.sh` and its `settings.json` entry — berth uses this form); delete the hand-written "## Org decisions" block.
 - [x] `pnpm dlx @keelstackhq/splice@0.2.0 channel add gh:keelstackhq/decisions//channel --track main --piece import-project` (repos with `docs/agents/project.md`: hull-generated example-app, keelstack); else `--piece import-claude` (hull, splice, hoard, berth). In hull-generated repos `CLAUDE.md` is owned by hull, so use `import-project`. Done 2026-10-21 with a local 0.2.0 build instead of `pnpm dlx` (the lock is identical).
-- [ ] Enable the update bot (plan 03 Action, Task 20 `scope` default `all`); `splice check --json` exit 0; CI green. Commit `chore: adopt decisions channel`.
+- [x] Enable the update bot (plan 03 Action, Task 20 `scope` default `all`); `splice check --json` exit 0; CI green. Commit `chore: adopt decisions channel`.
 - [x] After all six: delete `adopt/adopt.sh` in keelstackhq/decisions (PR).
 
 ## Blocked (human-only; copy into `docs/PROGRESS.md`)

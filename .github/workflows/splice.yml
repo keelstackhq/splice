@@ -1,0 +1,26 @@
+name: splice
+# The update bot: keeps the decisions channel (and any later splice sources) current through one
+# pull request on `splice/update`. Uses this repo's own Action, so it also dogfoods it.
+on:
+  schedule: [{ cron: "17 6 * * 1" }]
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: splice-update
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./action
+        with:
+          scope: all
+          # GITHUB_TOKEN works, but its pushes and PRs do not trigger CI; SPLICE_BOT_TOKEN does.
+          token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}
