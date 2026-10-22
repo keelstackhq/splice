@@ -71,7 +71,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-21 · contract/§9.22 · 5734ee9 · `[[remove]]` paths render with the from-version (test tells 1.0.0 from 2.0.0); 0-byte non-`.jinja` file test (§4, already passed); spec §10 maps items to contract §9, new item 20; `cargo nextest run`: 501 passed
 - 2026-10-21 · contract/review · follow-up to 5734ee9 · merge base of `update` loads and renders leniently (`Template::load_merge_base`); instance-name exit code by source (`NameSource`), locked names re-checked (exit 3 naming the lock); duplicates and collisions count empty `.jinja` renders; `cargo nextest run`: 509 passed
 - 2026-10-21 · fix/section-blank-lines · 09b3a3a · section blocks are written as `begin`, blank line, body, blank line, `end`; reading drops blank lines next to the markers before drift/adopt/hash (G7), so `vp fmt`/prettier-formatted hosts, the old layout with old locks and CRLF hosts check clean; in-body edits stay drift; golden snapshots gained the blank lines; `cargo nextest run`: 514 passed
-- 2026-10-22 · release/0.2.0 · 1994e4b · tags `v0.2.0` and `v1` on 1994e4b (pushed by the owner); release run 39749263770 green: GitHub release with 5 archives + `SHA256SUMS`, six npm packages at 0.2.0 with provenance (trusted publishing)
+- 2026-10-22 · release/0.2.0 · 1994e4b · tags `v0.2.0` and `v1` on 1994e4b (pushed by the owner); release run 39749263770 green: GitHub release with 5 archives + `SHA256SUMS`, six npm packages at 0.2.0 with provenance (trusted publishing); `npx -y @keelstackhq/splice@0.2.0 --version` and `pnpm dlx` print `splice 0.2.0` (linux-x64)
 
 ## Blocked
 
