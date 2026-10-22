@@ -115,14 +115,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const exitCode = Number(code);
     const report = parseReport(readFileSync(reportPath, "utf8"), exitCode);
     const dirty = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim() !== "";
-    const hasSources = (report.messages ?? []).some((m) => m.startsWith("source="));
-    // A channel-only repo has no main lock; its title carries no version.
+    // A channel-only repo has no main lock; its title carries no version. Do not key this on
+    // `source=` messages: an up-to-date `update --all` prints none.
     const version =
       exitCode !== 0 && exitCode !== 1
         ? "unknown"
-        : hasSources && !existsSync(".splice/lock.toml")
-          ? null
-          : parseLockVersion(readFileSync(".splice/lock.toml", "utf8"));
+        : existsSync(".splice/lock.toml")
+          ? parseLockVersion(readFileSync(".splice/lock.toml", "utf8"))
+          : null;
     const s = summarize(report, exitCode, { version, dirty, owners: channelOwners() });
     const bodyFile = join(process.env.RUNNER_TEMP || tmpdir(), "splice-pr-body.md");
     writeFileSync(bodyFile, s.body);

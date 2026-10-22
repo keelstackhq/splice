@@ -8,7 +8,11 @@
 //   all.json       two sources: main template (app:web) and channel rig; `update --all` from v1.0.0 to v2.0.0
 //   error.json     clean tree, `update --to v3.0.0` (v3 has min_splice = "99.0.0")
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { lockFiles, parseLockVersion, parseReport, summarize } from "../summary.mjs";
 
@@ -145,4 +149,42 @@ test("only a channel drifting is drift", () => {
   const s = summarize(load("drift-channel.json"), 1, { version: "1.0.0", dirty: false });
   assert.equal(s.result, "drift");
   assert.match(s.body, /owned by channel rig but was edited locally/);
+});
+
+// The CLI in a channel-only repo (no .splice/lock.toml): an up-to-date `update --all` prints no
+// `source=` messages (seen in keelstackhq/keelstack, splice 0.2.0), so the main lock must not be read.
+function runCli(messages, { dirty }) {
+  const dir = mkdtempSync(join(tmpdir(), "splice-summary-"));
+  const git = (...a) => execFileSync("git", ["-C", dir, ...a], { stdio: "pipe" });
+  git("init", "-q");
+  mkdirSync(join(dir, ".splice/channels"), { recursive: true });
+  writeFileSync(join(dir, ".splice/channels/decisions.toml"), '[files]\n"docs/agents/org-decisions.md" = {}\n');
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "init");
+  if (dirty) writeFileSync(join(dir, "new.md"), "x\n");
+  const out = mkdtempSync(join(tmpdir(), "splice-summary-out-"));
+  const report = join(out, "report.json");
+  writeFileSync(report, JSON.stringify({ ok: true, command: "update", changes: [], messages }));
+  const output = join(out, "github-output");
+  writeFileSync(output, "");
+  const script = fileURLToPath(new URL("../summary.mjs", import.meta.url));
+  const r = spawnSync(process.execPath, [script, report, "0"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, GITHUB_OUTPUT: output, RUNNER_TEMP: out },
+  });
+  return { ...r, output: readFileSync(output, "utf8") };
+}
+
+test("CLI: channel-only repo, up to date, is current without a main lock", () => {
+  const r = runCli(["channel decisions: up to date at 0.0.0+g768fd17"], { dirty: false });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.output, /^result=current$/m);
+});
+
+test("CLI: channel-only repo, changed tree without source= messages, has an unversioned title", () => {
+  const r = runCli(["channel decisions: updated"], { dirty: true });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.output, /^result=updated$/m);
+  assert.match(r.output, /^title=chore: splice update$/m);
 });
