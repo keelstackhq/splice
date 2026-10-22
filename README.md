@@ -4,8 +4,8 @@ Start a repo from versioned template pieces and keep it up to date. A Copier alt
 static binary: no Python, no Rust toolchain. Part of [keelstackhq](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
-> Status: version 0.2.0 (`Cargo.toml`), unreleased until the `v0.2.0` tag is pushed and the npm
-> packages are published; until then the install paths below do not work yet. Design:
+> Status: 0.2.0 is released (GitHub release `v0.2.0`, npm `@keelstackhq/splice`, Action
+> `keelstackhq/splice/action@v1`). Design:
 > `docs/superpowers/specs/2026-10-14-splice-design.md`. New here? Start with
 > [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -120,7 +120,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # `@v1` exists after the first release (tagged by a human; see docs/PROGRESS.md Blocked).
       - uses: keelstackhq/splice/action@v1
         with:
           token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI
