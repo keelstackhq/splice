@@ -240,4 +240,6 @@ fn golden_untagged_lock_follows_ancestry() {
     insta::assert_json_snapshot!(v);
     let lock = Lock::read(repo.path()).unwrap().unwrap();
     assert_eq!(lock.template.version.to_string(), "2.0.0");
+    // Migration 2.0.0 ran: its tag descends from X and is not behind it (spec §10 item 21).
+    assert!(repo.path().join(".splice/migrated.txt").exists());
 }

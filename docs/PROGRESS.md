@@ -75,7 +75,8 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-21 · fix/section-blank-lines · 09b3a3a · section blocks are written as `begin`, blank line, body, blank line, `end`; reading drops blank lines next to the markers before drift/adopt/hash (G7), so `vp fmt`/prettier-formatted hosts, the old layout with old locks and CRLF hosts check clean; in-body edits stay drift; golden snapshots gained the blank lines; `cargo nextest run`: 514 passed
 - 2026-10-22 · release/0.2.0 · 1994e4b · tags `v0.2.0` and `v1` on 1994e4b (pushed by the owner); release run 39749263770 green: GitHub release with 5 archives + `SHA256SUMS`, six npm packages at 0.2.0 with provenance (trusted publishing); `npx -y @keelstackhq/splice@0.2.0 --version` and `pnpm dlx` print `splice 0.2.0` (linux-x64)
 - 2026-10-25 · 05/T1 · eee0308 · `update --ref` and `diff --ref` with a git-ancestry check, `--to` refuses build metadata (F1)
-- 2026-10-25 · 05/T2 · the commit "untagged locks follow git ancestry" · latest, `check` and migrations from an untagged lock use ancestry (`newest_descendant_tag`, `tag_commits`); golden F1 snapshot
+- 2026-10-25 · 05/T2 · 55de5b3 · latest, `check` and migrations from an untagged lock use ancestry (`newest_descendant_tag`, `tag_commits`); golden F1 snapshot; 534 tests passing
+- 2026-10-25 · 05/fix · see git log · review round: source fetched once per update, a lock commit missing from the source is a clear exit 3, tests pin migration ancestry (§10.21) and prerelease/self-tag cases
 
 ## Blocked
 

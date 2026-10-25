@@ -669,3 +669,96 @@ fn migration_without_its_tag_does_not_run_with_an_untagged_side() {
     assert!(!repo.path().join(".splice/migrated.txt").exists());
     assert_eq!(lock(&repo).template.commit, y);
 }
+
+fn check_json(repo: &TempDir) -> (i32, serde_json::Value) {
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["check", "--json"])
+        .output()
+        .unwrap();
+    (
+        out.status.code().unwrap(),
+        serde_json::from_slice(&out.stdout).unwrap(),
+    )
+}
+
+#[test]
+fn migration_already_behind_the_untagged_lock_is_not_rerun_by_a_later_stable_tag() {
+    // x is untagged and after v2.0.0; v2.1.0 descends from x. Semver order (0.0.0+g < 2.0.0 <=
+    // 2.1.0) would re-run migration 2.0.0; ancestry must not.
+    let tpl = template_repo(&["v1", "v2"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    common::untagged_commit(tpl.path(), "z");
+    common::git(tpl.path(), "2026-02-02T00:00:00+00:00", &["tag", "v2.1.0"]);
+    let repo = new_repo(&tpl, &["--ref", &x, "--piece", "app"]);
+    update(&repo, &["--to", "2.1.0"]).success();
+    assert_eq!(lock(&repo).template.version.to_string(), "2.1.0");
+    assert!(!repo.path().join(".splice/migrated.txt").exists());
+}
+
+#[test]
+fn a_stable_tag_on_the_lock_commit_itself_is_not_an_update() {
+    let tpl = template_repo(&["v1"]);
+    let sha = common::git_stdout(tpl.path(), &["rev-parse", "v1.0.0^{commit}"]);
+    let repo = new_repo(&tpl, &["--ref", &sha]);
+    assert!(
+        lock(&repo)
+            .template
+            .version
+            .to_string()
+            .starts_with("0.0.0+g")
+    );
+    let before = lock_bytes(&repo);
+    let v = json(&update(&repo, &[]).success().get_output().stdout);
+    assert!(messages(&v).contains("no stable tag descends"), "{v}");
+    assert_eq!(lock_bytes(&repo), before);
+    let (code, v) = check_json(&repo);
+    assert_eq!(code, 0, "{v}");
+}
+
+#[test]
+fn a_prerelease_tag_on_a_descendant_is_ignored_by_latest_and_check() {
+    let (tpl, x) = untagged_tpl();
+    common::untagged_commit(tpl.path(), "next");
+    common::git(
+        tpl.path(),
+        "2026-02-02T00:00:00+00:00",
+        &["tag", "v2.0.0-rc.1"],
+    );
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let before = lock_bytes(&repo);
+    let v = json(&update(&repo, &[]).success().get_output().stdout);
+    assert!(messages(&v).contains("no stable tag descends"), "{v}");
+    assert_eq!(lock_bytes(&repo), before);
+    let (code, v) = check_json(&repo);
+    assert_eq!(code, 0, "{v}");
+    assert!(!v.to_string().contains("update available"), "{v}");
+}
+
+#[test]
+fn a_lock_commit_missing_from_the_source_is_a_clear_error() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let bogus = "a".repeat(40);
+    let text = std::fs::read_to_string(repo.path().join(".splice/lock.toml")).unwrap();
+    std::fs::write(
+        repo.path().join(".splice/lock.toml"),
+        text.replace(&x, &bogus),
+    )
+    .unwrap();
+    commit_all(repo.path());
+    let v = json(&update(&repo, &[]).code(3).get_output().stdout);
+    let m = messages(&v);
+    assert!(
+        m.contains("aaaaaaa") && m.contains("not in the template source"),
+        "{m}"
+    );
+    assert!(m.contains("--ref") && m.contains("--force"), "{m}");
+    assert!(!m.contains("merge-base"), "{m}");
+    let (_, v) = check_json(&repo);
+    let m = messages(&v);
+    assert!(
+        m.contains("could not look for updates") && m.contains("aaaaaaa"),
+        "{m}"
+    );
+}

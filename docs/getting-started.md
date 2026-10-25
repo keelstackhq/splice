@@ -170,7 +170,9 @@ makes no git call), so it only reports drift and markers.
 update would conflict.
 
 `splice update` needs a clean tree, then moves to the latest stable version (`--to VERSION` for
-another; it never downgrades; `--ref BRANCH|SHA` moves a repo locked at an untagged commit, which must descend from the locked one):
+another; it never downgrades). `--ref BRANCH|SHA` works from any lock; the target must descend
+from the locked commit (`--force` overrides). A plain update from an untagged lock takes only a
+stable tag that descends from its commit:
 
 ```
 $ splice update

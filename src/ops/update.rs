@@ -300,7 +300,8 @@ fn prepare_lock(
             let current =
                 target.commit == lock.template.commit && (by_ancestry || target.version == from);
             if by_ancestry && !current {
-                if !fetcher.is_ancestor(&src, &lock.template.commit, &target.commit)? {
+                let (git_dir, _) = fetcher.repo(&src)?;
+                if !Fetcher::lock_precedes(&git_dir, &lock.template.commit, &target.commit)? {
                     let (t7, l7) = (&target.commit[..7], &lock.template.commit[..7]);
                     if !force {
                         return usage(format!(
@@ -523,14 +524,15 @@ fn select_migrations<'a>(
     if template.migrations.is_empty() {
         return Ok(Vec::new());
     }
-    let tags = fetcher.tag_commits(src, true)?;
+    let repo = fetcher.repo(src)?;
+    let tags = fetcher.tag_commits_in(&repo, true)?;
     let mut picked = Vec::new();
     for m in &template.migrations {
         let Some((_, tag_commit)) = tags.iter().find(|(v, _)| *v == m.version) else {
             continue;
         };
-        if fetcher.is_ancestor(src, tag_commit, to_commit)?
-            && !fetcher.is_ancestor(src, tag_commit, from_commit)?
+        if Git::is_ancestor(&repo.0, tag_commit, to_commit)?
+            && !Git::is_ancestor(&repo.0, tag_commit, from_commit)?
         {
             picked.push(m);
         }
