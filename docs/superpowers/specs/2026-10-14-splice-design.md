@@ -47,15 +47,16 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 |---|---|
 | `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
 | `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
-| `splice update [--to VERSION] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag). `--channel` updates one channel, `--all` the main template and every channel. |
+| `splice update [--to VERSION \| --ref R] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag), or with `--ref` to a descendant git ref (§4). `--channel` updates one channel, `--all` the main template and every channel. |
 | `splice check [--offline] [--channel NAME]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
-| `splice diff [--to VERSION] [--channel NAME]` | Show what `update` would change, without writing. |
+| `splice diff [--to VERSION \| --ref R] [--channel NAME]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
 | `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only GLOB]… [--exclude GLOB]… [--allow-dirty] [--force] [--no-post]` | Render a template source into the repo as a named channel (channels spec §3). |
 | `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited files, strip its sections, then delete its lock last (channels spec §8). |
 
 `add` also takes `--channel NAME`. `--only`/`--exclude` need `--channel`; `--all` excludes
-`--channel`, `--to`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track`. `--to` keeps
+`--channel`, `--to`, `--ref`, `--data`, `--only` and `--exclude`; `--ref` excludes `--track` (on `channel add`)
+and `--to` (on `update` and `diff`). `--to` keeps
 working without `--channel` (main template). All channel commands are implemented.
 
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
@@ -97,7 +98,19 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
 - **Tags:** `git ls-remote --tags <url>`; keep `refs/tags/v<semver>` (peeled `^{}` sha wins);
   default = highest stable version; `--pre` allows pre-releases.
 - **`--ref R`:** a tag, branch or sha. A non-`v<semver>` ref records version `0.0.0+g<sha7>`
-  (used by hull before its first tag); `update` from such a lock needs an explicit `--to`.
+  (used by hull before its first tag), an **untagged version**. `update --ref R` (and `diff
+  --ref R`) resolves R the same way and moves the main template or a `--channel` to it.
+- **Untagged versions are never ordered by semver** (semver orders build metadata as text, so
+  `0.0.0+ga7ebb3f` < `0.0.0+gd25ab5e` says nothing about the commits). Whenever the lock version
+  or the target is untagged, and for every `--ref`, "newer" means a git descendant:
+  `git merge-base --is-ancestor <lock commit> <target commit>` (§10 item 21). A target that is
+  not the lock commit or a descendant is exit 2 (`… is not a descendant of the locked commit
+  <sha7>; splice does not downgrade (pass --force to update anyway)`); `--force` proceeds.
+  Without `--to`/`--ref`, an untagged lock moves to the highest stable tag whose commit is a
+  descendant of the lock commit (not the lock commit itself); none → up to date (exit 0, "up to
+  date (no stable tag descends from the locked commit <sha7>; use --ref <branch|sha> for an
+  untagged commit)"). `--to` with build metadata (`--to 0.0.0+ga7ebb3f`) is exit 2 and names
+  `--ref`. Two tagged versions compare by semver as before, also from `--to`.
 - **Cache:** `$SPLICE_CACHE_DIR` or `dirs::cache_dir()/splice`. One bare mirror per URL at
   `git/<sha256(url)[..16]>.git` (`git clone --mirror`, later `git fetch --tags --prune`), and one
   immutable extracted tree per commit at `trees/<sha256(url)[..16]>/<commit>/`, created with
@@ -107,7 +120,8 @@ proxies and SSH config just work. Every call sets `-c core.autocrlf=false -c cor
   resolves the branch head (tags ignored) and records `0.0.0+g<sha7>`. Tracked versions are never
   compared (semver orders build metadata as text): no downgrade check, and no migrations
   (`[[remove]]`, steps) run; files the head no longer renders go by the "B only" rule. `--to` on
-  a tracked channel exits 2 (`channel N tracks BRANCH; re-add it with --ref to pin a version`).
+  a tracked channel exits 2 (`channel N tracks BRANCH; re-add it with --ref to pin a version`),
+  and so does `--ref`.
 - **Subtree compare** (channels only): a target commit whose tree at the source's `//subdir`
   (`git rev-parse <commit>:<subdir>`, the commit's root tree without one) equals the lock
   commit's is up to date (exit 0, nothing written), for tagged and tracked channels. The mirror
@@ -238,7 +252,8 @@ the same `add` is safe because a file that already equals the new render is skip
    `--allow-dirty`; refuse outside a git work tree unless `--allow-dirty`. The clean tree is the
    recovery story: every failure can be undone with `git checkout -- . && git clean -fd`, and
    every error message after files were written says so.
-2. Target = `--to` or latest stable tag. `--to` < lock version → exit 2. No `--to` and no stable
+2. Target = `--to`, `--ref` or latest stable tag. `--to` < lock version → exit 2; with an
+   untagged lock or target, or with `--ref`, the check is git ancestry instead (§4, §10 item 21). No `--to` and no stable
    tag newer than the lock (e.g. a prerelease lock, or a template with prerelease tags only) → exit 0, "up to date (no newer stable than
    X; use --to <tag> for a prerelease)", nothing written. Target = lock version → nothing to do
    (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
@@ -253,7 +268,7 @@ the same `add` is safe because a file that already equals the new render is skip
 6. **Plan** (pure, in memory, §8.4). If any owned file drifted and `--force` is absent: write
    nothing, exit 1, list the drifted files.
 7. **Apply:** write files, delete removals, run migration `[[step]]`s for versions A < v ≤ B in
-   semver order (env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
+   semver order (an untagged side selects by ancestry, §10 item 21; env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
    `when` ∋ `update`, then write the lock atomically (§8.6) as the last step (as in §8.1 and §8.6).
    A failing step or post command exits 3 **before** the lock is written: the files are updated
    but the lock still records the old state, and re-running `update` is safe (after restoring,
@@ -357,7 +372,8 @@ table.
 
 Exit 1 if any of: an owned file in the lock whose disk sha differs (or is missing); a lock-listed
 file containing a line that starts with `<<<<<<< ours`, `||||||| base`, `=======` inside such a
-block, or `>>>>>>> template`; a newer stable tag than the lock version (skipped with `--offline`,
+block, or `>>>>>>> template`; a newer stable tag than the lock version (for an untagged lock: a stable tag whose commit
+descends from the lock commit, §4; skipped with `--offline`,
 and a fetch failure is a message, not an error). Changes: drift → `update/owned`, markers →
 `conflict/<the file's lock class>`. Every lock path is checked like a write target (relative, no
 `..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
@@ -375,7 +391,8 @@ add`) refuses with the change `conflict`/`owned` plus a message, nothing written
 family (`update`, `update --channel`, `update --all`) refuses with messages only and no changes,
 as M2 `update`; `diff` names it in a message and exits 0. Update available (skipped with `--offline`; a lookup failure is a
 message): a newer stable tag, or for a tracked channel a branch head, whose template subtree
-differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)`, or
+differs from the locked commit; message `channel NAME: update available 1.0.0 → 2.0.0 (tag)` (an untagged channel lock: the
+highest descendant stable tag, §4), or
 `… <old7> → <new7> (BRANCH)` with short shas. Read-only, one JSON object.
 
 ### 8.8 `diff`
@@ -386,7 +403,8 @@ file) from the disk to the planned bytes per written file (a conflict shows its 
 `delete <path>` per removal and `Binary file <path> differs` for non-UTF-8 content. Notes and
 owned drift go to stderr as messages. `--json` returns the planned `changes` (equal to
 `update --json`'s on the same repo when `update` would not refuse) and the messages. Drift and conflicts are reported, not
-failures: exit 0; a downgrade `--to` is exit 2 as on `update`.
+failures: exit 0; a downgrade `--to` or a non-descendant `--ref` is exit 2 as on `update` (`diff`
+has no `--force`).
 
 `diff --channel NAME` runs the same on that channel's lock: file patches plus one patch per
 section host (labels `a/HOST`, `b/HOST`; `delete HOST` when the host goes), nothing written. Its
@@ -555,6 +573,29 @@ Items 11–14 and 18 stay splice's own decisions.
     rules, case collisions); symlinks stay rejected and the target stays strict. A locked
     instance name the target rejects is exit 3 naming the lock. Duplicates and case collisions
     count a `.jinja` that renders empty (as hull's buildPlan does).
+21. Untagged versions and `update --ref` (canary finding F1: a repo rendered from hull at an
+    untagged commit could not be updated). The contract defines versions as `v<semver>` tags
+    only; `0.0.0+g<sha7>` is splice's own record of an untagged commit (§4), so ordering it is
+    splice's decision, not a contract change. Rules, applied to the main lock and every channel
+    lock alike:
+    - Untagged = a version with build metadata. splice never compares an untagged version with
+      `<`/`>`; it asks git (`merge-base --is-ancestor`) whether the target commit is the lock
+      commit or a descendant of it. `--ref` always uses ancestry, also to a tag; `--to` between
+      two tagged versions keeps the semver check (no `--force` override, item 13).
+    - Not a descendant → exit 2 before any write; `update --force` proceeds with a message (the
+      same flag that replaces owned drift; both are "I know, overwrite"). Same commit → up to date.
+    - No `--to`/`--ref` from an untagged lock: the highest stable tag that descends from the lock
+      commit, else up to date; `check` reports an update only for such a tag. So the update bot
+      never proposes a tag older than the commit the repo was rendered from (F1: v0.2.2 from a
+      lock at a later untagged commit).
+    - `--to` with build metadata is exit 2 and names `--ref <sha7>`; `--ref` with `--to`, `--all`
+      or a tracked channel is exit 2.
+    - Migrations (contract: A < v ≤ B in semver order) when either side is untagged: migration
+      `v` runs when tag `v<v>` exists, its commit is an ancestor of (or is) the target commit and
+      is not an ancestor of (nor is) the lock commit; selected migrations still run in semver
+      order. A migration without its tag does not run then. Tracked channels still run none (B5).
+      Two tagged sides select by semver exactly as the contract says.
+    - The lock shape is unchanged: `version = "0.0.0+g<sha7>"` and the full `commit`.
 
 ## 11. Testing
 

@@ -31,9 +31,9 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 |---|---|
 | `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest` |
 | `splice add <piece>` | Add a piece (or another instance of a `multiple` piece); other files merge as on `update`, and a conflict writes nothing |
-| `splice update [--to V]` | Move to a newer template version; your edits are merged, never lost |
+| `splice update [--to V \| --ref R]` | Move to a newer template version, or to a branch or sha with `--ref`; your edits are merged, never lost |
 | `splice check` | Fail on edited owned files, leftover conflict markers, or a newer version |
-| `splice diff [--to V]` | Show what `update` would change, as a unified diff; writes nothing |
+| `splice diff [--to V \| --ref R]` | Show what `update` would change, as a unified diff; writes nothing |
 | `splice explain <path>` | Which piece owns a file and how splice treats it |
 | `splice channel add <source>` | Apply a second template next to the main one, with its own lock (see Channels) |
 | `splice channel remove <name>` | Remove a channel: delete its unedited files and blocks, then its lock |
@@ -41,6 +41,11 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts). Exit codes:
 0 ok, 1 drift/conflict/update available, 2 usage error, 3 template error. `add` and `update`
 refuse a dirty git tree (exit 2) unless `--allow-dirty`.
+
+**Untagged commits.** A repo rendered with `--ref <branch|sha>` records version `0.0.0+g<sha7>`.
+`splice update --ref <branch|sha>` moves it to a later commit; the target must be a git
+descendant of the locked commit (exit 2 otherwise, `--force` overrides). Without `--ref`, such a
+repo moves only to a stable tag that descends from its commit, and `check` reports only those.
 
 ## How files are treated
 
