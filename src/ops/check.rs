@@ -4,7 +4,7 @@ use crate::cli::{CheckArgs, GlobalArgs};
 use std::path::Path;
 
 use crate::error::SpliceError;
-use crate::fetch::Fetcher;
+use crate::fetch::{Fetcher, is_untagged};
 use crate::fsio::{check_target, read_opt, sha256_hex};
 use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::markers::find_markers;
@@ -18,7 +18,14 @@ type Result<T> = std::result::Result<T, SpliceError>;
 /// The newest stable version of the locked template, if it is newer than the lock.
 fn newer_stable(repo: &Path, lock: &Lock) -> Result<Option<semver::Version>> {
     let src = TemplateSource::parse_from(&lock.template.source, repo)?;
-    let versions = Fetcher::from_env().available_versions(&src, false)?;
+    let fetcher = Fetcher::from_env();
+    if is_untagged(&lock.template.version) {
+        // Git ancestry, never semver order (spec §10 item 21).
+        return Ok(fetcher
+            .newest_descendant_tag(&src, &lock.template.commit)?
+            .map(|t| t.version));
+    }
+    let versions = fetcher.available_versions(&src, false)?;
     Ok(versions
         .into_iter()
         .max()
@@ -111,6 +118,12 @@ fn channel_update(repo: &Path, cl: &ChannelLock) -> Result<Option<String>> {
         Some(branch) => {
             let head = fetcher.branch_head(&src, branch)?;
             (head, branch.clone())
+        }
+        None if is_untagged(&lock.template.version) => {
+            let Some(t) = fetcher.newest_descendant_tag(&src, &lock.template.commit)? else {
+                return Ok(None);
+            };
+            (t, "tag".to_string())
         }
         None => {
             let Some(v) = fetcher

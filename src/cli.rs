@@ -122,6 +122,9 @@ pub struct UpdateArgs {
     /// Target version (default: latest stable tag).
     #[arg(long, value_name = "VERSION")]
     pub to: Option<String>,
+    /// Target git ref (tag, branch or sha); must descend from the locked commit.
+    #[arg(long = "ref", value_name = "R", conflicts_with = "to")]
+    pub git_ref: Option<String>,
     /// Template or piece variable, `K=V`.
     #[arg(long = "data", value_name = "K=V")]
     pub data: Vec<String>,
@@ -140,7 +143,7 @@ pub struct UpdateArgs {
     /// Update the main template and every channel.
     #[arg(
         long,
-        conflicts_with_all = ["channel", "to", "data", "only", "exclude"]
+        conflicts_with_all = ["channel", "to", "git_ref", "data", "only", "exclude"]
     )]
     pub all: bool,
     /// Only paths matching this glob (channel updates).
@@ -166,6 +169,9 @@ pub struct DiffArgs {
     /// Target version (default: latest stable tag).
     #[arg(long, value_name = "VERSION")]
     pub to: Option<String>,
+    /// Target git ref (tag, branch or sha); must descend from the locked commit.
+    #[arg(long = "ref", value_name = "R", conflicts_with = "to")]
+    pub git_ref: Option<String>,
     /// Show the update of this channel.
     #[arg(long, value_name = "NAME")]
     pub channel: Option<String>,

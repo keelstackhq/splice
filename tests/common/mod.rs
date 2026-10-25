@@ -188,6 +188,19 @@ pub fn commit_tag(repo: &Path, msg: &str, tag: &str) {
     git(repo, date, &["tag", tag]);
 }
 
+/// Append a comment line to the base piece's `.editorconfig` and commit it, untagged. Returns the
+/// full sha.
+pub fn untagged_commit(repo: &Path, note: &str) -> String {
+    let path = repo.join("pieces/base/files/.editorconfig");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(&format!("# {note}\n"));
+    std::fs::write(&path, text).unwrap();
+    let date = "2026-02-01T00:00:00+00:00";
+    stage_all(repo, date);
+    git(repo, date, &["commit", "-q", "-m", note]);
+    git_stdout(repo, &["rev-parse", "HEAD"])
+}
+
 /// Fold the working tree into the tip commit and move `tag` to it, so the latest version stays
 /// the one tag the test already knows.
 pub fn amend_tip(repo: &Path, tag: &str) {

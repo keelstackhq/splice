@@ -179,3 +179,67 @@ fn rerun_after_failed_post_without_restore_converges() {
     assert!(read(&repo, "notes.txt").contains("line 5, mine"));
     assert_eq!(read(&repo, "README.md"), USER_README);
 }
+
+/// F1 (canary): a repo locked at an untagged commit X that is newer than the latest tag must not
+/// be moved back to that tag, and `check` must not offer it; only a tag descending from X counts.
+#[test]
+fn golden_untagged_lock_follows_ancestry() {
+    // v1.0.0, then X: v2 content on an untagged commit (the tag `vx` is not a version tag).
+    let tpl = common::template_repo_tagged(&[("v1", "v1.0.0"), ("v2", "vx")]);
+    let x = common::git_stdout(tpl.path(), &["rev-parse", "HEAD"]);
+    let x7 = x[..7].to_string();
+    let repo = new_repo_at(&tpl, &x);
+    let lock_x = std::fs::read(repo.path().join(".splice/lock.toml")).unwrap();
+    let check = |repo: &TempDir| {
+        let out = splice_cmd()
+            .current_dir(repo.path())
+            .args(["check", "--json"])
+            .output()
+            .unwrap();
+        (
+            out.status.code().unwrap(),
+            serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap(),
+        )
+    };
+
+    // Only an older tag: update stays put, check reports nothing.
+    let out = update_cmd(&repo)
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert!(v.to_string().contains("no stable tag descends"), "{v}");
+    assert!(v.to_string().contains(&x7), "{v}");
+    assert_eq!(
+        std::fs::read(repo.path().join(".splice/lock.toml")).unwrap(),
+        lock_x
+    );
+    let (code, v) = check(&repo);
+    assert_eq!(code, 0, "{v}");
+    assert!(!v.to_string().contains("update available"), "{v}");
+
+    // A stable tag on a descendant: both see it.
+    common::untagged_commit(tpl.path(), "next");
+    common::git(tpl.path(), "2026-02-02T00:00:00+00:00", &["tag", "v2.0.0"]);
+    let (code, v) = check(&repo);
+    assert_eq!(code, 1, "{v}");
+    assert!(
+        v.to_string()
+            .contains(&format!("update available: 0.0.0+g{x7} → 2.0.0")),
+        "{v}"
+    );
+    let out = update_cmd(&repo)
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    insta::assert_json_snapshot!(v);
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(lock.template.version.to_string(), "2.0.0");
+    // Migration 2.0.0 ran: its tag descends from X and is not behind it (spec §10 item 21).
+    assert!(repo.path().join(".splice/migrated.txt").exists());
+}

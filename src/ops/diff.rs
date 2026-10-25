@@ -8,7 +8,7 @@ use crate::fsio;
 use crate::output::{Action, Class, Report};
 use crate::sources::Sources;
 
-use super::update::{Written, parse_to, prepare, prepare_channel};
+use super::update::{Target, Written, parse_to, prepare, prepare_channel, target_of};
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
@@ -19,9 +19,10 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
     let repo = g.dir.as_path();
     let to = parse_to(a.to.as_deref())?;
     if let Some(name) = &a.channel {
-        return run_channel(g, name, to.as_ref());
+        return run_channel(g, name, target_of(to.as_ref(), a.git_ref.as_deref()));
     }
-    let prep = prepare(g, to.as_ref(), &IndexMap::new(), false)?;
+    let target = target_of(to.as_ref(), a.git_ref.as_deref());
+    let prep = prepare(g, target, &IndexMap::new(), false)?;
     let mut report = Report::new("diff");
     report.messages = prep.messages;
     for c in &prep.plan.changes {
@@ -47,11 +48,19 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
 /// `diff --channel NAME`: the plan of `update --channel NAME` (files and sections), printed and
 /// not written. `--json` changes equal those of `update --channel NAME --json`; drift and broken
 /// markers are messages, never an error (exit 0).
-fn run_channel(g: &GlobalArgs, name: &str, to: Option<&semver::Version>) -> Result<Report> {
+fn run_channel(g: &GlobalArgs, name: &str, target: Target) -> Result<Report> {
     let repo = g.dir.as_path();
     let sources = Sources::load(repo)?;
     let cl = sources.channel(name)?;
-    let prep = prepare_channel(g, cl, &sources.claims(), to, None, false, &Written::new())?;
+    let prep = prepare_channel(
+        g,
+        cl,
+        &sources.claims(),
+        target,
+        None,
+        false,
+        &Written::new(),
+    )?;
     let mut report = Report::new("diff");
     report.messages = prep.messages;
     let ch = prep.channel.as_ref().expect("a channel update");

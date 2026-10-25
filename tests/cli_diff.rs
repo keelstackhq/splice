@@ -243,3 +243,48 @@ mod channels {
             .code(2);
     }
 }
+
+#[test]
+fn diff_ref_matches_update_ref() {
+    let tpl = template_repo(&["v1"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    let y = common::untagged_commit(tpl.path(), "y");
+    let (a, b) = (edited_repo(&tpl), edited_repo(&tpl));
+    let diff = splice_cmd()
+        .current_dir(a.path())
+        .args(["diff", "--ref", &x, "--json"])
+        .assert()
+        .code(0)
+        .get_output()
+        .stdout
+        .clone();
+    let diff = json(&diff);
+    assert!(!diff["changes"].as_array().unwrap().is_empty());
+    assert_eq!(porcelain(&a), "");
+    let update = splice_cmd()
+        .current_dir(b.path())
+        .args(["update", "--ref", &x, "--yes", "--json"])
+        .assert()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(diff["changes"], json(&update)["changes"]);
+
+    // y is a descendant of x, so a lock at y makes x a non-descendant.
+    let c = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            c.path().to_str().unwrap(),
+        ])
+        .args(["--ref", &y, "--data", "project=demo", "--yes", "--json"])
+        .assert()
+        .success();
+    commit_all(c.path());
+    splice_cmd()
+        .current_dir(c.path())
+        .args(["diff", "--ref", &x, "--json"])
+        .assert()
+        .code(2);
+}

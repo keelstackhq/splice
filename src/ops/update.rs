@@ -9,12 +9,12 @@ use semver::Version;
 use crate::apply::{ApplyCtx, LockOut, apply, apply_files, check_targets, write_locks};
 use crate::cli::{GlobalArgs, UpdateArgs};
 use crate::error::SpliceError;
-use crate::fetch::{Fetcher, ResolvedTemplate};
+use crate::fetch::{Fetcher, ResolvedTemplate, is_untagged};
 use crate::filter::Filter;
 use crate::git::Git;
 use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
-use crate::migrate::{Step, select};
+use crate::migrate::{Migration, Step, select};
 use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
 use crate::post::run_post;
@@ -50,6 +50,9 @@ pub struct Prepared {
     /// A tracked branch head: `from`/`to` are `0.0.0+g…` and never compared; no migration
     /// steps run (B5).
     pub tracked: bool,
+    /// The versions of the selected migrations (`[[remove]]` and steps; none when tracked or up
+    /// to date).
+    pub migrations: Vec<Version>,
     /// Report messages (template warnings, moved tag).
     pub messages: Vec<String>,
     /// A channel update's lock, section plan and planned claim; `None` for the main template.
@@ -167,11 +170,14 @@ pub(crate) fn instances_for(
 }
 
 /// The version an update moves to.
+#[derive(Clone, Copy)]
 pub enum Target<'a> {
     /// The latest stable tag (none newer: up to date).
     Latest,
     /// `--to`.
     Version(&'a Version),
+    /// `--ref`: a tag, branch or sha that must descend from the locked commit (spec §4).
+    Ref(&'a str),
     /// A tracked branch head (Task 13).
     Branch(&'a str),
 }
@@ -184,6 +190,8 @@ struct Rendered {
     theirs_sections: RenderedSections,
     /// The rendered `[[remove]]` paths of the selected migrations.
     removes: Vec<String>,
+    /// The versions of the selected migrations.
+    migrations: Vec<Version>,
 }
 
 /// Steps 2–5 for one lock: the target, its manifest, the vars and instances and, unless up to
@@ -223,6 +231,7 @@ fn prepare_lock(
     target: Target,
     data: &IndexMap<String, String>,
     kind: Kind,
+    force: bool,
 ) -> Result<Resolved> {
     let from = lock.template.version.clone();
     let mut messages = Vec::new();
@@ -243,7 +252,7 @@ fn prepare_lock(
             let current = head.commit == lock.template.commit;
             (head, current, false, true)
         }
-        Target::Latest | Target::Version(_) => {
+        Target::Latest | Target::Version(_) | Target::Ref(_) => {
             let to = match target {
                 Target::Version(v) => Some(v),
                 _ => None,
@@ -257,29 +266,57 @@ fn prepare_lock(
                     "target {v} is older than the locked {from}{at}; splice does not downgrade"
                 ))
             };
-            if let Some(v) = to.filter(|v| *v < &from) {
+            // Untagged versions are never ordered by semver: `--ref`, an untagged lock or an
+            // untagged target is compared by git ancestry (spec §4, §10 item 21).
+            let by_ancestry = matches!(target, Target::Ref(_)) || is_untagged(&from);
+            if !by_ancestry && let Some(v) = to.filter(|v| *v < &from) {
                 return Err(downgrade(v));
             }
             // Without `--to`: the latest stable tag. A template with prerelease tags only has
             // none, so there is nothing newer than the lock either.
-            let latest = match to {
-                Some(v) => Some(fetcher.resolve_version(&src, v)?),
-                None => match fetcher.resolve(&src, None, false) {
+            let latest = match (target, to) {
+                (Target::Ref(r), _) => Some(fetcher.resolve(&src, Some(r), false)?),
+                (_, Some(v)) => Some(fetcher.resolve_version(&src, v)?),
+                // An untagged lock: only a stable tag that descends from its commit (item 21).
+                (_, None) if is_untagged(&from) => {
+                    fetcher.newest_descendant_tag(&src, &lock.template.commit)?
+                }
+                (_, None) => match fetcher.resolve(&src, None, false) {
                     Ok(t) => Some(t),
                     Err(_) if fetcher.available_versions(&src, false)?.is_empty() => None,
                     Err(e) => return Err(e),
                 },
             };
             // No newer stable tag (e.g. a prerelease lock): stay on the lock's commit.
-            let no_newer = to.is_none() && latest.as_ref().is_none_or(|t| t.version < from);
+            let no_newer = to.is_none()
+                && !matches!(target, Target::Ref(_))
+                && latest
+                    .as_ref()
+                    .is_none_or(|t| !is_untagged(&from) && t.version < from);
             let target = match latest {
                 Some(t) if !no_newer => t,
                 _ => fetcher.checkout(&src, &lock.template.commit, from.clone())?,
             };
-            if target.version < from {
+            let current =
+                target.commit == lock.template.commit && (by_ancestry || target.version == from);
+            if by_ancestry && !current {
+                let (git_dir, _) = fetcher.repo(&src)?;
+                if !Fetcher::lock_precedes(&git_dir, &lock.template.commit, &target.commit)? {
+                    let (t7, l7) = (&target.commit[..7], &lock.template.commit[..7]);
+                    if !force {
+                        return usage(format!(
+                            "target {} ({t7}) is not a descendant of the locked commit {l7}{at}; \
+                             splice does not downgrade (pass --force to update anyway)",
+                            target.version
+                        ));
+                    }
+                    messages.push(format!(
+                        "--force: {t7} is not a descendant of the locked {l7}; updating anyway"
+                    ));
+                }
+            } else if !by_ancestry && target.version < from {
                 return Err(downgrade(&target.version));
             }
-            let current = target.version == from && target.commit == lock.template.commit;
             (target, current, no_newer, false)
         }
     };
@@ -298,7 +335,7 @@ fn prepare_lock(
             ));
         }
     }
-    if !tracked && !up_to_date && target.version == from {
+    if !tracked && !up_to_date && !is_untagged(&from) && target.version == from {
         messages.push(format!(
             "tag v{from} moved from {} to {}; updating to the new commit",
             lock.template.commit, target.commit
@@ -432,19 +469,29 @@ fn prepare_lock(
         // Up to date: same commit, same vars, so the lock state renders exactly as theirs.
         let base = base.unwrap_or_else(|| theirs.clone());
         // Tracked heads run no migrations (B5).
-        let removes = if tracked {
-            Vec::new()
+        let (removes, migrations) = if tracked {
+            (Vec::new(), Vec::new())
         } else {
-            let migrations = select(&template.migrations, &from, &target.version);
+            let migrations = select_migrations(
+                &fetcher,
+                &src,
+                &template,
+                (&from, &lock.template.commit),
+                (&target.version, &target.commit),
+            )?;
             let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
             // Contract §9.22: removes render with the version updated FROM.
-            render_removes(&template, &from, &removes, &instances, &vars)?
+            (
+                render_removes(&template, &from, &removes, &instances, &vars)?,
+                migrations.iter().map(|m| m.version.clone()).collect(),
+            )
         };
         Some(Rendered {
             base,
             theirs,
             theirs_sections,
             removes,
+            migrations,
         })
     };
     Ok(Resolved {
@@ -460,9 +507,48 @@ fn prepare_lock(
     })
 }
 
+/// The migrations an update from `from` to `to` (each a version and its commit) runs, in semver
+/// order. Two tagged sides: `from < v <= to`, as the contract says. When either side is
+/// untagged (spec §10 item 21): migration `v` runs when tag `v<v>` exists, its commit is an
+/// ancestor of (or is) the target commit and is not an ancestor of (nor is) the lock commit.
+fn select_migrations<'a>(
+    fetcher: &Fetcher,
+    src: &TemplateSource,
+    template: &'a Template,
+    (from, from_commit): (&Version, &str),
+    (to, to_commit): (&Version, &str),
+) -> Result<Vec<&'a Migration>> {
+    if !is_untagged(from) && !is_untagged(to) {
+        return Ok(select(&template.migrations, from, to));
+    }
+    if template.migrations.is_empty() {
+        return Ok(Vec::new());
+    }
+    let repo = fetcher.repo(src)?;
+    let tags = fetcher.tag_commits_in(&repo, true)?;
+    let mut picked = Vec::new();
+    for m in &template.migrations {
+        let Some((_, tag_commit)) = tags.iter().find(|(v, _)| *v == m.version) else {
+            continue;
+        };
+        if Git::is_ancestor(&repo.0, tag_commit, to_commit)?
+            && !Git::is_ancestor(&repo.0, tag_commit, from_commit)?
+        {
+            picked.push(m);
+        }
+    }
+    Ok(picked)
+}
+
 /// The "up to date" message of step 2.
 fn up_to_date_message(r: &Resolved) -> String {
-    if r.no_newer {
+    if r.no_newer && is_untagged(&r.from) {
+        format!(
+            "up to date (no stable tag descends from the locked commit {}; use --ref \
+             <branch|sha> for an untagged commit)",
+            &r.target.commit[..7]
+        )
+    } else if r.no_newer {
         format!(
             "up to date (no newer stable than {}; use --to <tag> for a prerelease)",
             r.from
@@ -476,7 +562,7 @@ fn up_to_date_message(r: &Resolved) -> String {
 /// check `min_splice`, resolve vars, render base and theirs, and plan.
 pub fn prepare(
     g: &GlobalArgs,
-    to: Option<&Version>,
+    target: Target,
     data: &IndexMap<String, String>,
     force: bool,
 ) -> Result<Prepared> {
@@ -487,8 +573,7 @@ pub fn prepare(
             repo.display()
         ));
     };
-    let target = to.map_or(Target::Latest, Target::Version);
-    let mut r = prepare_lock(g, &lock, target, data, Kind::Main)?;
+    let mut r = prepare_lock(g, &lock, target, data, Kind::Main, force)?;
     let Some(rendered) = r.rendered.take() else {
         r.messages.push(up_to_date_message(&r));
         return Ok(Prepared {
@@ -500,6 +585,7 @@ pub fn prepare(
             instances: r.instances,
             up_to_date: true,
             tracked: r.tracked,
+            migrations: Vec::new(),
             messages: r.messages,
             channel: None,
         });
@@ -508,6 +594,7 @@ pub fn prepare(
         base,
         theirs,
         removes,
+        migrations,
         ..
     } = rendered;
 
@@ -538,6 +625,7 @@ pub fn prepare(
         instances: r.instances,
         up_to_date: false,
         tracked: r.tracked,
+        migrations,
         messages: r.messages,
         channel: None,
     })
@@ -556,7 +644,7 @@ pub fn prepare_channel(
     g: &GlobalArgs,
     cl: &ChannelLock,
     others: &[Claim],
-    to: Option<&Version>,
+    target: Target,
     filter_new: Option<(&[String], &[String])>,
     force: bool,
     earlier: &Written,
@@ -569,21 +657,20 @@ pub fn prepare_channel(
         Some((only, exclude)) => Filter::new(only, exclude)?,
         None => stored.clone(),
     };
-    let target = match (&cl.meta.track, to) {
-        (Some(branch), Some(_)) => {
+    let target = match (&cl.meta.track, target) {
+        (Some(branch), Target::Version(_) | Target::Ref(_)) => {
             return usage(format!(
                 "channel {name} tracks {branch}; re-add it with --ref to pin a version"
             ));
         }
-        (Some(branch), None) => Target::Branch(branch),
-        (None, Some(v)) => Target::Version(v),
-        (None, None) => Target::Latest,
+        (Some(branch), _) => Target::Branch(branch),
+        (None, t) => t,
     };
     let kind = Kind::Channel {
         render_current: filter_new.is_some(),
         lock_path: &lock_path,
     };
-    let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind)?;
+    let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind, force)?;
     let me = SourceId::Channel(name.to_string());
     let Some(rendered) = r.rendered.take() else {
         r.messages.push(up_to_date_message(&r));
@@ -596,6 +683,7 @@ pub fn prepare_channel(
             instances: r.instances,
             up_to_date: true,
             tracked: r.tracked,
+            migrations: Vec::new(),
             messages: r.messages,
             channel: Some(ChannelPrepared {
                 lock_new: cl.clone(),
@@ -609,6 +697,7 @@ pub fn prepare_channel(
         theirs,
         theirs_sections,
         removes,
+        migrations,
     } = rendered;
 
     // Filters: base as locked (stored filter), theirs with the new one; dropped paths are
@@ -694,6 +783,7 @@ pub fn prepare_channel(
         instances: r.instances,
         up_to_date: false,
         tracked: r.tracked,
+        migrations,
         messages: r.messages,
         channel: Some(ChannelPrepared {
             lock_new,
@@ -724,10 +814,26 @@ pub fn require_clean(repo: &Path, command: &str) -> Result<()> {
 /// Parse `--to` (a leading `v` is allowed).
 pub fn parse_to(to: Option<&str>) -> Result<Option<Version>> {
     to.map(|v| {
-        Version::parse(v.strip_prefix('v').unwrap_or(v))
-            .map_err(|e| SpliceError::Usage(format!("--to `{v}` is not a version: {e}")))
+        let parsed = Version::parse(v.strip_prefix('v').unwrap_or(v))
+            .map_err(|e| SpliceError::Usage(format!("--to `{v}` is not a version: {e}")))?;
+        if is_untagged(&parsed) {
+            let sha = parsed.build.as_str().strip_prefix('g').unwrap_or("<sha>");
+            return Err(SpliceError::Usage(format!(
+                "--to `{v}` names an untagged commit, not a release; use --ref {sha}"
+            )));
+        }
+        Ok(parsed)
     })
     .transpose()
+}
+
+/// `--to`/`--ref` as a [`Target`] (`Latest` when neither).
+pub fn target_of<'a>(to: Option<&'a Version>, git_ref: Option<&'a str>) -> Target<'a> {
+    match (to, git_ref) {
+        (Some(v), _) => Target::Version(v),
+        (None, Some(r)) => Target::Ref(r),
+        (None, None) => Target::Latest,
+    }
 }
 
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
@@ -752,12 +858,19 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
                     .into(),
             );
         }
-        return run_channel(g, a, &sources, name, to.as_ref());
+        return run_channel(
+            g,
+            a,
+            &sources,
+            name,
+            target_of(to.as_ref(), a.git_ref.as_deref()),
+        );
     }
     if sources.main.is_none() && !sources.channels.is_empty() {
         return usage(format!("no {LOCK_PATH}; use --channel NAME or --all"));
     }
-    let prep = prepare(g, to.as_ref(), &data, a.force)?;
+    let target = target_of(to.as_ref(), a.git_ref.as_deref());
+    let prep = prepare(g, target, &data, a.force)?;
 
     if prep.up_to_date {
         let mut report = Report::new("update");
@@ -798,7 +911,7 @@ fn run_channel(
     a: &UpdateArgs,
     sources: &Sources,
     name: &str,
-    to: Option<&Version>,
+    target: Target,
 ) -> Result<Report> {
     let cl = sources.channel(name)?;
     let filter_new = (!a.only.is_empty() || !a.exclude.is_empty())
@@ -807,7 +920,7 @@ fn run_channel(
         g,
         cl,
         &sources.claims(),
-        to,
+        target,
         filter_new,
         a.force,
         &Written::new(),
@@ -904,8 +1017,10 @@ fn steps_of(prep: &Prepared) -> Vec<(&Version, &Step)> {
     if prep.tracked {
         return Vec::new();
     }
-    select(&prep.template.migrations, &prep.from, &prep.to)
-        .into_iter()
+    prep.template
+        .migrations
+        .iter()
+        .filter(|m| prep.migrations.contains(&m.version))
         .flat_map(|m| m.steps.iter().map(move |s| (&m.version, s)))
         .collect()
 }
@@ -1018,7 +1133,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     let mut written = Written::new();
     let mut all: Vec<AllSource> = Vec::new();
     if sources.main.is_some() {
-        let prep = prepare(g, None, &IndexMap::new(), a.force)?;
+        let prep = prepare(g, Target::Latest, &IndexMap::new(), a.force)?;
         planned.push(Claim::from_lock(
             SourceId::Main,
             &prep.lock_new,
@@ -1045,7 +1160,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             )
             .cloned()
             .collect();
-        let prep = prepare_channel(g, cl, &others, None, None, a.force, &written)?;
+        let prep = prepare_channel(g, cl, &others, Target::Latest, None, a.force, &written)?;
         let ch = prep.channel.as_ref().expect("a channel update");
         planned.push(ch.claim.clone());
         let src = AllSource { id, prep };

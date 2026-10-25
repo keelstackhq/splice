@@ -31,6 +31,12 @@ fn tag_version(tag: &str) -> Option<Version> {
     Version::parse(tag.strip_prefix('v')?).ok()
 }
 
+/// A version with build metadata (`0.0.0+g<sha7>`): an untagged commit (spec §4). Such versions
+/// are never ordered by semver; commits are compared by git ancestry.
+pub fn is_untagged(v: &Version) -> bool {
+    !v.build.is_empty()
+}
+
 impl Fetcher {
     /// `$SPLICE_CACHE_DIR`, else the platform cache directory plus `splice`.
     pub fn from_env() -> Self {
@@ -133,6 +139,55 @@ impl Fetcher {
             )));
         };
         self.checkout_from(src, &git_dir, &commit, version)
+    }
+
+    /// Every `v<semver>` tag as (version, commit), ascending; prereleases only with `pre`.
+    pub fn tag_commits(&self, src: &TemplateSource, pre: bool) -> Result<Vec<(Version, String)>> {
+        let repo = self.repo(src)?;
+        self.tag_commits_in(&repo, pre)
+    }
+
+    /// `tag_commits` for an already resolved `repo()`, so callers refresh the source once.
+    pub(crate) fn tag_commits_in(
+        &self,
+        repo: &(PathBuf, String),
+        pre: bool,
+    ) -> Result<Vec<(Version, String)>> {
+        Ok(self
+            .version_tags(&repo.1, pre)?
+            .into_iter()
+            .map(|(_, v, commit)| (v, commit))
+            .collect())
+    }
+
+    /// Whether the lock's commit is `target` or an ancestor of it, reading `git_dir`. A lock
+    /// commit the source no longer has (rewritten history) is a clear exit 3.
+    pub(crate) fn lock_precedes(git_dir: &Path, lock_commit: &str, target: &str) -> Result<bool> {
+        Git::is_ancestor(git_dir, lock_commit, target).map_err(|e| match e {
+            SpliceError::Env(m) if m.contains("failed") => SpliceError::Template(format!(
+                "the locked commit {} is not in the template source (history rewritten?); \
+                 splice needs it as the merge base and cannot update this lock",
+                &lock_commit[..7.min(lock_commit.len())]
+            )),
+            other => other,
+        })
+    }
+
+    /// The highest stable tag whose commit is a strict descendant of `commit` (spec §10 item 21).
+    pub fn newest_descendant_tag(
+        &self,
+        src: &TemplateSource,
+        commit: &str,
+    ) -> Result<Option<ResolvedTemplate>> {
+        let repo = self.repo(src)?;
+        for (version, tag_commit) in self.tag_commits_in(&repo, false)?.into_iter().rev() {
+            if tag_commit != commit && Self::lock_precedes(&repo.0, commit, &tag_commit)? {
+                return self
+                    .checkout_from(src, &repo.0, &tag_commit, version)
+                    .map(Some);
+            }
+        }
+        Ok(None)
     }
 
     /// The head of `branch` (`refs/heads/<branch>`), version `0.0.0+g<sha7>`. Tags are ignored.

@@ -124,6 +124,25 @@ fn markers_fail_and_stray_separator_does_not() {
 }
 
 #[test]
+fn untagged_lock_only_sees_tags_that_descend_from_it() {
+    let tpl = template_repo(&["v1"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    let repo = new_repo(&tpl, Some(&x));
+    let (code, v) = check(&repo, &[]);
+    assert_eq!(code, 0, "{v}");
+    assert!(!messages(&v).contains("update available"), "{v}");
+
+    common::untagged_commit(tpl.path(), "next");
+    common::git(tpl.path(), "2026-02-02T00:00:00+00:00", &["tag", "v2.0.0"]);
+    let (code, v) = check(&repo, &[]);
+    assert_eq!(code, 1);
+    assert!(
+        messages(&v).contains(&format!("update available: 0.0.0+g{} → 2.0.0", &x[..7])),
+        "{v}"
+    );
+}
+
+#[test]
 fn update_available() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, Some("v1.0.0"));
@@ -429,6 +448,29 @@ mod channels {
             "{m}"
         );
         assert_eq!(check(&repo, &["--offline"]).0, 0);
+    }
+
+    #[test]
+    fn check_untagged_channel_ignores_older_tags() {
+        let tpl = template_repo(&["v1"]);
+        let repo = new_repo_at(&tpl, "v1.0.0");
+        let ch = channel_repo(&["v1"]);
+        let x = track_commit(ch.path(), true);
+        chan_commit(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                &src(&ch),
+                "--ref",
+                &x,
+                "--piece",
+                "claude",
+            ],
+        );
+        let (code, v) = check(&repo, &[]);
+        assert_eq!(code, 0, "{v}");
+        assert!(!messages(&v).contains("update available"), "{v}");
     }
 
     #[test]
