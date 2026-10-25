@@ -100,19 +100,19 @@ Commit: `feat: update --ref with an ancestry check (F1)`
 
 Tests first:
 
-- [ ] Golden F1 (`golden_update.rs`): tags v1.0.0 (fixture v1), then an untagged commit with
+- [x] Golden F1 (`golden_update.rs`): tags v1.0.0 (fixture v1), then an untagged commit with
   fixture v2 content (X), `new --ref X`. `update` (no flags): exit 0, "no stable tag descends",
   lock unchanged (today it moves to v1.0.0). `check`: exit 0, no "update available" (today exit
   1). Then tag `v2.0.0` on a new descendant commit: `check` exit 1 with `update available:
   0.0.0+g<x7> → 2.0.0`; `update` moves to 2.0.0; JSON report snapshot.
-- [ ] Migrations: tags v1.0.0 (v1), v2.0.0 (v2, has migration 2.0.0), untagged descendant Y (v2-x
+- [x] Migrations: tags v1.0.0 (v1), v2.0.0 (v2, has migration 2.0.0), untagged descendant Y (v2-x
   or v2 content edited). Lock at v1.0.0, `update --ref Y`: the 2.0.0 step runs
   (`.splice/migrated.txt`) and its `[[remove]]` applies. Lock at an untagged commit after
   v2.0.0, `update --ref` later: the 2.0.0 step does not run. A migration file without its tag
   does not run when a side is untagged.
-- [ ] Channel: an untagged (`channel add --ref <sha>`) channel lock with only an older stable
+- [x] Channel: an untagged (`channel add --ref <sha>`) channel lock with only an older stable
   tag: `check` reports no update, `update --channel` up to date; `update --all` likewise.
-- [ ] Tagged → tagged selection unchanged (existing tests).
+- [x] Tagged → tagged selection unchanged (existing tests).
 
 Implement: `Target::Latest` from an untagged lock uses `newest_descendant_tag`; `no_newer`
 message for an untagged lock per spec §4; `check::newer_stable` and `channel_update` (untracked)

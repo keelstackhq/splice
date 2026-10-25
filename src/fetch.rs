@@ -148,8 +148,49 @@ impl Fetcher {
         ancestor: &str,
         descendant: &str,
     ) -> Result<bool> {
+        // An existing mirror is used as is (no second fetch per call); only if it cannot answer
+        // (a commit it lacks) is the source refreshed.
+        if let SourceKind::Git { .. } = &src.kind {
+            let mirror = self
+                .cache
+                .join("git")
+                .join(format!("{}.git", src.cache_key()));
+            if mirror.join("HEAD").exists()
+                && let Ok(answer) = Git::is_ancestor(&mirror, ancestor, descendant)
+            {
+                return Ok(answer);
+            }
+        }
         let (git_dir, _) = self.repo(src)?;
         Git::is_ancestor(&git_dir, ancestor, descendant)
+    }
+
+    /// Every `v<semver>` tag as (version, commit), ascending; prereleases only with `pre`.
+    pub fn tag_commits(&self, src: &TemplateSource, pre: bool) -> Result<Vec<(Version, String)>> {
+        let (_, tags_from) = self.repo(src)?;
+        Ok(self
+            .version_tags(&tags_from, pre)?
+            .into_iter()
+            .map(|(_, v, commit)| (v, commit))
+            .collect())
+    }
+
+    /// The highest stable tag whose commit is a strict descendant of `commit` (spec §10 item 21).
+    pub fn newest_descendant_tag(
+        &self,
+        src: &TemplateSource,
+        commit: &str,
+    ) -> Result<Option<ResolvedTemplate>> {
+        // `tag_commits` refreshed the source once; the ancestry calls reuse that mirror.
+        for (version, tag_commit) in self.tag_commits(src, false)?.into_iter().rev() {
+            if tag_commit != commit && self.is_ancestor(src, commit, &tag_commit)? {
+                let (git_dir, _) = self.repo(src)?;
+                return self
+                    .checkout_from(src, &git_dir, &tag_commit, version)
+                    .map(Some);
+            }
+        }
+        Ok(None)
     }
 
     /// The head of `branch` (`refs/heads/<branch>`), version `0.0.0+g<sha7>`. Tags are ignored.

@@ -170,7 +170,7 @@ makes no git call), so it only reports drift and markers.
 update would conflict.
 
 `splice update` needs a clean tree, then moves to the latest stable version (`--to VERSION` for
-another; it never downgrades):
+another; it never downgrades; `--ref BRANCH|SHA` moves a repo locked at an untagged commit, which must descend from the locked one):
 
 ```
 $ splice update

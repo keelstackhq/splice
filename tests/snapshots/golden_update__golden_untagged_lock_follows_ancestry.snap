@@ -1,0 +1,16 @@
+---
+source: tests/golden_update.rs
+expression: v
+---
+{
+  "ok": true,
+  "command": "update",
+  "changes": [
+    {
+      "path": ".editorconfig",
+      "action": "update",
+      "class": "owned"
+    }
+  ],
+  "messages": []
+}

@@ -522,7 +522,17 @@ fn ref_to_a_non_descendant_is_refused_unless_forced() {
     assert!(msg.contains("not a descendant"), "{msg}");
     assert!(msg.contains("--force"), "{msg}");
     assert_eq!(lock_bytes(&repo), before);
-    update(&repo, &["--ref", &x, "--force"]).success();
+    let v = json(
+        &update(&repo, &["--ref", &x, "--force"])
+            .success()
+            .get_output()
+            .stdout,
+    );
+    let msg = messages(&v);
+    assert!(
+        msg.contains("--force") && msg.contains("not a descendant"),
+        "{msg}"
+    );
     assert_eq!(lock(&repo).template.commit, x);
 }
 
@@ -600,4 +610,62 @@ fn ref_conflicts_with_to_and_all() {
     let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
     update(&repo, &["--ref", &x, "--to", "1.0.0"]).code(2);
     update(&repo, &["--all", "--ref", &x]).code(2);
+}
+
+// --- latest and migrations from an untagged lock (spec §10 item 21) ---
+
+#[test]
+fn latest_from_an_untagged_lock_ignores_older_tags() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let before = lock_bytes(&repo);
+    let v = json(&update(&repo, &[]).success().get_output().stdout);
+    let m = messages(&v);
+    assert!(m.contains("no stable tag descends"), "{m}");
+    assert!(m.contains(short(&x)), "{m}");
+    assert!(m.contains("--ref"), "{m}");
+    assert_eq!(lock_bytes(&repo), before);
+    // `--all` takes the same path: exit 0, nothing written.
+    let v = json(&update(&repo, &["--all"]).success().get_output().stdout);
+    assert!(messages(&v).contains("no stable tag descends"), "{v}");
+    assert_eq!(lock_bytes(&repo), before);
+}
+
+/// Tags v1.0.0 and v2.0.0 (migration 2.0.0), then untagged descendant `y`.
+fn migration_tpl() -> (TempDir, String) {
+    let tpl = template_repo(&["v1", "v2"]);
+    let y = common::untagged_commit(tpl.path(), "y");
+    (tpl, y)
+}
+
+#[test]
+fn migration_runs_from_a_tagged_lock_to_an_untagged_target() {
+    let (tpl, y) = migration_tpl();
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app"]);
+    assert!(repo.path().join("tool.config.mts").exists());
+    update(&repo, &["--ref", &y]).success();
+    assert!(repo.path().join(".splice/migrated.txt").exists());
+    assert!(!repo.path().join("tool.config.mts").exists());
+}
+
+#[test]
+fn migration_before_an_untagged_lock_does_not_run() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    let y = common::untagged_commit(tpl.path(), "y");
+    let repo = new_repo(&tpl, &["--ref", &x, "--piece", "app"]);
+    update(&repo, &["--ref", &y]).success();
+    assert!(!repo.path().join(".splice/migrated.txt").exists());
+    assert_eq!(lock(&repo).template.commit, y);
+}
+
+#[test]
+fn migration_without_its_tag_does_not_run_with_an_untagged_side() {
+    // The v2 tree (with migrations/2.0.0.toml) is tagged v1.5.0: no tag v2.0.0 exists.
+    let tpl = template_repo_tagged(&[("v1", "v1.0.0"), ("v2", "v1.5.0")]);
+    let y = common::untagged_commit(tpl.path(), "y");
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app"]);
+    update(&repo, &["--ref", &y]).success();
+    assert!(!repo.path().join(".splice/migrated.txt").exists());
+    assert_eq!(lock(&repo).template.commit, y);
 }

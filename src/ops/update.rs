@@ -14,7 +14,7 @@ use crate::filter::Filter;
 use crate::git::Git;
 use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
-use crate::migrate::{Step, select};
+use crate::migrate::{Migration, Step, select};
 use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
 use crate::post::run_post;
@@ -277,6 +277,10 @@ fn prepare_lock(
             let latest = match (target, to) {
                 (Target::Ref(r), _) => Some(fetcher.resolve(&src, Some(r), false)?),
                 (_, Some(v)) => Some(fetcher.resolve_version(&src, v)?),
+                // An untagged lock: only a stable tag that descends from its commit (item 21).
+                (_, None) if is_untagged(&from) => {
+                    fetcher.newest_descendant_tag(&src, &lock.template.commit)?
+                }
                 (_, None) => match fetcher.resolve(&src, None, false) {
                     Ok(t) => Some(t),
                     Err(_) if fetcher.available_versions(&src, false)?.is_empty() => None,
@@ -286,7 +290,9 @@ fn prepare_lock(
             // No newer stable tag (e.g. a prerelease lock): stay on the lock's commit.
             let no_newer = to.is_none()
                 && !matches!(target, Target::Ref(_))
-                && latest.as_ref().is_none_or(|t| t.version < from);
+                && latest
+                    .as_ref()
+                    .is_none_or(|t| !is_untagged(&from) && t.version < from);
             let target = match latest {
                 Some(t) if !no_newer => t,
                 _ => fetcher.checkout(&src, &lock.template.commit, from.clone())?,
@@ -465,7 +471,13 @@ fn prepare_lock(
         let (removes, migrations) = if tracked {
             (Vec::new(), Vec::new())
         } else {
-            let migrations = select(&template.migrations, &from, &target.version);
+            let migrations = select_migrations(
+                &fetcher,
+                &src,
+                &template,
+                (&from, &lock.template.commit),
+                (&target.version, &target.commit),
+            )?;
             let removes: Vec<_> = migrations.iter().flat_map(|m| m.removes.iter()).collect();
             // Contract §9.22: removes render with the version updated FROM.
             (
@@ -494,9 +506,47 @@ fn prepare_lock(
     })
 }
 
+/// The migrations an update from `from` to `to` (each a version and its commit) runs, in semver
+/// order. Two tagged sides: `from < v <= to`, as the contract says. When either side is
+/// untagged (spec §10 item 21): migration `v` runs when tag `v<v>` exists, its commit is an
+/// ancestor of (or is) the target commit and is not an ancestor of (nor is) the lock commit.
+fn select_migrations<'a>(
+    fetcher: &Fetcher,
+    src: &TemplateSource,
+    template: &'a Template,
+    (from, from_commit): (&Version, &str),
+    (to, to_commit): (&Version, &str),
+) -> Result<Vec<&'a Migration>> {
+    if !is_untagged(from) && !is_untagged(to) {
+        return Ok(select(&template.migrations, from, to));
+    }
+    if template.migrations.is_empty() {
+        return Ok(Vec::new());
+    }
+    let tags = fetcher.tag_commits(src, true)?;
+    let mut picked = Vec::new();
+    for m in &template.migrations {
+        let Some((_, tag_commit)) = tags.iter().find(|(v, _)| *v == m.version) else {
+            continue;
+        };
+        if fetcher.is_ancestor(src, tag_commit, to_commit)?
+            && !fetcher.is_ancestor(src, tag_commit, from_commit)?
+        {
+            picked.push(m);
+        }
+    }
+    Ok(picked)
+}
+
 /// The "up to date" message of step 2.
 fn up_to_date_message(r: &Resolved) -> String {
-    if r.no_newer {
+    if r.no_newer && is_untagged(&r.from) {
+        format!(
+            "up to date (no stable tag descends from the locked commit {}; use --ref \
+             <branch|sha> for an untagged commit)",
+            &r.target.commit[..7]
+        )
+    } else if r.no_newer {
         format!(
             "up to date (no newer stable than {}; use --to <tag> for a prerelease)",
             r.from

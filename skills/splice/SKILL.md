@@ -37,7 +37,7 @@ Run `splice explain <path> --json` and read the `class` and `source` messages.
 - `splice new <source> [dest] --piece ID[:NAME] --data K=V --yes --json`
 - `splice add <piece> --name NAME --json`
 - `splice diff --json` shows what `update` would do and writes nothing. Run it first.
-- `splice update --json`, optionally `--to VERSION`.
+- `splice update --json`, optionally `--to VERSION`, or `--ref R` to move an untagged commit.
 - `splice check --json --offline` is the cheap, network-free verification.
 
 ## Rules

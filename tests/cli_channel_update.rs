@@ -1081,3 +1081,33 @@ fn tracked_rejects_ref() {
     let v = stdout_json(update_rig(repo.path(), &["--ref", &head]).code(2));
     assert!(v["messages"].to_string().contains("tracks"), "{v}");
 }
+
+#[test]
+fn untagged_channel_with_only_an_older_tag_is_up_to_date() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let x = track_commit(ch.path(), true);
+    chan_commit(
+        repo.path(),
+        &[
+            "channel",
+            "add",
+            &src(&ch),
+            "--ref",
+            &x,
+            "--piece",
+            "claude",
+        ],
+    );
+    let before = bytes(repo.path(), RIG_TOML);
+    for args in [
+        &["update", "--channel", "rig"][..],
+        &["update", "--all"][..],
+    ] {
+        let v = stdout_json(chan(repo.path(), args).success());
+        let m = v.to_string();
+        assert!(m.contains("up to date"), "{m}");
+    }
+    assert_eq!(bytes(repo.path(), RIG_TOML), before);
+    assert_eq!(status(repo.path()), "");
+}
