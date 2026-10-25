@@ -753,7 +753,7 @@ fn a_lock_commit_missing_from_the_source_is_a_clear_error() {
         m.contains("aaaaaaa") && m.contains("not in the template source"),
         "{m}"
     );
-    assert!(m.contains("--ref") && m.contains("--force"), "{m}");
+    assert!(m.contains("merge base") && !m.contains("--force"), "{m}");
     assert!(!m.contains("merge-base"), "{m}");
     let (_, v) = check_json(&repo);
     let m = messages(&v);

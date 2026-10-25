@@ -166,7 +166,7 @@ impl Fetcher {
         Git::is_ancestor(git_dir, lock_commit, target).map_err(|e| match e {
             SpliceError::Env(m) if m.contains("failed") => SpliceError::Template(format!(
                 "the locked commit {} is not in the template source (history rewritten?); \
-                 pass --ref <branch|sha> --force to move to a commit that exists",
+                 splice needs it as the merge base and cannot update this lock",
                 &lock_commit[..7.min(lock_commit.len())]
             )),
             other => other,
