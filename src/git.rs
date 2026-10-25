@@ -133,6 +133,34 @@ impl Git {
         Ok(stdout(&out).trim().to_string())
     }
 
+    /// `git merge-base --is-ancestor <ancestor> <descendant>`: exit 0 is true, 1 is false, anything
+    /// else an error. A commit is its own ancestor.
+    pub fn is_ancestor(
+        git_dir: &Path,
+        ancestor: &str,
+        descendant: &str,
+    ) -> Result<bool, SpliceError> {
+        let mut cmd = command();
+        cmd.arg("--git-dir")
+            .arg(git_dir)
+            .args(["merge-base", "--is-ancestor", "--end-of-options"])
+            .arg(ancestor)
+            .arg(descendant);
+        let out = cmd.output().map_err(|e| {
+            SpliceError::Env(format!(
+                "cannot run git ({e}); install git and put it on PATH"
+            ))
+        })?;
+        match out.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(SpliceError::Env(format!(
+                "git merge-base --is-ancestor {ancestor} {descendant} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))),
+        }
+    }
+
     /// Write the tree of `commit` to `dest` (no `.git`). Uses a throwaway index and work
     /// tree so the repository is untouched, then renames the work tree into place.
     pub fn extract_tree(git_dir: &Path, commit: &str, dest: &Path) -> Result<(), SpliceError> {

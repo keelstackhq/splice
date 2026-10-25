@@ -63,25 +63,25 @@ pub fn prepare_channel(g, cl, others, target: Target, filter_new, force, earlier
 
 Tests first (each must fail before the change for the stated reason):
 
-- [ ] `Git::is_ancestor`: true for parent→child and for a commit and itself, false child→parent,
+- [x] `Git::is_ancestor`: true for parent→child and for a commit and itself, false child→parent,
   Env error for an unknown sha.
-- [ ] `update --ref <untagged sha>` from a tagged lock (template tags v1.0.0, then an untagged
+- [x] `update --ref <untagged sha>` from a tagged lock (template tags v1.0.0, then an untagged
   descendant commit): exit 0, lock `version = "0.0.0+g<sha7>"`, `commit` = full sha, files of
   the new commit written.
-- [ ] F1 regression: two untagged commits X then Y; `new --ref X`; `update --ref Y` succeeds,
+- [x] F1 regression: two untagged commits X then Y; `new --ref X`; `update --ref Y` succeeds,
   whatever the text order of the sha7s (assert it also when sha7(Y) < sha7(X) textually: pick
   or construct commits so that holds, or assert via a lock edited to a smaller sha7 text).
-- [ ] `update --ref X` from a lock at Y (non-descendant): exit 2, message contains "not a
+- [x] `update --ref X` from a lock at Y (non-descendant): exit 2, message contains "not a
   descendant" and "--force", lock bytes unchanged; with `--force`: exit 0, lock at X.
-- [ ] `update --ref <lock commit>`: exit 0, "up to date", nothing written.
-- [ ] `update --ref v1.0.0` from a lock at a later commit: exit 2 (ancestry, also for tags).
-- [ ] `update --to 0.0.0+gabc1234`: exit 2, message names `--ref abc1234`.
-- [ ] untagged lock + `--to 2.0.0` where tag v2.0.0 is not a descendant: exit 2 "not a
+- [x] `update --ref <lock commit>`: exit 0, "up to date", nothing written.
+- [x] `update --ref v1.0.0` from a lock at a later commit: exit 2 (ancestry, also for tags).
+- [x] `update --to 0.0.0+gabc1234`: exit 2, message names `--ref abc1234`.
+- [x] untagged lock + `--to 2.0.0` where tag v2.0.0 is not a descendant: exit 2 "not a
   descendant"; where it is a descendant: exit 0.
-- [ ] `--ref` with `--to`: clap exit 2; `update --all --ref x`: exit 2.
-- [ ] `diff --ref <sha>` prints the plan (changes equal `update --ref --json`); non-descendant
+- [x] `--ref` with `--to`: clap exit 2; `update --all --ref x`: exit 2.
+- [x] `diff --ref <sha>` prints the plan (changes equal `update --ref --json`); non-descendant
   exit 2.
-- [ ] `update --channel N --ref <sha>` on a `--ref`-pinned channel works; on a tracked channel
+- [x] `update --channel N --ref <sha>` on a `--ref`-pinned channel works; on a tracked channel
   exit 2 with "tracks".
 
 Implement in `prepare_lock`: a `force: bool` parameter; `Target::Ref(r)` resolves with

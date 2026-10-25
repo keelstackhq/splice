@@ -1055,3 +1055,29 @@ fn all_channel_conflict_line_names_the_channel() {
     );
     assert_eq!(chan_version(r, "t"), "2.0.0");
 }
+
+#[test]
+fn ref_updates_a_pinned_channel() {
+    let repo = bare_repo();
+    let ch = channel_repo(&["v1"]);
+    chan_commit(
+        repo.path(),
+        &["channel", "add", &src(&ch), "--ref", "v1.0.0"],
+    );
+    let head = track_commit(ch.path(), true);
+    update_rig(repo.path(), &["--ref", &head]).success();
+    let cl = rig(repo.path());
+    assert_eq!(cl.lock.template.commit, head);
+    assert_eq!(
+        cl.lock.template.version.to_string(),
+        format!("0.0.0+g{}", &head[..7])
+    );
+}
+
+#[test]
+fn tracked_rejects_ref() {
+    let (repo, ch) = tracked();
+    let head = track_commit(ch.path(), true);
+    let v = stdout_json(update_rig(repo.path(), &["--ref", &head]).code(2));
+    assert!(v["messages"].to_string().contains("tracks"), "{v}");
+}

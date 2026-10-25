@@ -121,3 +121,19 @@ fn tree_id_of_subdir() {
         3
     );
 }
+
+#[test]
+fn is_ancestor_follows_history() {
+    let repo = template_repo(&["v1", "v2"]);
+    let dir = repo.path().join(".git");
+    let v1 = git_stdout(repo.path(), &["rev-parse", "v1.0.0"]);
+    let v2 = git_stdout(repo.path(), &["rev-parse", "v2.0.0"]);
+    assert!(Git::is_ancestor(&dir, &v1, &v2).unwrap());
+    assert!(Git::is_ancestor(&dir, &v1, &v1).unwrap());
+    assert!(!Git::is_ancestor(&dir, &v2, &v1).unwrap());
+    let bogus = "0123456789abcdef0123456789abcdef01234567";
+    assert!(matches!(
+        Git::is_ancestor(&dir, bogus, &v1),
+        Err(splice::error::SpliceError::Env(_))
+    ));
+}

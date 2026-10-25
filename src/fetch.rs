@@ -31,6 +31,12 @@ fn tag_version(tag: &str) -> Option<Version> {
     Version::parse(tag.strip_prefix('v')?).ok()
 }
 
+/// A version with build metadata (`0.0.0+g<sha7>`): an untagged commit (spec §4). Such versions
+/// are never ordered by semver; commits are compared by git ancestry.
+pub fn is_untagged(v: &Version) -> bool {
+    !v.build.is_empty()
+}
+
 impl Fetcher {
     /// `$SPLICE_CACHE_DIR`, else the platform cache directory plus `splice`.
     pub fn from_env() -> Self {
@@ -133,6 +139,17 @@ impl Fetcher {
             )));
         };
         self.checkout_from(src, &git_dir, &commit, version)
+    }
+
+    /// Whether `ancestor` is `descendant` or one of its ancestors (spec §10 item 21).
+    pub fn is_ancestor(
+        &self,
+        src: &TemplateSource,
+        ancestor: &str,
+        descendant: &str,
+    ) -> Result<bool> {
+        let (git_dir, _) = self.repo(src)?;
+        Git::is_ancestor(&git_dir, ancestor, descendant)
     }
 
     /// The head of `branch` (`refs/heads/<branch>`), version `0.0.0+g<sha7>`. Tags are ignored.

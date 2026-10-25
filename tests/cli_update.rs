@@ -469,3 +469,135 @@ fn locked_instance_name_that_breaks_rules_is_exit_3_naming_the_lock() {
     );
     assert_eq!(lock_bytes(&repo), before);
 }
+
+// --- `update --ref` and untagged versions (spec §4, §10 item 21) ---
+
+fn short(sha: &str) -> &str {
+    &sha[..7]
+}
+
+/// A template with tag v1.0.0 plus one untagged descendant commit `x`.
+fn untagged_tpl() -> (TempDir, String) {
+    let tpl = template_repo(&["v1"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    (tpl, x)
+}
+
+#[test]
+fn ref_moves_a_tagged_lock_to_an_untagged_descendant() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    update(&repo, &["--ref", &x]).success();
+    let l = lock(&repo);
+    assert_eq!(
+        l.template.version.to_string(),
+        format!("0.0.0+g{}", short(&x))
+    );
+    assert_eq!(l.template.commit, x);
+    assert!(read(&repo, ".editorconfig").contains("# x"));
+}
+
+#[test]
+fn ref_between_untagged_commits_ignores_text_order_of_the_shas() {
+    let tpl = template_repo(&["v1"]);
+    let x = common::untagged_commit(tpl.path(), "x");
+    // Descendants of x until one has a sha7 that sorts below x's (what semver would call older).
+    let y = (0..40)
+        .map(|i| common::untagged_commit(tpl.path(), &format!("y{i}")))
+        .find(|y| short(y) < short(&x))
+        .expect("a descendant whose sha7 sorts below x's");
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    update(&repo, &["--ref", &y]).success();
+    assert_eq!(lock(&repo).template.commit, y);
+}
+
+#[test]
+fn ref_to_a_non_descendant_is_refused_unless_forced() {
+    let (tpl, x) = untagged_tpl();
+    let y = common::untagged_commit(tpl.path(), "y");
+    let repo = new_repo(&tpl, &["--ref", &y]);
+    let before = lock_bytes(&repo);
+    let v = json(&update(&repo, &["--ref", &x]).code(2).get_output().stdout);
+    let msg = messages(&v);
+    assert!(msg.contains("not a descendant"), "{msg}");
+    assert!(msg.contains("--force"), "{msg}");
+    assert_eq!(lock_bytes(&repo), before);
+    update(&repo, &["--ref", &x, "--force"]).success();
+    assert_eq!(lock(&repo).template.commit, x);
+}
+
+#[test]
+fn ref_at_the_lock_commit_is_up_to_date() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let before = lock_bytes(&repo);
+    let v = json(&update(&repo, &["--ref", &x]).success().get_output().stdout);
+    assert!(messages(&v).contains("up to date"), "{v}");
+    assert_eq!(lock_bytes(&repo), before);
+    assert_eq!(porcelain(&repo), "");
+}
+
+#[test]
+fn ref_to_an_older_tag_is_refused() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let v = json(
+        &update(&repo, &["--ref", "v1.0.0"])
+            .code(2)
+            .get_output()
+            .stdout,
+    );
+    assert!(messages(&v).contains("not a descendant"), "{v}");
+}
+
+#[test]
+fn to_with_build_metadata_names_ref() {
+    let (tpl, _x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let v = json(
+        &update(&repo, &["--to", "0.0.0+gabc1234"])
+            .code(2)
+            .get_output()
+            .stdout,
+    );
+    assert!(messages(&v).contains("--ref abc1234"), "{v}");
+}
+
+#[test]
+fn to_a_tag_from_an_untagged_lock_needs_a_descendant() {
+    // v2.0.0 on a side branch: not a descendant of x.
+    let (tpl, x) = untagged_tpl();
+    let date = "2026-02-02T00:00:00+00:00";
+    common::git(
+        tpl.path(),
+        date,
+        &["checkout", "-q", "-b", "side", "v1.0.0"],
+    );
+    common::untagged_commit(tpl.path(), "side");
+    common::git(tpl.path(), date, &["tag", "v2.0.0"]);
+    common::git(tpl.path(), date, &["checkout", "-q", "main"]);
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    let v = json(
+        &update(&repo, &["--to", "2.0.0"])
+            .code(2)
+            .get_output()
+            .stdout,
+    );
+    assert!(messages(&v).contains("not a descendant"), "{v}");
+
+    // v2.0.0 on a descendant of x: fine.
+    let (tpl, x) = untagged_tpl();
+    common::untagged_commit(tpl.path(), "next");
+    common::git(tpl.path(), date, &["tag", "v2.0.0"]);
+    let repo = new_repo(&tpl, &["--ref", &x]);
+    update(&repo, &["--to", "2.0.0"]).success();
+    assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
+}
+
+#[test]
+fn ref_conflicts_with_to_and_all() {
+    let (tpl, x) = untagged_tpl();
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    update(&repo, &["--ref", &x, "--to", "1.0.0"]).code(2);
+    update(&repo, &["--all", "--ref", &x]).code(2);
+}
