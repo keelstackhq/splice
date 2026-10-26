@@ -70,6 +70,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       publish: ${{ steps.release.outputs.publish }}
+      previous: ${{ steps.previous.outputs.previous }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,6 +104,12 @@ jobs:
           else
             node scripts/check-version.mjs
           fi
+      - name: The previous release (start of the release notes)
+        id: previous
+        if: steps.release.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: node scripts/release-tag.mjs --previous "$TAG"
 
   build:
     needs: [check]
@@ -203,6 +210,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.check.outputs.tag }}
           VERSION: ${{ needs.check.outputs.version }}
+          PREVIOUS: ${{ needs.check.outputs.previous }}
         run: |
           cd dist
           sha256sum splice-* > SHA256SUMS
@@ -212,7 +220,10 @@ jobs:
           else
             pre=()
             case "$VERSION" in *-*) pre=(--prerelease) ;; esac
-            gh release create "$TAG" --verify-tag --generate-notes "${pre[@]}" splice-* SHA256SUMS
+            # Notes from the previous v<semver> release, not from the Action's `v1` tag.
+            start=()
+            if [ -n "$PREVIOUS" ]; then start=(--notes-start-tag "$PREVIOUS"); fi
+            gh release create "$TAG" --verify-tag --generate-notes "${start[@]}" "${pre[@]}" splice-* SHA256SUMS
           fi
 
   npm:
