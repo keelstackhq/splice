@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { releaseTag } from "./release-tag.mjs";
+import { previousTag, releaseTag } from "./release-tag.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
@@ -88,4 +88,20 @@ test("release.yml builds the commit of the run and never cancels a release", () 
   for (const name of ["release", "npm"]) {
     assert.match(job(name), /group: release-tag-\$\{\{ needs\.check\.outputs\.tag \}\}/, name);
   }
+});
+
+test("the notes start at the previous v<semver> release, never at v1", () => {
+  const tags = (...names) => names.map((n) => `${SHA}\trefs/tags/${n}\n${OTHER}\trefs/tags/${n}^{}`).join("\n");
+  const all = tags("v1", "v0.1.0", "v0.2.0", "v0.2.1", "v0.3.0-rc.1", "v0.10.0", "vx");
+  assert.equal(previousTag("v0.2.1", all), "v0.2.0");
+  assert.equal(previousTag("v0.10.0", all), "v0.2.1"); // numeric, not text order; rc skipped for stable
+  assert.equal(previousTag("v0.3.0", all), "v0.2.1");
+  assert.equal(previousTag("v0.3.0-rc.2", all), "v0.3.0-rc.1"); // a prerelease follows the previous one
+  assert.equal(previousTag("v0.1.0", all), ""); // the first release: GitHub's default
+});
+
+test("release.yml passes the previous tag to --generate-notes", () => {
+  assert.match(job("check"), /previous: \$\{\{ steps\.previous\.outputs\.previous \}\}/);
+  assert.match(job("check"), /node scripts\/release-tag\.mjs --previous "\$TAG"/);
+  assert.match(job("release"), /--notes-start-tag/);
 });

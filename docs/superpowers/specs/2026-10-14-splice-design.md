@@ -619,7 +619,9 @@ Items 11–14 and 18 stay splice's own decisions.
   major tag `v1` never releases): archives `splice-<target>.tar.gz` (`.zip` for Windows), each
   with `splice[.exe]`, `LICENSE` and `README.md`, and `SHA256SUMS`. The tag, `Cargo.toml` and
   `npm/splice/package.json` (version and every platform pin) must agree, or the release stops
-  before building. A version with `-` is a GitHub prerelease.
+  before building. A version with `-` is a GitHub prerelease. Release notes are generated from
+  the previous `v<semver>` release (`--notes-start-tag`; a stable release skips prereleases), never
+  from the Action's `v1` tag.
 - Releasing is merging a version bump: `release.yml` also runs on every push to `main` (only in
   `keelstackhq/splice`, never in a fork). Its `tag` job reads the version
   (`scripts/check-version.mjs`) and asks the remote for `v<version>` (`scripts/release-tag.mjs`);
