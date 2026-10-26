@@ -24,15 +24,24 @@ test("a tag on another commit releases nothing", () => {
   assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA }), { tag: "", create: false });
 });
 
-test("a tag on the run's own commit is released again without creating it (re-run)", () => {
+test("a tag on the run's own commit is released again only on a re-run", () => {
   const annotated = `${TAGOBJ}\trefs/tags/v0.2.1\n${SHA}\trefs/tags/v0.2.1^{}\n`;
-  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA }), {
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA, attempt: 2 }), {
     tag: "v0.2.1",
     create: false,
   });
+  // First attempt: a person tagged the merged commit; their tag-push run releases it, not this one.
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA, attempt: 1 }), {
+    tag: "",
+    create: false,
+  });
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA }), { tag: "", create: false });
   // The annotated tag object's own sha never matches the commit.
   const objOnly = `${SHA}\trefs/tags/v0.2.1\n${OTHER}\trefs/tags/v0.2.1^{}\n`;
-  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: objOnly, sha: SHA }), { tag: "", create: false });
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: objOnly, sha: SHA, attempt: 2 }), {
+    tag: "",
+    create: false,
+  });
 });
 
 test("other tags do not count, also not as prefixes", () => {

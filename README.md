@@ -164,8 +164,9 @@ Merge a pull request that bumps the version (`Cargo.toml`, `Cargo.lock` and
 `npm/splice/package.json` with every platform pin; `node scripts/check-version.mjs` checks them).
 The push to `main` makes `release.yml` tag `v<version>` and build it; after the owner approves the
 `release` environment, it publishes the GitHub release and the npm packages. A push whose version
-is already tagged on another commit releases nothing. The `release` environment must allow
-branch `main` (Settings → Environments → release → deployment branches and tags) next to `v*`.
+is already tagged releases nothing; "Re-run all jobs" on a failed release run retries it. The
+`release` environment must allow branch `main` (Settings → Environments → release → deployment
+branches and tags) next to `v*`.
 
 ## License
 
