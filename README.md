@@ -158,6 +158,14 @@ Renovate can do the same job with a `customManagers` regex entry on `.splice/loc
 with `allowedCommands` set. Without them Renovate only bumps the version string, which breaks the
 lock. That is why the Action is the default. This setup is documented, not shipped.
 
+## Releasing
+
+Merge a pull request that bumps the version (`Cargo.toml`, `Cargo.lock` and
+`npm/splice/package.json` with every platform pin; `node scripts/check-version.mjs` checks them).
+The push to `main` makes `release.yml` tag `v<version>` and build it; after the owner approves the
+`release` environment, it publishes the GitHub release and the npm packages. A push whose version
+is already tagged releases nothing.
+
 ## License
 
 MIT, see [`LICENSE`](LICENSE).
