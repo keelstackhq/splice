@@ -5,22 +5,39 @@ import { releaseTag } from "./release-tag.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
-test("an untagged version gets its tag", () => {
-  assert.equal(releaseTag({ version: "0.2.1", remoteTags: "" }), "v0.2.1");
-  assert.equal(releaseTag({ version: "0.3.0-rc.1", remoteTags: "" }), "v0.3.0-rc.1");
+const OTHER = "fedcba9876543210fedcba9876543210fedcba98";
+const TAGOBJ = "1111111111111111111111111111111111111111";
+
+test("an untagged version is tagged and released", () => {
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: "", sha: SHA }), { tag: "v0.2.1", create: true });
+  assert.deepEqual(releaseTag({ version: "0.3.0-rc.1", remoteTags: "", sha: SHA }), {
+    tag: "v0.3.0-rc.1",
+    create: true,
+  });
 });
 
-test("an existing tag (plain or peeled) means no release", () => {
-  assert.equal(releaseTag({ version: "0.2.1", remoteTags: `${SHA}\trefs/tags/v0.2.1\n` }), "");
-  assert.equal(
-    releaseTag({ version: "0.2.1", remoteTags: `${SHA}\trefs/tags/v0.2.1\n${SHA}\trefs/tags/v0.2.1^{}\n` }),
-    "",
-  );
+test("a tag on another commit releases nothing", () => {
+  const plain = `${OTHER}\trefs/tags/v0.2.1\n`;
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: plain, sha: SHA }), { tag: "", create: false });
+  // Annotated: the peeled commit counts, not the tag object.
+  const annotated = `${TAGOBJ}\trefs/tags/v0.2.1\n${OTHER}\trefs/tags/v0.2.1^{}\n`;
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA }), { tag: "", create: false });
+});
+
+test("a tag on the run's own commit is released again without creating it (re-run)", () => {
+  const annotated = `${TAGOBJ}\trefs/tags/v0.2.1\n${SHA}\trefs/tags/v0.2.1^{}\n`;
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: annotated, sha: SHA }), {
+    tag: "v0.2.1",
+    create: false,
+  });
+  // The annotated tag object's own sha never matches the commit.
+  const objOnly = `${SHA}\trefs/tags/v0.2.1\n${OTHER}\trefs/tags/v0.2.1^{}\n`;
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags: objOnly, sha: SHA }), { tag: "", create: false });
 });
 
 test("other tags do not count, also not as prefixes", () => {
   const remoteTags = [`${SHA}\trefs/tags/v0.2.10`, `${SHA}\trefs/tags/v0.2.1-rc.1`, `${SHA}\trefs/tags/v1`].join("\n");
-  assert.equal(releaseTag({ version: "0.2.1", remoteTags }), "v0.2.1");
+  assert.deepEqual(releaseTag({ version: "0.2.1", remoteTags, sha: SHA }), { tag: "v0.2.1", create: true });
 });
 
 const yml = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
@@ -37,6 +54,9 @@ test("release.yml runs on pushes to main and tags only on keelstackhq/splice mai
   assert.match(tag, /github\.ref == 'refs\/heads\/main'/);
   assert.match(tag, /contents: write/);
   assert.match(tag, /node scripts\/release-tag\.mjs/);
+  assert.match(tag, /if: steps\.decide\.outputs\.create == 'true'/);
+  // A lost push race must not fall back to the planned tag.
+  assert.match(tag, /tag: \$\{\{ steps\.decide\.outputs\.create == 'true' && steps\.tag\.outputs\.tag \|\|/);
 });
 
 test("release.yml publishes only with a computed tag, behind the release environment", () => {

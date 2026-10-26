@@ -24,7 +24,8 @@ jobs:
     permissions:
       contents: write
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      # Created now: only when this run's push won. Already on this commit (a re-run): release again.
+      tag: ${{ steps.decide.outputs.create == 'true' && steps.tag.outputs.tag || steps.decide.outputs.create != 'true' && steps.decide.outputs.tag || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,7 +38,7 @@ jobs:
         run: node scripts/release-tag.mjs
       - name: Create and push the annotated tag
         id: tag
-        if: steps.decide.outputs.tag != ''
+        if: steps.decide.outputs.create == 'true'
         env:
           TAG: ${{ steps.decide.outputs.tag }}
           SHA: ${{ github.sha }}
