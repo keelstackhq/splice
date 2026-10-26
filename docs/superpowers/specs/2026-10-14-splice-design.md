@@ -631,9 +631,10 @@ Items 11–14 and 18 stay splice's own decisions.
   the publish steps are idempotent (`gh release upload --clobber`, published npm versions are
   skipped). The `release` environment must allow branch `main` as well as tags `v*`, because
   deployment rules check the run's ref, which is `refs/heads/main` here. Pushing a tag by hand
-  still releases as before; `workflow_dispatch` is a dry run (check and build, no publish). The `release` and `npm` jobs
-  keep `environment: release`, so the owner's approval is the gate. The tag is computed once in
-  `check` and used by every later job; one release per tag, never cancelled.
+  still releases as before; `workflow_dispatch` is a dry run (check and build, no publish). The
+  `release` and `npm` jobs keep `environment: release`, so the owner's approval is the gate. The
+  tag is computed once in `check` and used by every later job; one release per tag, never
+  cancelled.
 - Builds run in unprivileged jobs; only the tag job (`contents: write`, main pushes, runs only
   `scripts/release-tag.mjs` and `git tag`/`push`), the release job (`contents: write`) and the
   npm job (`id-token: write`, environment `release`) hold privileges, and none of them builds.
