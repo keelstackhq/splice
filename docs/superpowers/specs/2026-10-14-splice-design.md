@@ -620,8 +620,24 @@ Items 11–14 and 18 stay splice's own decisions.
   with `splice[.exe]`, `LICENSE` and `README.md`, and `SHA256SUMS`. The tag, `Cargo.toml` and
   `npm/splice/package.json` (version and every platform pin) must agree, or the release stops
   before building. A version with `-` is a GitHub prerelease.
-- Builds run in unprivileged jobs; only the release job (`contents: write`) and the npm job
-  (`id-token: write`, environment `release`) hold privileges, and neither builds.
+- Releasing is merging a version bump: `release.yml` also runs on every push to `main` (only in
+  `keelstackhq/splice`, never in a fork). Its `tag` job reads the version
+  (`scripts/check-version.mjs`) and asks the remote for `v<version>` (`scripts/release-tag.mjs`);
+  when the tag is missing it creates the annotated tag on the pushed commit with `GITHUB_TOKEN` and
+  the same run checks, builds and publishes it (a `GITHUB_TOKEN` tag push starts no workflow).
+  When the tag exists the run does nothing (a tag a person pushed has its own tag-push run),
+  except on a re-run (`GITHUB_RUN_ATTEMPT` > 1, "Re-run all jobs" after a failed publish) of
+  the run whose commit the tag is on: that releases it again without re-tagging, and
+  the publish steps are idempotent (`gh release upload --clobber`, published npm versions are
+  skipped). The `release` environment must allow branch `main` as well as tags `v*`, because
+  deployment rules check the run's ref, which is `refs/heads/main` here. Pushing a tag by hand
+  still releases as before; `workflow_dispatch` is a dry run (check and build, no publish). The
+  `release` and `npm` jobs keep `environment: release`, so the owner's approval is the gate. The
+  tag is computed once in `check` and used by every later job; one release per tag, never
+  cancelled.
+- Builds run in unprivileged jobs; only the tag job (`contents: write`, main pushes, runs only
+  `scripts/release-tag.mjs` and `git tag`/`push`), the release job (`contents: write`) and the
+  npm job (`id-token: write`, environment `release`) hold privileges, and none of them builds.
 - npm: `@keelstackhq/splice` = a tiny JS launcher (`bin/splice.js`) with the five platform
   packages as exact-version `optionalDependencies`; each platform package declares `os`/`cpu`
   and ships the binary in `bin/`. No install scripts (pnpm blocks them by default). Not

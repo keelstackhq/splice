@@ -1,35 +1,104 @@
 name: release
+# A release runs for a pushed tag `v<semver>`, or for a push to main whose version is not tagged
+# yet: the `tag` job creates the tag and the same run releases it (a tag pushed with GITHUB_TOKEN
+# starts no workflow). `release` and `npm` wait for the `release` environment approval.
+# workflow_dispatch is a dry run: check and build, never publish.
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+*'
   workflow_dispatch:
 concurrency:
-  group: release-${{ github.ref }}
+  # Main pushes never queue behind each other (a pending run would be replaced); release and npm
+  # are serialised per tag instead.
+  group: ${{ github.ref_type == 'branch' && github.event_name == 'push' && format('release-run-{0}', github.run_id) || format('release-{0}', github.ref) }}
   cancel-in-progress: false
 permissions: {}
 jobs:
+  tag:
+    if: github.repository == 'keelstackhq/splice' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      # Created now: only when this run's push won. Already on this commit (a re-run): release again.
+      tag: ${{ steps.decide.outputs.create == 'true' && steps.tag.outputs.tag || steps.decide.outputs.create != 'true' && steps.decide.outputs.tag || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Is this version tagged yet?
+        id: decide
+        run: node scripts/release-tag.mjs
+      - name: Create and push the annotated tag
+        id: tag
+        if: steps.decide.outputs.create == 'true'
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "splice ${TAG#v}" "$SHA"
+          if git push origin "refs/tags/$TAG"; then
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            # Another run (or a person) pushed it first; that run releases it.
+            echo "$TAG appeared meanwhile: nothing to release here"
+          else
+            exit 1
+          fi
+
   check:
+    needs: [tag]
+    # A tag push, a dispatch, or a main push that just created its tag.
+    if: >-
+      !cancelled() && needs.tag.result != 'failure' && (
+        github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' ||
+        needs.tag.outputs.tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.release.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+      - name: The tag to release (empty on a dry run)
+        id: release
+        env:
+          CREATED: ${{ needs.tag.outputs.tag }}
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          tag=$CREATED
+          if [ -z "$tag" ] && [ "$EVENT" = push ] && [ "$REF_TYPE" = tag ]; then tag=$REF_NAME; fi
+          publish=false
+          if [ -n "$tag" ]; then publish=true; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag:-<none>} publish=$publish"
       - name: Check the tag against Cargo.toml and the npm packages
         id: version
         env:
-          EVENT: ${{ github.event_name }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          if [ "$EVENT" = push ]; then
+          if [ -n "$TAG" ]; then
             node scripts/check-version.mjs --tag "$TAG"
           else
             node scripts/check-version.mjs
@@ -37,6 +106,7 @@ jobs:
 
   build:
     needs: [check]
+    if: ${{ !cancelled() && needs.check.result == 'success' }}
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -61,6 +131,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Install musl tools
         if: contains(matrix.target, 'linux-musl')
@@ -111,10 +182,13 @@ jobs:
 
   release:
     needs: [check, build]
-    if: github.event_name == 'push'
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.check.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
+    concurrency:
+      group: release-tag-${{ needs.check.outputs.tag }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -127,7 +201,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.check.outputs.tag }}
           VERSION: ${{ needs.check.outputs.version }}
         run: |
           cd dist
@@ -143,10 +217,13 @@ jobs:
 
   npm:
     needs: [check, build, release]
-    if: github.event_name == 'push'
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.check.outputs.publish == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
+    concurrency:
+      group: release-tag-${{ needs.check.outputs.tag }}-npm
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -157,6 +234,7 @@ jobs:
       # The checkout is only for scripts/ and npm/; no cargo runs in this job.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
