@@ -185,3 +185,60 @@ fn update_keeps_edited_file_that_now_renders_empty() {
     );
     assert!(!tracked(&repo));
 }
+
+#[test]
+fn update_force_keeps_edited_owned_file_that_now_renders_empty() {
+    let tpl = template(GUARDED, false);
+    let repo = new_repo(&tpl);
+    std::fs::write(repo.path().join("ci.yml"), "mine\n").unwrap();
+    std::fs::write(tpl.path().join("pieces/base/files/ci.yml.jinja"), EMPTY).unwrap();
+    commit_tag(tpl.path(), "v2", "v2.0.0");
+    let out = run(&repo, "update", &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    assert!(
+        v["messages"].to_string().contains("no longer shipped"),
+        "{v}"
+    );
+    let change = v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["path"] == "ci.yml")
+        .unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(change["action"], "skip", "{v}");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("ci.yml")).unwrap(),
+        "mine\n"
+    );
+    assert!(!tracked(&repo));
+}
+
+#[test]
+fn update_with_shared_file_deleted_locally_and_now_empty() {
+    let tpl = template(GUARDED, true);
+    let repo = new_repo(&tpl);
+    std::fs::remove_file(repo.path().join("ci.yml")).unwrap();
+    run(&repo, "check", &["--offline"]).success();
+    assert!(tracked(&repo));
+    std::fs::write(tpl.path().join("pieces/base/files/ci.yml.jinja"), EMPTY).unwrap();
+    commit_tag(tpl.path(), "v2", "v2.0.0");
+    let out = run(&repo, "update", &[])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(out);
+    let found = v["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["path"] == "ci.yml");
+    assert!(!found, "{v}");
+    assert!(!repo.path().join("ci.yml").exists());
+    assert!(!tracked(&repo));
+    run(&repo, "check", &[]).success();
+}
