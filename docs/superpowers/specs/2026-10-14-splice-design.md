@@ -235,8 +235,8 @@ var if it declares one, else the piece id; a non-`multiple` piece's name is its 
 Uses the lock's template source and commit (no version change). Refuses a dirty tree or a
 directory outside a git work tree (exit 2) unless `--allow-dirty`, as `update` (§8.3 step 1).
 Validates `multiple`, unique name, `requires`. Because `pieces` changes, every instance is
-re-rendered: base = render of the lock state, theirs = render with the new instance. The result
-goes through the same planner as `update` (§8.4, no `[[remove]]` and no migration steps), so other
+re-rendered: base = render of the lock state, theirs = render with the new instance. A file that
+now renders empty is removed as in §8.4 (§9.27). The result goes through the same planner as `update` (§8.4, no `[[remove]]` and no migration steps), so other
 pieces' `{% if "x" in pieces %}` blocks update with full merge rules (an edited shared file is
 merged). Unlike `update`, `add` never writes conflict markers: on owned drift or any conflict
 (without `--force`) it writes nothing, not even the lock, and exits 1 listing the files as
@@ -323,6 +323,11 @@ L. `sha(O) == L.sha256` means "unedited".
 
 "skip" for seeds means no change entry at all (nothing is reported for an existing seed).
 
+Empty re-render (contract §9.27; templates relying on it set `min_splice` ≥ 0.3.0): a path whose target render is empty (§6) is "gone
+from target", so `add` and `update` apply the "B only" row: delete if unedited (`delete`), else keep
+with the message "no longer shipped by the template but was edited locally; kept". Either way the
+entry leaves the lock; a kept file is not drift and does not by itself fail the run.
+
 `[[remove]]` paths are rendered with each instance of `piece` (template vars only when `piece` is
 absent), and in both cases with `template` (name, and the version updated FROM, contract §9.22)
 and `pieces`, as files are; they
@@ -375,7 +380,8 @@ file containing a line that starts with `<<<<<<< ours`, `||||||| base`, `=======
 block, or `>>>>>>> template`; a newer stable tag than the lock version (for an untagged lock: a stable tag whose commit
 descends from the lock commit, §4; skipped with `--offline`,
 and a fetch failure is a message, not an error). Changes: drift → `update/owned`, markers →
-`conflict/<the file's lock class>`. Every lock path is checked like a write target (relative, no
+`conflict/<the file's lock class>`. An owned file whose render is empty has no lock entry (§8.6),
+so it is never reported as missing. Every lock path is checked like a write target (relative, no
 `..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
 
 With channels (channels spec): without `--channel`, `check` covers the main lock (if there is
