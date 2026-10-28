@@ -1,4 +1,4 @@
-//! Template commands (`[[post]]`, migration `[[step]]`) run without token-like environment
+//! Template commands (`[[post]]`, migration `[[step]]`) run without secret-like environment
 //! variables (spec §8.1, §10 item 22), so template code cannot read the update bot's token.
 
 mod common;
@@ -7,7 +7,17 @@ use common::{commit_all, git, inline_template, splice_cmd, stage_all};
 use tempfile::TempDir;
 
 const DATE: &str = "2026-01-01T00:00:00+00:00";
-const SECRETS: [&str; 4] = ["s3cret-gh", "s3cret-ghs", "s3cret-npm", "s3cret-url"];
+const SECRETS: [&str; 9] = [
+    "s3cret-gh",
+    "s3cret-ghs",
+    "s3cret-npm",
+    "s3cret-url",
+    "s3cret-sops",
+    "s3cret-db",
+    "s3cret-pat",
+    "s3cret-client",
+    "s3cret-auth",
+];
 
 const PIECE: &str = r#"id = "base"
 description = "Base piece"
@@ -23,11 +33,19 @@ when = ["new"]
 
 /// Give a command the secrets plus one harmless variable.
 fn with_env(cmd: &mut assert_cmd::Command) -> &mut assert_cmd::Command {
-    cmd.env("GH_TOKEN", "s3cret-gh")
+    cmd.env("SOPS_AGE_KEY", "s3cret-sops")
+        .env("DB_PASSWORD", "s3cret-db")
+        .env("MY_PAT", "s3cret-pat")
+        .env("CLIENT_SECRET", "s3cret-client")
+        .env("GH_TOKEN", "s3cret-gh")
         .env("GITHUB_TOKEN", "s3cret-ghs")
         .env("NPM_TOKEN", "s3cret-npm")
         .env("ACTIONS_ID_TOKEN_REQUEST_URL", "s3cret-url")
-        .env("SPLICE_KEEP_ME", "visible")
+        .env("SPLICE_KEEP_ME", "visible");
+    // A name with `/` and `:` cannot be set on Windows.
+    #[cfg(unix)]
+    cmd.env("npm_config_//registry.npmjs.org/:_authToken", "s3cret-auth");
+    cmd
 }
 
 fn tagged_template() -> TempDir {
