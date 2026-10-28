@@ -62,6 +62,23 @@ pub fn resolve_vars(
     known: &IndexMap<String, String>,
     src: &VarSource,
 ) -> Result<IndexMap<String, String>> {
+    resolve_vars_hinted(specs, known, src, |name| format!("pass --data {name}=…"))
+}
+
+/// The "missing value" hint for update paths that do not accept `--data` for the var.
+pub fn no_data_hint(_name: &str) -> String {
+    "give it a default in the template, or rerun the command at a terminal without \
+     --yes/--json to be asked for it"
+        .to_string()
+}
+
+/// [`resolve_vars`] with the hint appended to the "missing value" message chosen by the caller.
+pub fn resolve_vars_hinted(
+    specs: &IndexMap<String, VarSpec>,
+    known: &IndexMap<String, String>,
+    src: &VarSource,
+    hint: impl Fn(&str) -> String,
+) -> Result<IndexMap<String, String>> {
     let mut out = IndexMap::new();
     for (name, spec) in specs {
         let value = if let Some(v) = known.get(name).or_else(|| src.data.get(name)) {
@@ -72,7 +89,8 @@ pub fn resolve_vars(
             d.clone()
         } else {
             return Err(SpliceError::Usage(format!(
-                "missing value for var `{name}`; pass --data {name}=…"
+                "missing value for var `{name}`; {}",
+                hint(name)
             )));
         };
         out.insert(name.clone(), value);

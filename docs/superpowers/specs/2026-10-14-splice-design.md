@@ -41,7 +41,8 @@ file, migrations, JSON output and exit codes. This spec only adds what the contr
 Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use defaults),
 `-C <dir>` (repo root, default `.`). Prompts also never appear when stdin is not a TTY or with
 `--json`. A missing value with no default is a usage error (exit 2) naming the variable and the
-`--data` flag to pass.
+`--data` flag to pass; update paths that do not accept `--data` for it (piece vars, `--channel`,
+`--all`, and `diff`) name the default or interactive route instead.
 
 | Command | Purpose |
 |---|---|
@@ -230,9 +231,11 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
 var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
 
-`--data` keys are bare var names: `new` accepts template vars and the vars of the selected pieces;
-any other key, including a dotted `piece.var`, is exit 2, and `:NAME` / `add --name` beat
-`--data name=…` (contract §9.28; pinned by `tests/cli_data_keys.rs`).
+`--data` keys are bare var names: `new` accepts template vars and the vars of the selected pieces,
+and a piece var applies to every selected piece and instance that declares it; any other key,
+including a dotted `piece.var`, is exit 2. `:NAME` / `add --name` beat `--data name=…`, which names
+every un-named instance of a `multiple` piece that declares `name`, so two such instances of one
+piece collide (exit 2). See contract §9.28; pinned by `tests/cli_data_keys.rs`.
 
 ### 8.2 `add`
 
