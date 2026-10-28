@@ -230,10 +230,15 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
 var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
 
+`--data` keys are bare var names: `new` accepts template vars and the vars of the selected pieces;
+any other key, including a dotted `piece.var`, is exit 2, and `:NAME` / `add --name` beat
+`--data name=…` (contract §9.28; pinned by `tests/cli_data_keys.rs`).
+
 ### 8.2 `add`
 
-Uses the lock's template source and commit (no version change). Refuses a dirty tree or a
-directory outside a git work tree (exit 2) unless `--allow-dirty`, as `update` (§8.3 step 1).
+Uses the lock's template source and commit (no version change). `--data` accepts only the added piece's vars (§9.28).
+Refuses a dirty tree or a directory outside a git work tree (exit 2) unless `--allow-dirty`, as
+`update` (§8.3 step 1).
 Validates `multiple`, unique name, `requires`. Because `pieces` changes, every instance is
 re-rendered: base = render of the lock state, theirs = render with the new instance. A file that
 now renders empty is removed as in §8.4 (§9.27). The result goes through the same planner as `update` (§8.4, no `[[remove]]` and no migration steps), so other

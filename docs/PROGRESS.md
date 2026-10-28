@@ -79,6 +79,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-25 · 05/fix · 923e533 · review round: source fetched once per update, a lock commit missing from the source is a clear exit 3, tests pin migration ancestry (§10.21) and prerelease/self-tag cases
 - 2026-10-26 · release · ci: a merged version bump tags and releases itself · merging a version bump to main tags and releases it (`release.yml` tag job, `scripts/release-tag.mjs`); node 58 passing
 - 2026-10-27 · SP-1 · rule 9.27 (empty re-render removes owned file) · behaviour already in planner; added tests/empty_rerender.rs 3 passing, contract + spec text
+- 2026-10-28 · SP-2 · rule 9.28 (`--data` keys) · behaviour already in new/add/update; added tests/cli_data_keys.rs 12 passing, contract + spec text
 
 ## Blocked
 
