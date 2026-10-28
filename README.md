@@ -4,8 +4,8 @@ Start a repo from versioned template pieces and keep it up to date. A Copier alt
 static binary: no Python, no Rust toolchain. Part of [keelstackhq](https://github.com/keelstackhq):
 tools for bootstrapping projects.
 
-> Status: 0.2.0 is released (GitHub release `v0.2.0`, npm `@keelstackhq/splice`, Action
-> `keelstackhq/splice/action@v1`). Design:
+> Status: 0.3.0 is released (GitHub release `v0.3.0`, npm `@keelstackhq/splice`, Action
+> `keelstackhq/splice/action`, pinned by commit SHA as below). Design:
 > `docs/superpowers/specs/2026-10-14-splice-design.md`. New here? Start with
 > [`docs/getting-started.md`](docs/getting-started.md).
 
@@ -117,18 +117,31 @@ splice channel remove rig              # delete unedited files, strip its blocks
 on:
   schedule: [{ cron: "17 6 * * 1" }]
   workflow_dispatch:
-permissions: { contents: write, pull-requests: write }
+permissions: { contents: read }   # the Action pushes and opens the PR with `token` only
 jobs:
   update:
     runs-on: ubuntu-latest
+    environment: splice-bot           # deployment branches: main only; holds the app key
     steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ vars.SPLICE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SPLICE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: keelstackhq/splice/action@v1
+      - uses: keelstackhq/splice/action@5d64f250fd1e0fcf27690b425a2f9f8de5fd4ac0 # v0.3.0
         with:
-          token: ${{ secrets.SPLICE_BOT_TOKEN }}   # GITHUB_TOKEN works, but its PRs do not trigger CI
+          token: ${{ steps.app-token.outputs.token }}
 ```
+
+Pin every action by full commit SHA with the tag as a comment, as above; Renovate (or Dependabot)
+bumps SHA and comment together. `create-github-app-token` v3.3.0 is commit `64ab729…`
+(2026-10-12); `keelstackhq/splice/action` v0.3.0 is `5d64f25…`.
 
 It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
 
@@ -146,9 +159,19 @@ body by source; `to` needs `scope: main`), `token` (default `github.token`), `br
 | `current` | nothing to do | closes an open bot PR |
 | `drift` | owned files edited locally | fails with splice's messages, pushes nothing |
 
-Pushes and PRs made with `GITHUB_TOKEN` do not trigger `pull_request` workflows; pass a GitHub
-App or fine-grained token as `token` to get CI on the bot PR. The push always uses `token`, even if checkout kept its credentials, and it also authenticates the template fetches of `splice update` (private templates). Run the bot right after checkout: untracked files left by earlier steps count as an update and get committed. The job needs
-`contents: write` and `pull-requests: write`.
+**Token.** Plain `GITHUB_TOKEN` (the default) cannot push changes under `.github/workflows/`, and
+the PRs it opens trigger no `pull_request` workflows, so the bot PR gets no CI. Use a GitHub App
+token as above: the app needs Contents and Pull requests (read and write), plus Workflows when
+updates touch workflow files, and its key lives in an environment limited to `main`. Without a
+bot, run the update in a session and open the PR yourself ("session mode"). Both, and a
+fine-grained token as a last resort, are spelled out in
+[`docs/getting-started.md` section 8](docs/getting-started.md#8-automate-updates-with-the-bot).
+The push always uses `token`, even if checkout kept its credentials, and it also authenticates the
+template fetches of `splice update`: for a private template or channel repo, install the app there
+too and give the token step `owner:` and `repositories:` naming this repo and the template repos.
+Run the bot right after checkout: untracked files left by earlier steps count as an update and get
+committed. The job itself needs only `contents: read`; `token` needs Contents and Pull requests
+(write), plus Workflows when updates touch workflow files.
 
 ### Renovate instead of the Action
 
