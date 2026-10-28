@@ -244,3 +244,44 @@ fn update_data_cannot_set_new_piece_var() {
     let (_repo, a) = update_v2("{ prompt = \"e\" }", &["--yes", "--data", "extra=z"]);
     fails(a, 2, "is a piece variable");
 }
+
+#[test]
+fn new_sets_template_var() {
+    let tpl = template("[vars]\nscope = { prompt = \"s\", default = \"a\" }\n");
+    let file = tpl.path().join("pieces/base/files/base.txt.jinja");
+    std::fs::write(file, "b{{ port }}{{ scope }}\n").unwrap();
+    commit_tag(tpl.path(), "v2", "v2.0.0");
+    let repo = tempfile::tempdir().unwrap();
+    new(&tpl, &repo, &["--data", "scope=z"]).success();
+    assert_eq!(read(&repo, "base.txt"), "b1z\n");
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    assert_eq!(lock.vars["scope"], "z");
+}
+
+#[test]
+fn add_piece_var_leaves_locked_pieces_alone() {
+    let repo = tempfile::tempdir().unwrap();
+    new(&template(""), &repo, &["--data", "port=7"]).success();
+    in_repo(&repo, &["add", "x", "--yes", "--data", "port=9"]).success();
+    assert_eq!(
+        (read(&repo, "base.txt"), read(&repo, "x.txt")),
+        ("b7\n".into(), "x9\n".into())
+    );
+    let lock = Lock::read(repo.path()).unwrap().unwrap();
+    let port = |id: &str| lock.pieces.iter().find(|p| p.id == id).unwrap().vars["port"].clone();
+    assert_eq!(
+        (port("base"), port("x")),
+        ("7".to_string(), "9".to_string())
+    );
+}
+
+#[test]
+fn add_rejects_var_of_another_locked_piece() {
+    let repo = tempfile::tempdir().unwrap();
+    new(&template(""), &repo, &["--piece", "y"]).success();
+    fails(
+        in_repo(&repo, &["add", "x", "--yes", "--data", "k=1"]),
+        2,
+        "no such variable in piece",
+    );
+}

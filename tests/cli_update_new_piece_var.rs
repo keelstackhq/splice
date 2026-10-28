@@ -116,3 +116,9 @@ fn new_channel_template_var_hint_does_not_suggest_data() {
     commit_tag(ch.path(), "v3", "v3.0.0");
     no_data_hint(&output(&repo, &["update", "--channel", "rig"]));
 }
+
+#[test]
+fn new_template_var_hint_on_diff_does_not_suggest_data() {
+    let (_tpl, repo) = v2_repo(add_template_var);
+    no_data_hint(&output(&repo, &["diff"]));
+}
