@@ -69,7 +69,8 @@ binary with no Python, so `pnpm dlx` is enough, and it classifies every file (`o
 `seed`) so that `update` knows what may be replaced, merged or left alone. Templates use a small
 Jinja subset that any implementation can follow, not Python-specific features. splice does not
 run arbitrary template code; it runs only the `post` commands and migration steps a template
-declares. It does not read Copier templates.
+declares, without secret-like environment variables (`GH_TOKEN`, `NPM_TOKEN`, `DB_PASSWORD`, ...),
+so a post or step that needs a token is not supported. It does not read Copier templates.
 
 ## Channels
 
@@ -169,6 +170,14 @@ fine-grained token as a last resort, are spelled out in
 The push always uses `token`, even if checkout kept its credentials, and it also authenticates the
 template fetches of `splice update`: for a private template or channel repo, install the app there
 too and give the token step `owner:` and `repositories:` naming this repo and the template repos.
+Template `post` commands and migration steps run without secret-like environment variables
+(names ending in `_TOKEN`, `_PAT`, `_SECRET`, `_PASSWORD` or `_KEY`, with a `TOKEN` or `SECRET` part
+elsewhere, or `npm_config_*_auth*`); a post or step that needs a token is not supported. This
+keeps the bot's token out of tool logs, telemetry and package lifecycle scripts. It does not
+contain hostile template code: a process of the same user can still read splice's own environment
+(on Linux, `/proc/<pid>/environ`). Use templates you trust, give the bot a token scoped to this
+repository, and keep `persist-credentials: false` on checkout so the job's `GITHUB_TOKEN` is not
+left in `.git/config` either.
 Run the bot right after checkout: untracked files left by earlier steps count as an update and get
 committed. The job itself needs only `contents: read`; `token` needs Contents and Pull requests
 (write), plus Workflows when updates touch workflow files.

@@ -1,6 +1,7 @@
 //! `[[post]]` commands and migration steps (spec §8.1). Template commands are POSIX `sh -c` on
 //! every OS; there is no `cmd /C`.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -81,6 +82,24 @@ fn sh_command() -> Result<Command, SpliceError> {
     Ok(Command::new("sh"))
 }
 
+/// Whether an environment variable looks like a credential. The name is ASCII-uppercased and
+/// split on `_` (empty segments ignored). It matches when the last segment is `TOKEN`, `PAT`,
+/// `SECRET`, `PASSWORD` or `KEY` (`GH_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`), when an
+/// earlier segment is `TOKEN` or `SECRET` (`ACTIONS_ID_TOKEN_REQUEST_URL`), or when it starts
+/// with `NPM_CONFIG_` and contains `_AUTH` (`npm_config_//registry.npmjs.org/:_authToken`).
+/// `AWS_ACCESS_KEY_ID` (last segment `ID`) and `SSH_AUTH_SOCK` are kept. Non-UTF-8 names are
+/// compared lossily (invalid bytes become U+FFFD, which never forms or hides a match).
+fn is_secret_var(name: &OsStr) -> bool {
+    let n = name.to_string_lossy().to_ascii_uppercase();
+    let segs: Vec<&str> = n.split('_').filter(|s| !s.is_empty()).collect();
+    let Some((last, rest)) = segs.split_last() else {
+        return false;
+    };
+    matches!(*last, "TOKEN" | "PAT" | "SECRET" | "PASSWORD" | "KEY")
+        || rest.iter().any(|s| matches!(*s, "TOKEN" | "SECRET"))
+        || (n.starts_with("NPM_CONFIG_") && n.contains("_AUTH"))
+}
+
 /// Run `run` through the shell with `repo` as working directory and `envs` added. Our stdout is
 /// for the report only: the child's stdout joins its stderr on ours, and both stream as they are
 /// produced. With `json` its stdin is closed.
@@ -93,6 +112,12 @@ fn run_shell(
     let mut shell = sh_command()?;
     shell.args(["-c", run]);
     shell.current_dir(repo);
+    // Template code must not see the update bot's token or other secrets (spec §8.1); our own git calls keep it.
+    for (name, _) in std::env::vars_os() {
+        if is_secret_var(&name) {
+            shell.env_remove(name);
+        }
+    }
     shell.envs(envs.iter().map(|(k, v)| (*k, v.as_str())));
     let out = match stderr_stdio() {
         Ok(o) => o,
@@ -192,6 +217,73 @@ fn stderr_stdio() -> std::io::Result<Stdio> {
 
 fn spawn_error(run: &str, e: &std::io::Error) -> SpliceError {
     SpliceError::Env(format!("cannot run post command `{run}`: {e}"))
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::is_secret_var;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn token_like_names() {
+        let yes = [
+            "TOKEN",
+            "token",
+            "PAT",
+            "SECRET",
+            "PASSWORD",
+            "KEY",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_ENTERPRISE_TOKEN",
+            "GITHUB_ENTERPRISE_TOKEN",
+            "NPM_TOKEN",
+            "NODE_AUTH_TOKEN",
+            "CARGO_REGISTRY_TOKEN",
+            "ACTIONS_RUNTIME_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+            "Github_Token",
+            "MY_PAT",
+            "my_pat",
+            "CLIENT_SECRET",
+            "DB_PASSWORD",
+            "Db_Password",
+            "SOPS_AGE_KEY",
+            "APP_PRIVATE_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "X_SECRET_VALUE",
+            "__TOKEN__",
+            "NPM_CONFIG__AUTH",
+            "NPM_CONFIG__AUTHTOKEN",
+            "npm_config_//registry.npmjs.org/:_authToken",
+            "NPM_CONFIG_//REGISTRY.NPMJS.ORG/:_AUTH",
+        ];
+        let no = [
+            "TOKENIZER_PATH",
+            "MY_TOKENS",
+            "TOKENS",
+            "PATH",
+            "HOME",
+            "SPLICE_TO_VERSION",
+            "SPLICE_FROM_VERSION",
+            "XTOKEN",
+            "KEYBOARD",
+            "PATTERN",
+            "SECRETS_DIR",
+            "PATH_KEYS",
+            "NPM_CONFIG_REGISTRY",
+            "AWS_ACCESS_KEY_ID",
+            "SSH_AUTH_SOCK",
+            "",
+        ];
+        for n in yes {
+            assert!(is_secret_var(OsStr::new(n)), "{n}");
+        }
+        for n in no {
+            assert!(!is_secret_var(OsStr::new(n)), "{n}");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]
