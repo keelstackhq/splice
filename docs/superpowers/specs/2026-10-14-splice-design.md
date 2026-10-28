@@ -228,6 +228,8 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
    then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
    leaves the files but no lock; `new --force` redoes it.
 
+Template commands (`[[post]]` and migration `[[step]]`) run without token-like environment variables: any variable whose name, ASCII-uppercased, is `TOKEN`, ends with `_TOKEN` or contains `_TOKEN_` (`GH_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `ACTIONS_ID_TOKEN_REQUEST_URL`, ...) is removed from the child's environment; a post or step that needs a token is not supported. splice's own git calls keep the token. This is defence in depth against accidental leaks (tool logs, telemetry, lifecycle scripts), not a sandbox: a same-user process can still read splice's own environment (`/proc/<pid>/environ` on Linux), so templates stay trusted code.
+
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
 var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
 
@@ -278,6 +280,7 @@ the same `add` is safe because a file that already equals the new render is skip
 7. **Apply:** write files, delete removals, run migration `[[step]]`s for versions A < v ≤ B in
    semver order (an untagged side selects by ancestry, §10 item 21; env `SPLICE_FROM_VERSION`, `SPLICE_TO_VERSION`), run `[[post]]` with
    `when` ∋ `update`, then write the lock atomically (§8.6) as the last step (as in §8.1 and §8.6).
+   Steps and post commands run without token-like environment variables (§8.1).
    A failing step or post command exits 3 **before** the lock is written: the files are updated
    but the lock still records the old state, and re-running `update` is safe (after restoring,
    or at once with `--allow-dirty`: the re-run converges on the same result). The restore hint
@@ -610,6 +613,7 @@ Items 11–14 and 18 stay splice's own decisions.
       order. A migration without its tag does not run then. Tracked channels still run none (B5).
       Two tagged sides select by semver exactly as the contract says.
     - The lock shape is unchanged: `version = "0.0.0+g<sha7>"` and the full `commit`.
+22. Token-like variables are not passed to template commands (security: the update Action runs `splice update` with `GH_TOKEN`, and a post such as `pnpm install` loads repo code). Rule: name ASCII-uppercased is `TOKEN`, ends with `_TOKEN` or contains `_TOKEN_`; non-UTF-8 names are compared lossily. Applies to `run_shell`, so to both post commands and steps; git calls made by splice keep the token. Not a sandbox: splice cannot scrub its own environment (no `unsafe`), which a same-user child can read.
 
 ## 11. Testing
 

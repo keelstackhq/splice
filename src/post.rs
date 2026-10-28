@@ -1,6 +1,7 @@
 //! `[[post]]` commands and migration steps (spec §8.1). Template commands are POSIX `sh -c` on
 //! every OS; there is no `cmd /C`.
 
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -81,6 +82,15 @@ fn sh_command() -> Result<Command, SpliceError> {
     Ok(Command::new("sh"))
 }
 
+/// Whether an environment variable looks like a credential: its name, ASCII-uppercased, is
+/// `TOKEN`, ends with `_TOKEN` or contains `_TOKEN_` (`GH_TOKEN`, `NODE_AUTH_TOKEN`,
+/// `ACTIONS_ID_TOKEN_REQUEST_URL`, ...). Non-UTF-8 names are compared lossily (invalid bytes
+/// become U+FFFD, which never forms or hides a match).
+fn is_token_var(name: &OsStr) -> bool {
+    let n = name.to_string_lossy().to_ascii_uppercase();
+    n == "TOKEN" || n.ends_with("_TOKEN") || n.contains("_TOKEN_")
+}
+
 /// Run `run` through the shell with `repo` as working directory and `envs` added. Our stdout is
 /// for the report only: the child's stdout joins its stderr on ours, and both stream as they are
 /// produced. With `json` its stdin is closed.
@@ -93,6 +103,12 @@ fn run_shell(
     let mut shell = sh_command()?;
     shell.args(["-c", run]);
     shell.current_dir(repo);
+    // Template code must not see the update bot's token (spec §8.1); our own git calls keep it.
+    for (name, _) in std::env::vars_os() {
+        if is_token_var(&name) {
+            shell.env_remove(name);
+        }
+    }
     shell.envs(envs.iter().map(|(k, v)| (*k, v.as_str())));
     let out = match stderr_stdio() {
         Ok(o) => o,
@@ -192,6 +208,48 @@ fn stderr_stdio() -> std::io::Result<Stdio> {
 
 fn spawn_error(run: &str, e: &std::io::Error) -> SpliceError {
     SpliceError::Env(format!("cannot run post command `{run}`: {e}"))
+}
+
+#[cfg(test)]
+mod token_tests {
+    use super::is_token_var;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn token_like_names() {
+        let yes = [
+            "TOKEN",
+            "token",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "GH_ENTERPRISE_TOKEN",
+            "GITHUB_ENTERPRISE_TOKEN",
+            "NPM_TOKEN",
+            "NODE_AUTH_TOKEN",
+            "CARGO_REGISTRY_TOKEN",
+            "ACTIONS_RUNTIME_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+            "Github_Token",
+        ];
+        let no = [
+            "TOKENIZER_PATH",
+            "MY_TOKENS",
+            "TOKENS",
+            "PATH",
+            "HOME",
+            "SPLICE_TO_VERSION",
+            "SPLICE_FROM_VERSION",
+            "XTOKEN",
+            "",
+        ];
+        for n in yes {
+            assert!(is_token_var(OsStr::new(n)), "{n}");
+        }
+        for n in no {
+            assert!(!is_token_var(OsStr::new(n)), "{n}");
+        }
+    }
 }
 
 #[cfg(all(test, unix))]

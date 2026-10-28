@@ -80,6 +80,7 @@ One line per finished task: `YYYY-MM-DD · plan/task · commit · test summary`.
 - 2026-10-26 · release · ci: a merged version bump tags and releases itself · merging a version bump to main tags and releases it (`release.yml` tag job, `scripts/release-tag.mjs`); node 58 passing
 - 2026-10-27 · SP-1 · rule 9.27 (empty re-render removes owned file) · behaviour already in planner; added tests/empty_rerender.rs 3 passing, contract + spec text
 - 2026-10-28 · SP-2 · rule 9.28 (`--data` keys) · behaviour already in new/add/update; added tests/cli_data_keys.rs 12 passing, contract + spec text
+- 2026-10-28 · fix/strip-tokens · see git log · template commands run without token-like env vars (spec §8.1, §10 item 22); post_env 2 and unit table passing
 
 ## Blocked
 
