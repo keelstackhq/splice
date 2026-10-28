@@ -25,7 +25,8 @@ use crate::sections::{SectionChange, SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
 use crate::sources::{Claim, SourceId, Sources, check_claims, claims_last};
 use crate::vars::{
-    VarSource, check_instance_name, instance_name, interactive, name_source, resolve_vars,
+    VarSource, check_instance_name, instance_name, interactive, name_source, no_data_hint,
+    resolve_vars, resolve_vars_hinted,
 };
 
 type Result<T> = std::result::Result<T, SpliceError>;
@@ -232,6 +233,7 @@ fn prepare_lock(
     data: &IndexMap<String, String>,
     kind: Kind,
     force: bool,
+    data_ok: bool,
 ) -> Result<Resolved> {
     let from = lock.template.version.clone();
     let mut messages = Vec::new();
@@ -407,7 +409,11 @@ fn prepare_lock(
         interactive: interactive(g),
     };
     // Lock values are kept; vars new in the target are resolved; dropped vars disappear.
-    let vars = resolve_vars(&template.manifest.vars, &lock.vars, &source)?;
+    let vars = if data_ok {
+        resolve_vars(&template.manifest.vars, &lock.vars, &source)?
+    } else {
+        resolve_vars_hinted(&template.manifest.vars, &lock.vars, &source, no_data_hint)?
+    };
     let lock_path = match kind {
         Kind::Main => crate::lock::LOCK_PATH,
         Kind::Channel { lock_path, .. } => lock_path,
@@ -426,7 +432,8 @@ fn prepare_lock(
         instances.push(PieceInstance {
             id: inst.id.clone(),
             name: inst.name.clone(),
-            vars: resolve_vars(&piece.vars, &inst.vars, &piece_source)?,
+            // `update` never takes `--data` for piece vars, so the hint must not suggest it.
+            vars: resolve_vars_hinted(&piece.vars, &inst.vars, &piece_source, no_data_hint)?,
         });
     }
 
@@ -565,6 +572,7 @@ pub fn prepare(
     target: Target,
     data: &IndexMap<String, String>,
     force: bool,
+    data_ok: bool,
 ) -> Result<Prepared> {
     let repo = g.dir.as_path();
     let Some(lock) = Lock::read(repo)? else {
@@ -573,7 +581,7 @@ pub fn prepare(
             repo.display()
         ));
     };
-    let mut r = prepare_lock(g, &lock, target, data, Kind::Main, force)?;
+    let mut r = prepare_lock(g, &lock, target, data, Kind::Main, force, data_ok)?;
     let Some(rendered) = r.rendered.take() else {
         r.messages.push(up_to_date_message(&r));
         return Ok(Prepared {
@@ -670,7 +678,7 @@ pub fn prepare_channel(
         render_current: filter_new.is_some(),
         lock_path: &lock_path,
     };
-    let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind, force)?;
+    let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind, force, false)?;
     let me = SourceId::Channel(name.to_string());
     let Some(rendered) = r.rendered.take() else {
         r.messages.push(up_to_date_message(&r));
@@ -870,7 +878,7 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         return usage(format!("no {LOCK_PATH}; use --channel NAME or --all"));
     }
     let target = target_of(to.as_ref(), a.git_ref.as_deref());
-    let prep = prepare(g, target, &data, a.force)?;
+    let prep = prepare(g, target, &data, a.force, true)?;
 
     if prep.up_to_date {
         let mut report = Report::new("update");
@@ -1133,7 +1141,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     let mut written = Written::new();
     let mut all: Vec<AllSource> = Vec::new();
     if sources.main.is_some() {
-        let prep = prepare(g, Target::Latest, &IndexMap::new(), a.force)?;
+        let prep = prepare(g, Target::Latest, &IndexMap::new(), a.force, false)?;
         planned.push(Claim::from_lock(
             SourceId::Main,
             &prep.lock_new,

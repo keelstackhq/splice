@@ -22,7 +22,7 @@ pub fn run(g: &GlobalArgs, a: &DiffArgs) -> Result<Report> {
         return run_channel(g, name, target_of(to.as_ref(), a.git_ref.as_deref()));
     }
     let target = target_of(to.as_ref(), a.git_ref.as_deref());
-    let prep = prepare(g, target, &IndexMap::new(), false)?;
+    let prep = prepare(g, target, &IndexMap::new(), false, false)?;
     let mut report = Report::new("diff");
     report.messages = prep.messages;
     for c in &prep.plan.changes {
