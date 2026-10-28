@@ -5,10 +5,9 @@ and kept current by a weekly pull request. The output blocks were captured from 
 binary (splice 0.2.0) against a local copy of the test template (`tests/fixtures/template`,
 versions 1.0.0 and 2.0.0). They are shortened, and hull's own file names will differ.
 
-> Until the first release, neither the npm package `@keelstackhq/splice` nor the update Action
-> `keelstackhq/splice/action@v1` is published. Use a release binary, or build one with
-> `cargo build --release` (the binary is `target/release/splice`), and write `splice` instead of
-> `pnpm dlx @keelstackhq/splice` in every command below.
+> Without Node, use a release binary, or build one with `cargo build --release` (the binary is
+> `target/release/splice`), and write `splice` instead of `pnpm dlx @keelstackhq/splice` in every
+> command below.
 
 ## 1. Prerequisites
 
@@ -259,7 +258,41 @@ the channel source instead. The README section "Channels" lists the flags (`--on
 
 ## 8. Automate updates with the bot
 
-Save as `.github/workflows/splice-update.yml`:
+The bot is the `keelstackhq/splice/action` Action: it runs `splice update` and opens or refreshes
+one pull request from the branch `splice/update` (title prefixed `[conflicts]` when markers were
+written), and closes it when you are current. Owned drift and template errors fail the job. If
+the repo has channels, the bot updates them too (the `scope` input, default `all` when
+`.splice/channels/` holds a `*.toml`). Inputs and outputs are in
+[the README](../README.md#update-bot).
+
+**What plain `GITHUB_TOKEN` cannot do.** Templates ship workflow files, and the default
+`GITHUB_TOKEN`:
+
+- cannot push changes under `.github/workflows/` (the push is refused), so any template update
+  that touches a workflow fails;
+- opens a pull request that triggers no `pull_request` workflows, so the bot PR gets no CI checks
+  and a branch ruleset that requires them blocks the merge.
+
+It works only while no update touches a workflow and you accept PRs without CI. Pick one of the
+paths below instead; none needs a personal access token.
+
+### 8.1 A GitHub App token (recommended)
+
+1. Create a GitHub App owned by your org (Settings, Developer settings, GitHub Apps, New). No
+   webhook. Repository permissions: **Contents: Read and write**, **Pull requests: Read and
+   write**, and **Workflows: Read and write** (updates that change files under
+   `.github/workflows/` need it, and hull's do; the workflow below requests it, so token creation
+   fails without it). Install it on this repository. If the template or a channel repo is
+   private, install it there too and add `owner:` and `repositories:` (this repo and the
+   template repos) to the token step, because the token also fetches the templates.
+2. Generate a private key for the app. Note its client ID.
+3. In the repository, create an environment `splice-bot` (Settings, Environments). Under
+   "Deployment branches and tags" choose "Selected branches and tags" and add `main` only. Add
+   the private key as the environment secret `SPLICE_APP_PRIVATE_KEY` and the client ID as the
+   environment variable `SPLICE_APP_CLIENT_ID`. Only jobs that run on `main` and name this
+   environment can read the key. The default branch must be `main`, since scheduled runs start
+   there, and the environment needs no required reviewers or wait timer, or the weekly run waits.
+4. Save as `.github/workflows/splice-update.yml`:
 
 ```yaml
 name: splice-update
@@ -267,38 +300,63 @@ on:
   schedule: [{ cron: "17 6 * * 1" }]   # weekly, Monday 06:17 UTC
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read   # the Action pushes and opens the PR with the app token only
 jobs:
   update:
     runs-on: ubuntu-latest
+    environment: splice-bot
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: keelstackhq/splice/action@v1
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
         with:
-          token: ${{ secrets.SPLICE_BOT_TOKEN || github.token }}
+          client-id: ${{ vars.SPLICE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SPLICE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: keelstackhq/splice/action@5d64f250fd1e0fcf27690b425a2f9f8de5fd4ac0 # v0.3.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
 ```
 
-It opens or refreshes one pull request from the branch `splice/update` (title prefixed
-`[conflicts]` when markers were written), and closes it when you are current. Owned drift and
-template errors fail the job. If the repo has channels, the bot updates them too (the `scope`
-input, default `all` when `.splice/channels/` holds a `*.toml`). Inputs and outputs are in
-[the README](../README.md#update-bot).
+The token is short-lived (one hour) and is revoked when the job ends. `create-github-app-token`
+v3.3.0 is commit `64ab729…` (2026-10-12), and `keelstackhq/splice/action` v0.3.0 is commit
+`5d64f25…`. Actions are pinned by full commit SHA, with the tag as a comment; Renovate's
+`github-actions` manager (or Dependabot) reads the comment and bumps SHA and comment together.
+Run the workflow once by hand (Actions, splice-update, Run workflow) to see it work. Merge the PR
+like any other.
 
-**Why a token.** The default `GITHUB_TOKEN` cannot push changes under `.github/workflows/`, and
-templates ship workflow files. Pull requests it opens also do not trigger your CI workflows, so
-the bot PR would get no checks. Create one of:
+### 8.2 Session mode (no bot workflow)
 
-1. A fine-grained personal access token: resource owner is you or your org, repository access is
-   only this repository, permissions Contents, Pull requests and Workflows, each "Read and
-   write".
-2. A GitHub App installed on the repository with the same three permissions; generate an
-   installation token in the workflow (for example with `actions/create-github-app-token`) and
-   pass that as `token`.
+No workflow and no stored token: a person, or an agent session with push access, runs the update
+on a branch and opens the PR. CI runs as for any PR you push.
 
-Store it under Settings, Secrets and variables, Actions, as `SPLICE_BOT_TOKEN`. Without it the
-`||` falls back to `github.token` and the limits above apply. Run the workflow once by hand
-(Actions, splice-update, Run workflow) to see it work. Merge the PR like any other.
+```bash
+git switch main && git pull
+git switch -C splice/update-manual   # not the bot's branch
+pnpm dlx @keelstackhq/splice update --all --yes   # main template and every channel
+pnpm dlx @keelstackhq/splice check                # exit 0, or fix what it lists
+git add -A && git commit -m "chore: splice update"
+git push -u origin splice/update-manual
+gh pr create   # or open the PR in the GitHub UI
+```
+
+`update` exits 0 when it applied cleanly or there was nothing to do. Exit 1 means owned drift
+(nothing written: revert the files or pass `--force`) or conflicts (diff3 markers written:
+resolve them, section 6, before you commit). `splice check` then confirms no markers are left.
+Run `splice check` from CI or a scheduled job if you want to be told when an update is
+available (exit 1).
+
+### 8.3 A fine-grained personal access token (fallback)
+
+Only if you cannot create an app: resource owner is you or your org, repository access is only
+this repository, permissions Contents, Pull requests and Workflows, each "Read and write". Store
+it in the `splice-bot` environment (as in 8.1) as `SPLICE_BOT_TOKEN` and pass
+`token: ${{ secrets.SPLICE_BOT_TOKEN }}` instead of the app token step. It is tied to a person
+and lives until it expires, which is why the app is preferred.
 
 ## 9. Troubleshooting by exit code
 
