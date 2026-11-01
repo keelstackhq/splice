@@ -81,6 +81,7 @@ channel. Details: `docs/superpowers/specs/2026-10-17-splice-channels-design.md`.
 
 ```bash
 splice channel add gh:keelstackhq/decisions//channel --track main --piece import-project
+splice channel add gh:keelstackhq/decisions//channel --track main --piece portable --piece import-claude  # a repo in another org: only decisions scoped `all orgs`
 splice channel add <source> --as rig --piece claude --only 'docs/**' --exclude '.claude/hooks/**'
 splice add skills --channel rig --name agents --data dir=agents   # another piece instance
 splice update --channel rig            # one channel; --only/--exclude replace the stored filters
