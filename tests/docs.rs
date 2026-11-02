@@ -17,6 +17,7 @@ fn docs_mention_only_real_flags() {
     for args in [
         vec!["--help"], // --version
         vec!["new", "--help"],
+        vec!["adopt", "--help"],
         vec!["add", "--help"],
         vec!["update", "--help"],
         vec!["check", "--help"],

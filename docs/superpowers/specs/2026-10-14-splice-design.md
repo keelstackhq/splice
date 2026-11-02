@@ -46,7 +46,8 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 
 | Command | Purpose |
 |---|---|
-| `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
+| `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force] [--allow-dirty]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
+| `splice adopt <source> [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--dry-run] [--force] [--allow-dirty] [--no-post]` | Apply the main template to an existing repo that has no lock (§8.1a). |
 | `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
 | `splice update [--to VERSION \| --ref R] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag), or with `--ref` to a descendant git ref (§4). `--channel` updates one channel, `--all` the main template and every channel. |
 | `splice check [--offline] [--channel NAME]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
@@ -228,6 +229,10 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
    then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
    leaves the files but no lock; `new --force` redoes it.
 
+When `dest` already has entries besides `.git` (the `--force` path) and is inside a git work tree
+with uncommitted changes, `new` refuses (exit 2) unless `--allow-dirty`; an empty `dest`, even
+inside a dirty repo, is fine. The non-empty rule of step 2 is unchanged.
+
 Template commands (`[[post]]` and migration `[[step]]`) run without secret-like environment variables: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD` or `KEY`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`GH_TOKEN`, `NPM_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`, `ACTIONS_ID_TOKEN_REQUEST_URL`, `npm_config_//registry.npmjs.org/:_authToken`, ...) is removed from the child's environment; a post or step that needs a token is not supported. splice's own git calls keep the token. This is defence in depth against accidental leaks (tool logs, telemetry, lifecycle scripts), not a sandbox: a same-user process can still read splice's own environment (`/proc/<pid>/environ` on Linux), so templates stay trusted code.
 
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
@@ -238,6 +243,35 @@ and a piece var applies to every selected piece and instance that declares it; a
 including a dotted `piece.var`, is exit 2. `:NAME` / `add --name` beat `--data name=…`, which names
 every un-named instance of a `multiple` piece that declares `name`, so two such instances of one
 piece collide (exit 2). See contract §9.28; pinned by `tests/cli_data_keys.rs`.
+
+### 8.1a `adopt`
+
+Applies the main template to a repo that already has files and no `.splice/lock.toml` (a lock
+present is exit 2). Like `add`/`update` it refuses a dirty tree or a directory outside a git work
+tree (exit 2) unless `--allow-dirty`. It resolves, renders and asks for vars exactly as `new`, then
+plans with an empty base and no locked files (the planner of §8.4, as `channel add`), per path:
+
+- **owned**: absent → `create`; present and identical → `skip`; present and different → drift:
+  refused unless `--force` (then `update`).
+- **shared**: absent → `create`; present → `merge3` against an empty base (`merge`, or `conflict`
+  with diff3 markers).
+- **seed**: absent → `create`; present → kept byte for byte (`skip`).
+
+Drift without `--force` writes nothing (no files, no lock, no post), exits 1, and gives each path a
+message starting with the stable prefix `refuse: ` followed by the path in backticks. With
+`--force` the replaced paths get `replace: `PATH` …` messages instead (`… would be replaced` in a dry run). Otherwise files are written,
+`[[post]]` (`when` ∋ `new`, unless `--no-post`) runs, and the lock is written last, atomically,
+recording the template, version, pieces, vars and the template's file hashes as `new` does.
+Shared conflicts leave markers, the lock is still written, exit 1 (as `update`).
+
+`--dry-run` computes the same plan and writes nothing (no files, lock, post or git). The report
+uses only the §9 actions: owned drift is a `conflict` change (class `owned`, as in the real
+refusal and `add`) with the `refuse: ` message, or with `--force` an `update` with the `replace: `
+message; kept seeds and identical files are `skip`, and the messages end with
+`dry run: nothing written`. The exit code is the one the real run would give (1 on a refusal or a
+conflict, else 0). Write targets are checked as in a real run, so an unsafe path is exit 3 too.
+A failed post command leaves the files and no lock (exit 3); with `--allow-dirty` the error does not
+suggest `git checkout -- . && git clean -fd`, which would also discard the user's own changes.
 
 ### 8.2 `add`
 

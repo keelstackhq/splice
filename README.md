@@ -30,6 +30,7 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 | Command | What it does |
 |---|---|
 | `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest` |
+| `splice adopt <source>` | Apply the template to an existing repo that has no lock (see Adopt an existing repo) |
 | `splice add <piece>` | Add a piece (or another instance of a `multiple` piece); other files merge as on `update`, and a conflict writes nothing |
 | `splice update [--to V \| --ref R]` | Move to a newer template version, or to a branch or sha with `--ref`; your edits are merged, never lost |
 | `splice check` | Fail on edited owned files, leftover conflict markers, or a newer version |
@@ -39,8 +40,9 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 | `splice channel remove <name>` | Remove a channel: delete its unedited files and blocks, then its lock |
 
 Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts). Exit codes:
-0 ok, 1 drift/conflict/update available, 2 usage error, 3 template error. `add` and `update`
-refuse a dirty git tree (exit 2) unless `--allow-dirty`.
+0 ok, 1 drift/conflict/update available, 2 usage error, 3 template error. `add`, `update`, `adopt`
+and `new` into a non-empty directory (`--force`) refuse a dirty git tree (exit 2) unless
+`--allow-dirty`.
 
 **Untagged commits.** A repo rendered with `--ref <branch|sha>` records version `0.0.0+g<sha7>`.
 `splice update --ref <branch|sha>` moves it to a later commit; the target must be a git
@@ -71,6 +73,31 @@ Jinja subset that any implementation can follow, not Python-specific features. s
 run arbitrary template code; it runs only the `post` commands and migration steps a template
 declares, without secret-like environment variables (`GH_TOKEN`, `NPM_TOKEN`, `DB_PASSWORD`, ...),
 so a post or step that needs a token is not supported. It does not read Copier templates.
+
+## Adopt an existing repo
+
+```sh
+splice adopt gh:owner/repo//template --dry-run   # report only: nothing is written
+splice adopt gh:owner/repo//template             # commit or stash first, or pass --allow-dirty
+```
+
+`adopt` is `new` for a repo that already has files and no `.splice/lock.toml`. Always run
+`--dry-run` first; it exits 1 when the real run would refuse or conflict. Per class:
+
+| Class | File missing | File present |
+|---|---|---|
+| `owned` | created | identical: skipped. Different: refused (exit 1, nothing written) |
+| `shared` | created | merged with the template (empty base); a conflict gets diff3 markers, the lock is written, exit 1 |
+| `seed` | created | kept as it is |
+
+Every refused path gets a message starting with `refuse: `` `path` `` (also in `--dry-run --json`,
+where the change is a `conflict`). `--force` replaces the differing owned files instead (messages
+start with `replace: `` `path` ``). To keep your version of a file, adopt without the piece that owns it.
+
+After an adopt with shared conflicts the lock is already written, so `splice check` exits 1 until
+you resolve every diff3 marker; commit only once `check` is clean. A template can never write
+splice's own state: a rendered `.splice/lock.toml` or `.splice/channels/…` is a template error
+(exit 3).
 
 ## Channels
 

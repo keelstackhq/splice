@@ -30,6 +30,8 @@ pub struct Cli {
 pub enum Command {
     /// Render `base` plus the listed pieces into a directory and write the lock.
     New(NewArgs),
+    /// Apply the main template to an existing repo that has no lock.
+    Adopt(AdoptArgs),
     /// Add a piece instance at the lock's template commit.
     Add(AddArgs),
     /// Move to a newer template version.
@@ -46,13 +48,14 @@ pub enum Command {
 
 impl Command {
     /// Subcommand names, as typed on the command line.
-    pub const NAMES: [&'static str; 7] = [
-        "new", "add", "update", "check", "diff", "explain", "channel",
+    pub const NAMES: [&'static str; 8] = [
+        "new", "adopt", "add", "update", "check", "diff", "explain", "channel",
     ];
 
     pub fn name(&self) -> &'static str {
         match self {
             Command::New(_) => "new",
+            Command::Adopt(_) => "adopt",
             Command::Add(_) => "add",
             Command::Update(_) => "update",
             Command::Check(_) => "check",
@@ -91,6 +94,39 @@ pub struct NewArgs {
     /// Write into a non-empty destination.
     #[arg(long)]
     pub force: bool,
+    /// Write into an existing git repo that has uncommitted changes.
+    #[arg(long)]
+    pub allow_dirty: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct AdoptArgs {
+    /// Template source (`gh:owner/repo//subdir`, a git URL or a local path).
+    pub source: String,
+    /// A tag, branch or sha.
+    #[arg(long = "ref", value_name = "R")]
+    pub git_ref: Option<String>,
+    /// Allow pre-release versions.
+    #[arg(long)]
+    pub pre: bool,
+    /// Piece to render, `ID` or `ID:NAME`.
+    #[arg(long = "piece", value_name = "ID[:NAME]")]
+    pub pieces: Vec<String>,
+    /// Template or piece variable, `K=V`.
+    #[arg(long = "data", value_name = "K=V")]
+    pub data: Vec<String>,
+    /// Plan and report only; write nothing.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Replace owned files that already exist and differ.
+    #[arg(long)]
+    pub force: bool,
+    /// Adopt even when the working tree is dirty.
+    #[arg(long)]
+    pub allow_dirty: bool,
+    /// Skip post commands.
+    #[arg(long)]
+    pub no_post: bool,
 }
 
 #[derive(Debug, Clone, Args)]

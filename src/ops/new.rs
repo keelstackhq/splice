@@ -37,7 +37,7 @@ pub(crate) fn parse_data(flags: &[String]) -> Result<IndexMap<String, String>> {
 }
 
 /// Spec §8.1 step 2: no lock yet, and the destination is empty (apart from `.git`) unless forced.
-fn check_dest(dest: &Path, force: bool) -> Result<()> {
+fn check_dest(dest: &Path, force: bool) -> Result<bool> {
     if dest.join(LOCK_PATH).exists() {
         return usage(format!(
             "{} already has a {LOCK_PATH}; use `splice update` or `splice add`",
@@ -45,7 +45,7 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
         ));
     }
     if !dest.exists() {
-        return Ok(());
+        return Ok(false);
     }
     if !dest.is_dir() {
         return usage(format!("{} is not a directory", dest.display()));
@@ -58,7 +58,7 @@ fn check_dest(dest: &Path, force: bool) -> Result<()> {
             dest.display()
         ));
     }
-    Ok(())
+    Ok(occupied)
 }
 
 pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
@@ -74,7 +74,14 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
 
     // 2. Destination.
     let dest: PathBuf = g.dir.join(&a.dest);
-    check_dest(&dest, a.force)?;
+    let occupied = check_dest(&dest, a.force)?;
+    if occupied && !a.allow_dirty && Git::is_clean(&dest)? == Some(false) {
+        return usage(
+            "the destination is a git work tree with uncommitted changes; commit or stash them \
+             first (or pass --allow-dirty)"
+                .into(),
+        );
+    }
 
     // 3. Instances, then 4. variables.
     let picked = super::update::select_pieces(&template, &template.manifest.base, &a.pieces)?;
