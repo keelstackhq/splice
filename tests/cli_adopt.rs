@@ -145,6 +145,16 @@ fn shared_merges_or_conflicts_with_markers() {
         "{notes}"
     );
     assert!(lock(&repo).exists());
+    // The lock is written, but `check` fails until every marker is resolved.
+    let check = |repo: &TempDir| {
+        splice_cmd()
+            .args(["check", "--offline", "-C", s(repo), "--json"])
+            .assert()
+    };
+    let r = json(check(&repo).code(1));
+    assert_eq!(action(&r, "notes.txt"), "conflict", "{r}");
+    std::fs::write(repo.path().join("notes.txt"), "mine\n").unwrap();
+    check(&repo).success();
 }
 
 #[test]
@@ -275,4 +285,57 @@ fn outside_a_git_work_tree_is_usage_error() {
     let dir = tempfile::tempdir().unwrap();
     adopt(&tpl, dir.path(), &[]).code(2);
     assert!(!lock(&dir).exists());
+}
+
+/// A template that ships a file into splice's own state (`.splice/lock.toml`, `.splice/channels/`)
+/// is a template error (exit 3) and nothing is written; `.splice/migrations/` stays allowed
+/// (contract §7: migration scripts ship there as owned files).
+#[test]
+fn template_cannot_plant_splice_state() {
+    fn tpl_with(path: &str) -> TempDir {
+        let toml = format!(
+            "id = \"base\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"{path}\"]\n"
+        );
+        let tpl = common::inline_template(&[("base", &toml, &[(path, "x\n")])]);
+        common::git(
+            tpl.path(),
+            "2026-01-01T00:00:00+00:00",
+            &["init", "-q", "-b", "main"],
+        );
+        common::commit_tag(tpl.path(), "v1", "v1.0.0");
+        tpl
+    }
+    let run = |tpl: &TempDir, repo: &Path, extra: &[&str]| {
+        splice_cmd()
+            .args([
+                "adopt",
+                s(tpl),
+                "-C",
+                repo.to_str().unwrap(),
+                "--yes",
+                "--no-post",
+                "--json",
+            ])
+            .args(extra)
+            .assert()
+    };
+    for planted in [".splice/lock.toml", ".splice/channels/evil.toml"] {
+        let tpl = tpl_with(planted);
+        let repo = repo_with(&[]);
+        for extra in [&["--dry-run"][..], &[][..]] {
+            let out = run(&tpl, repo.path(), extra).code(3);
+            let err = String::from_utf8_lossy(&out.get_output().stderr).to_string()
+                + &String::from_utf8_lossy(&out.get_output().stdout);
+            assert!(err.contains("is reserved"), "{planted} {extra:?}: {err}");
+            assert!(!repo.path().join(planted).exists(), "{planted} {extra:?}");
+            assert!(
+                !repo.path().join(".splice/lock.toml").exists(),
+                "{planted} {extra:?}"
+            );
+        }
+    }
+    let tpl = tpl_with(".splice/migrations/1.0.0-x.mjs");
+    let repo = repo_with(&[]);
+    run(&tpl, repo.path(), &[]).success();
+    assert!(repo.path().join(".splice/migrations/1.0.0-x.mjs").exists());
 }

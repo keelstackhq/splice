@@ -94,6 +94,11 @@ Every refused path gets a message starting with `refuse: `` `path` `` (also in `
 where the change is a `conflict`). `--force` replaces the differing owned files instead (messages
 start with `replace: `` `path` ``). To keep your version of a file, adopt without the piece that owns it.
 
+After an adopt with shared conflicts the lock is already written, so `splice check` exits 1 until
+you resolve every diff3 marker; commit only once `check` is clean. A template can never write
+splice's own state: a rendered `.splice/lock.toml` or `.splice/channels/…` is a template error
+(exit 3).
+
 ## Channels
 
 A channel is a second format-1 template applied next to the main one (or alone), with its own
