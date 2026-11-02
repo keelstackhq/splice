@@ -247,6 +247,7 @@ fn post_runs_then_lock_is_written() {
     assert!(lock(&repo).exists());
 }
 
+#[cfg(unix)]
 #[test]
 fn dry_run_checks_targets() {
     let tpl = template_repo(&["v1"]);
