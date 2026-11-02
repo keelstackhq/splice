@@ -33,6 +33,7 @@ use output::Report;
 pub fn run(cli: Cli) -> Result<Report, SpliceError> {
     match &cli.command {
         Command::New(args) => ops::new::run(&cli.global, args),
+        Command::Adopt(args) => ops::adopt::run(&cli.global, args),
         Command::Add(args) => ops::add::run(&cli.global, args),
         Command::Explain(args) => ops::explain::run(&cli.global, args),
         Command::Update(args) => ops::update::run(&cli.global, args),

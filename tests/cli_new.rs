@@ -535,3 +535,38 @@ fn typed_name_equal_to_a_bad_default_is_usage() {
             .code(2);
     }
 }
+
+#[test]
+fn dirty_existing_repo_refused_unless_allow_dirty() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    std::fs::write(dest.path().join("mine.txt"), "x\n").unwrap();
+    common::commit_all(dest.path());
+    std::fs::write(dest.path().join("wip.txt"), "y\n").unwrap();
+    let args = ["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"];
+    splice_cmd().args(args).arg("--force").assert().code(2);
+    assert!(!dest.path().join(".splice").exists());
+    splice_cmd()
+        .args(args)
+        .args(["--force", "--allow-dirty"])
+        .assert()
+        .success();
+    assert!(dest.path().join(".splice/lock.toml").exists());
+}
+
+#[test]
+fn empty_subdir_of_dirty_repo_is_fine() {
+    let tpl = template_repo(&["v1"]);
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join("mine.txt"), "x\n").unwrap();
+    common::commit_all(repo.path());
+    std::fs::write(repo.path().join("wip.txt"), "y\n").unwrap();
+    let sub = repo.path().join("sub");
+    std::fs::create_dir(&sub).unwrap();
+    splice_cmd()
+        .args(["new", s(&tpl), sub.to_str().unwrap()])
+        .args(["--data", "project=demo", "--yes"])
+        .assert()
+        .success();
+    assert!(sub.join(".splice/lock.toml").exists());
+}
