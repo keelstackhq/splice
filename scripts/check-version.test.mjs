@@ -81,7 +81,8 @@ test("release.yml build matrix covers exactly the platforms.json targets", () =>
 test("the real npm/splice/package.json matches Cargo.toml", () => {
   const cargoToml = readFileSync(new URL("../Cargo.toml", import.meta.url), "utf8");
   const launcherPkg = JSON.parse(readFileSync(new URL("../npm/splice/package.json", import.meta.url), "utf8"));
-  assert.equal(checkVersion({ tag: null, cargoToml, launcherPkg }), launcherPkg.version);
+  const actionYml = readFileSync(new URL("../action/action.yml", import.meta.url), "utf8");
+  assert.equal(checkVersion({ tag: null, cargoToml, launcherPkg, actionYml }), launcherPkg.version);
 });
 
 const action = (d) =>

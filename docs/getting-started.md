@@ -185,7 +185,7 @@ conflict  notes.txt  shared
 delete  old.txt  owned
 ...
 `notes.txt` has conflicts (line 1); resolve the diff3 markers
-conflicts in notes.txt: resolve the diff3 markers
+conflicts in notes.txt: resolve the diff3 markers or the kept keys; lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml
 exit 1
 ```
 

@@ -45,7 +45,7 @@ export function summarize(report, exitCode, { version, dirty, owners = new Map()
   }
   if (rest.length > 0) parts.push(rest.join("\n"));
   if (result === "conflicts") {
-    parts.push("Resolve the conflict markers, then run `splice check --json`.");
+    parts.push("Resolve the conflict markers, or the kept keys named in the messages (JSON and YAML key conflicts keep your value, no markers), then run `splice check --json`.");
   }
   return { title, body: parts.join("\n\n") + "\n", result };
 }

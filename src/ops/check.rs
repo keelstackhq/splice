@@ -78,10 +78,17 @@ fn check_files(repo: &Path, lock: &Lock, prefix: &str, report: &mut Report) -> R
             } else {
                 "was edited locally"
             };
-            report.msg(format!(
-                "{prefix}`{path}` is owned by the template but {cause}; \
-                 `splice update --force` restores it, or revert the change"
-            ));
+            if prefix.is_empty() {
+                report.msg(format!(
+                    "`{path}` is owned by the template but {cause}; \
+                     `splice update --force` restores it, or revert the change"
+                ));
+            } else {
+                report.msg(format!(
+                    "{prefix}`{path}` is owned by this channel but {cause}; revert the change \
+                     (a channel update with --force replaces it once a newer version exists)"
+                ));
+            }
         }
         if let Some(bytes) = bytes {
             let lines = find_markers(&String::from_utf8_lossy(&bytes));

@@ -226,6 +226,7 @@ fn up_to_date_force_restores_owned_drift_only() {
     std::fs::write(repo.path().join(owned), "{ \"mine\": 1 }\n").unwrap();
     let seed = repo.path().join("apps/web/extra-seed-note.txt");
     std::fs::write(&seed, "keep me\n").unwrap();
+    std::fs::write(repo.path().join(".post-ran"), "marker\n").unwrap();
     commit_all(repo.path());
     let lock_before = lock_bytes(&repo);
 
@@ -246,6 +247,19 @@ fn up_to_date_force_restores_owned_drift_only() {
     assert_eq!(changes.len(), 1, "{v}");
     assert_eq!(changes[0]["path"], owned);
     assert_eq!(lock_bytes(&repo), lock_before);
+    // Restoring runs no post command (the fixture's post writes `.post-ran`).
+    assert_eq!(read(&repo, ".post-ran"), "marker\n");
+
+    // Nothing drifted: --force stays a plain "up to date", and post does not run again.
+    commit_all(repo.path());
+    let out = update(&repo, &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert!(messages(&v).contains("up to date"), "{v}");
+    assert_eq!(read(&repo, ".post-ran"), "marker\n");
 
     // Deleted owned file comes back too.
     std::fs::remove_file(repo.path().join(owned)).unwrap();
