@@ -90,6 +90,24 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
         );
     }
 
+    if a.commit {
+        if occupied {
+            return usage("--commit needs an empty destination; commit by hand instead".into());
+        }
+        // The nearest existing ancestor decides: a dirty enclosing repo would be swept in.
+        let mut probe = dest.as_path();
+        while !probe.exists() {
+            probe = probe.parent().unwrap_or(Path::new("."));
+        }
+        if Git::is_clean(probe)? == Some(false) {
+            return usage(
+                "--commit: the enclosing git work tree has uncommitted changes; commit or stash \
+                 them first, or commit by hand"
+                    .into(),
+            );
+        }
+    }
+
     // 3. Instances, then 4. variables.
     let picked = super::update::select_pieces(&template, &template.manifest.base, &a.pieces)?;
     template.ensure_no_sections(&picked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>())?;
@@ -153,5 +171,22 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     }
 
     Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)?;
+    if a.commit {
+        Git::commit_all(
+            &dest,
+            &format!("chore: apply template {}", template.manifest.name),
+        )
+        .map_err(|e| {
+            SpliceError::Env(format!(
+                "files and {LOCK_PATH} were written but git commit failed ({e}); fix it (identity, \
+                 hooks, signing) and run `git add -A && git commit`"
+            ))
+        })?;
+    } else {
+        report.msg(
+            "next: commit the result (`git add -A && git commit`) before `splice add` or \
+             `splice update`, which refuse a dirty tree; or pass --commit next time",
+        );
+    }
     Ok(report)
 }

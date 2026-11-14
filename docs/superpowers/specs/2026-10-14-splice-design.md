@@ -46,7 +46,7 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 
 | Command | Purpose |
 |---|---|
-| `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force] [--allow-dirty]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
+| `splice new <source> [dest] [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--no-post] [--force] [--allow-dirty | --commit]` | Render `base` + the listed pieces into `dest` (default `.`), write the lock. |
 | `splice adopt <source> [--ref R] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--dry-run] [--force] [--allow-dirty] [--no-post]` | Apply the main template to an existing repo that has no lock (§8.1a). |
 | `splice add <piece-id> [--name N] [--data K=V]… [--allow-dirty] [--no-post] [--force]` | Add a piece instance at the lock's template commit. |
 | `splice update [--to VERSION \| --ref R] [--data K=V]… [--allow-dirty] [--force] [--no-post] [--channel NAME [--only GLOB]… [--exclude GLOB]…] [--all]` | Move to a newer template version (default: latest stable tag), or with `--ref` to a descendant git ref (§4). `--channel` updates one channel, `--all` the main template and every channel. |
@@ -228,12 +228,16 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
    work tree, run `[[post]]` with `when` ∋ `new` (all instantiated pieces, identical commands once),
    then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
    leaves the files but no lock; `new --force` redoes it.
+6. `new` never commits by default: its last message says to commit before `add`/`update` (both refuse
+   a dirty tree). `--commit` (exclusive with `--allow-dirty`; needs an empty `dest` inside no dirty work tree, else
+   exit 2 before writing) runs `git add -A -- .` and commits `chore: apply template <name>` after the lock; a failed commit is exit 3 with files
+   and lock already written.
 
 When `dest` already has entries besides `.git` (the `--force` path) and is inside a git work tree
 with uncommitted changes, `new` refuses (exit 2) unless `--allow-dirty`; an empty `dest`, even
 inside a dirty repo, is fine. The non-empty rule of step 2 is unchanged.
 
-Template commands (`[[post]]` and migration `[[step]]`) run without secret-like environment variables: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD` or `KEY`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`GH_TOKEN`, `NPM_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`, `ACTIONS_ID_TOKEN_REQUEST_URL`, `npm_config_//registry.npmjs.org/:_authToken`, ...) is removed from the child's environment; a post or step that needs a token is not supported. splice's own git calls keep the token. This is defence in depth against accidental leaks (tool logs, telemetry, lifecycle scripts), not a sandbox: a same-user process can still read splice's own environment (`/proc/<pid>/environ` on Linux), so templates stay trusted code.
+Template commands (`[[post]]` and migration `[[step]]`) run without secret-like environment variables: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD`, `PASSWD`, `KEY`, `APIKEY` or `CREDENTIALS`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`GH_TOKEN`, `NPM_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`, `ACTIONS_ID_TOKEN_REQUEST_URL`, `npm_config_//registry.npmjs.org/:_authToken`, ...) is removed from the child's environment; a post or step that needs a token is not supported. splice's own git calls keep the token. This is defence in depth against accidental leaks (tool logs, telemetry, lifecycle scripts), not a sandbox: a same-user process can still read splice's own environment (`/proc/<pid>/environ` on Linux), so templates stay trusted code.
 
 Instance names: a `multiple` piece takes its name from `--piece ID:NAME`, else from its `name`
 var if it declares one, else the piece id; a non-`multiple` piece's name is its id.
@@ -649,7 +653,7 @@ Items 11–14 and 18 stay splice's own decisions.
       order. A migration without its tag does not run then. Tracked channels still run none (B5).
       Two tagged sides select by semver exactly as the contract says.
     - The lock shape is unchanged: `version = "0.0.0+g<sha7>"` and the full `commit`.
-22. Secret-like variables are not passed to template commands (security: the update Action runs `splice update` with `GH_TOKEN`, and a post such as `pnpm install` loads repo code). Rule: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD` or `KEY`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`AWS_ACCESS_KEY_ID` and `SSH_AUTH_SOCK` are kept; `TOKENIZER_PATH`, `KEYBOARD`, `SECRETS_DIR` are not matches); non-UTF-8 names are compared lossily. Applies to `run_shell`, so to both post commands and steps; git calls made by splice keep the token. Not a sandbox: splice cannot scrub its own environment (no `unsafe`), which a same-user child can read.
+22. Secret-like variables are not passed to template commands (security: the update Action runs `splice update` with `GH_TOKEN`, and a post such as `pnpm install` loads repo code). Rule: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD`, `PASSWD`, `KEY`, `APIKEY` or `CREDENTIALS`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`AWS_ACCESS_KEY_ID` and `SSH_AUTH_SOCK` are kept; `TOKENIZER_PATH`, `KEYBOARD`, `SECRETS_DIR` are not matches); non-UTF-8 names are compared lossily. Applies to `run_shell`, so to both post commands and steps; git calls made by splice keep the token. Not a sandbox: splice cannot scrub its own environment (no `unsafe`), which a same-user child can read.
 23. JSON and YAML key conflicts (review finding F3). One key changed on both sides must not turn
     the whole file into diff3 markers: that is invalid JSON/YAML and hides the changes that did
     not conflict. The merge applies every non-conflicting change and keeps ours on each

@@ -12,8 +12,8 @@ or `pnpm dlx @keelstackhq/splice` when it is not installed.
 
 - Pass `--json`. Stdout is one object `{ok, command, changes, messages}`; a change is
   `{path, action, class}`. The last message of a failure says what to do next.
-- Read the exit code: 0 ok · 1 drift, conflicts written, or update available · 2 usage (bad
-  flag, dirty tree, unmet `requires`) · 3 template or environment error (also a failed step).
+- Exit: 0 ok · 1 drift, conflicts written, or update available · 2 usage (bad flag, dirty tree,
+  unmet `requires`) · 3 template or environment error (also a failed step).
 
 ## Before editing a generated file
 
@@ -24,20 +24,20 @@ Run `splice explain <path> --json`; read `class` and `source`.
 
 ## Commands
 
-- `splice new <source> [dest] --piece ID[:NAME] --data K=V --yes --json`
-- `splice add <piece> --name NAME --json`
+- `splice new <source> [dest] --piece ID[:NAME] --data K=V --yes --commit --json`: no commit
+  without `--commit`, and `add`/`update` refuse a dirty tree. A var with no default needs
+  `--data` (else exit 2). A local source needs a `vX.Y.Z` tag or `--ref`.
+- `splice add <piece> --name NAME --json`: leaves changes to commit. `-C <dir>` replaces `cd`.
 - `splice diff --json`: what `update` would do; writes nothing. Run it first.
-- `splice update --json` (`--to VERSION`, or `--ref R` for an untagged commit).
-- `splice check --json --offline`: cheap, no network.
+- `splice update --json` (`--to VERSION`, or `--ref R`); `splice check --json --offline`: no network.
 
 ## Rules
 
-- Never edit `.splice/lock.toml` or `.splice/channels/*.toml`.
+- Never edit `.splice/lock.toml` or `.splice/channels/*.toml`. No `--no-post` to hide a failing post.
 - A dirty tree is refused (exit 2): commit or stash. No `--allow-dirty` unless asked.
 - After a failed `add` or `update` (exit 3), run the restore command in the last message first.
-- No `--force` unless the user accepts losing edits to owned files. `update --force` on a current
-  repo restores drifted owned files only.
-- No `--no-post` to hide a failing post command; fix the command.
+- No `--force` unless the user accepts losing edits to owned files (`update --force` on a current
+  repo restores drifted owned files only).
 
 ## Resolving conflicts
 
