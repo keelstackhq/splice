@@ -229,8 +229,8 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
    then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
    leaves the files but no lock; `new --force` redoes it.
 6. `new` never commits by default: its last message says to commit before `add`/`update` (both refuse
-   a dirty tree). `--commit` (exclusive with `--allow-dirty`) runs `git add -A` and commits
-   `chore: initial commit from <template name>` after the lock; a failed commit is exit 3 with files
+   a dirty tree). `--commit` (exclusive with `--allow-dirty`; needs an empty `dest` inside no dirty work tree, else
+   exit 2 before writing) runs `git add -A -- .` and commits `chore: apply template <name>` after the lock; a failed commit is exit 3 with files
    and lock already written.
 
 When `dest` already has entries besides `.git` (the `--force` path) and is inside a git work tree

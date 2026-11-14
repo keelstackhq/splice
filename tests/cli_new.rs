@@ -604,10 +604,7 @@ fn new_commit_makes_the_first_commit_and_add_works_at_once() {
     assert!(!r["messages"].to_string().contains("next: commit"), "{r}");
     let log = common::git_stdout(dest.path(), &["log", "--format=%s"]);
     assert_eq!(log.lines().count(), 1, "{log}");
-    assert!(
-        log.starts_with("chore: initial commit from fixture"),
-        "{log}"
-    );
+    assert!(log.starts_with("chore: apply template fixture"), "{log}");
     assert_eq!(
         common::git_stdout(dest.path(), &["status", "--porcelain"]),
         ""
@@ -627,4 +624,42 @@ fn new_commit_conflicts_with_allow_dirty() {
         .args(["--commit", "--allow-dirty"])
         .assert()
         .code(2);
+}
+
+#[test]
+fn new_commit_refuses_dirty_enclosing_repo_and_occupied_dest() {
+    let tpl = template_repo(&["v1"]);
+    let outer = tempfile::tempdir().unwrap();
+    common::git(outer.path(), "2026-01-01T00:00:00Z", &["init", "-q"]);
+    std::fs::write(outer.path().join("stray.txt"), "x").unwrap();
+    let sub = outer.path().join("sub");
+    splice_cmd()
+        .args([
+            "new",
+            s(&tpl),
+            sub.to_str().unwrap(),
+            "--data",
+            "project=d",
+            "--yes",
+            "--commit",
+        ])
+        .assert()
+        .code(2);
+    assert!(!sub.exists());
+    let occupied = tempfile::tempdir().unwrap();
+    std::fs::write(occupied.path().join(".env"), "S=1").unwrap();
+    splice_cmd()
+        .args([
+            "new",
+            s(&tpl),
+            s(&occupied),
+            "--data",
+            "project=d",
+            "--yes",
+            "--commit",
+            "--force",
+        ])
+        .assert()
+        .code(2);
+    assert!(!occupied.path().join(".splice").exists());
 }

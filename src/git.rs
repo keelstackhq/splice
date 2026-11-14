@@ -218,12 +218,12 @@ impl Git {
     /// Stage everything and commit with `msg`.
     pub fn commit_all(dir: &Path, msg: &str) -> Result<(), SpliceError> {
         let mut cmd = command();
-        cmd.arg("-C").arg(dir).args(["add", "-A"]);
+        cmd.arg("-C").arg(dir).args(["add", "-A", "--", "."]);
         run(cmd, "add")?;
         let mut cmd = command();
         cmd.arg("-C")
             .arg(dir)
-            .args(["commit", "--quiet", "-m", msg]);
+            .args(["commit", "--quiet", "-m", msg, "--", "."]);
         run(cmd, "commit")?;
         Ok(())
     }

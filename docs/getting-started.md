@@ -11,7 +11,7 @@ Outputs below are shortened captures from the real binary. Run `splice` as
 
 ```bash
 splice new gh:keelstackhq/hull//template my-app --piece <piece-id> --data project=demo --yes
-cd my-app && git add -A && git commit -m "chore: initial commit from template"
+cd my-app && git add -A && git commit -m "chore: initial commit"
 ```
 
 `gh:keelstackhq/hull//template` = repo `keelstackhq/hull`, subdirectory `template`. The base piece
