@@ -1024,7 +1024,6 @@ fn apply_prepared(
         post: post_of(prep),
         when: When::Update,
         no_post: a.no_post || prep.restore_only,
-        json: g.json,
         command: "update",
         sections,
     });
@@ -1046,7 +1045,7 @@ fn apply_prepared(
 /// The migration steps between `from` and `to`, each with its migration's version (none for a
 /// tracked head, B5).
 /// The write-phase context of one `update --all` source: no post, no lock (written last).
-fn all_ctx<'a>(repo: &'a Path, s: &'a AllSource, json: bool) -> ApplyCtx<'a> {
+fn all_ctx<'a>(repo: &'a Path, s: &'a AllSource) -> ApplyCtx<'a> {
     ApplyCtx {
         repo,
         plan: &s.prep.plan,
@@ -1057,7 +1056,6 @@ fn all_ctx<'a>(repo: &'a Path, s: &'a AllSource, json: bool) -> ApplyCtx<'a> {
         post: Vec::new(),
         when: When::Update,
         no_post: true,
-        json,
         command: "update",
         sections: s.sections(),
     }
@@ -1271,7 +1269,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             report.messages.extend(prefixed(&s.id, &s.prep.messages));
         }
     }
-    let ctx_of = |s| all_ctx(repo, s, g.json);
+    let ctx_of = |s| all_ctx(repo, s);
     // Every source's targets before the first write of any source: a bad target in a later
     // source must not leave an earlier source's files written.
     for s in &changed {
@@ -1303,7 +1301,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     // lock: post sees the old locks.
     if conflicts.is_empty() && !a.no_post {
         let post: Vec<PostCmd> = changed.iter().flat_map(|s| post_of(&s.prep)).collect();
-        if let Err(e) = run_post(repo, &post, When::Update, g.json) {
+        if let Err(e) = run_post(repo, &post, When::Update) {
             return Err(all_failed(report, "", e));
         }
     }

@@ -104,11 +104,10 @@ fn is_secret_var(name: &OsStr) -> bool {
 
 /// Run `run` through the shell with `repo` as working directory and `envs` added. Our stdout is
 /// for the report only: the child's stdout joins its stderr on ours, and both stream as they are
-/// produced. With `json` its stdin is closed.
+/// produced. Its stdin is closed.
 fn run_shell(
     repo: &Path,
     run: &str,
-    json: bool,
     envs: &[(&str, String)],
 ) -> Result<std::io::Result<ExitStatus>, SpliceError> {
     let mut shell = sh_command()?;
@@ -143,10 +142,11 @@ fn run_shell(
         Ok(o) => o,
         Err(e) => return Ok(Err(e)),
     };
-    shell.stdout(out).stderr(Stdio::inherit());
-    if json {
-        shell.stdin(Stdio::null());
-    }
+    // Never inherit stdin: a command that reads it would hang an agent holding a pipe open.
+    shell
+        .stdin(Stdio::null())
+        .stdout(out)
+        .stderr(Stdio::inherit());
     Ok(shell.status())
 }
 
@@ -160,16 +160,15 @@ fn how(status: ExitStatus) -> String {
 /// Run every command whose `when` contains `when`, in order, skipping repeats of an identical
 /// `run` string. The shell is POSIX `sh -c` on every OS (on Windows Git for Windows' `sh.exe`, spec §10 item 19) with `repo` as working directory.
 /// The command's stdout and stderr both go to our stderr (our stdout is the report only); with
-/// `json` its stdin is closed. A non-zero exit is an environment error (exit 3) naming the command.
-pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When, json: bool) -> Result<(), SpliceError> {
+/// its stdin is closed. A non-zero exit is an environment error (exit 3) naming the command.
+pub fn run_post(repo: &Path, cmds: &[PostCmd], when: When) -> Result<(), SpliceError> {
     let mut seen: Vec<&str> = Vec::new();
     for cmd in cmds.iter().filter(|c| c.when.contains(&when)) {
         if seen.contains(&cmd.run.as_str()) {
             continue;
         }
         seen.push(&cmd.run);
-        let status =
-            run_shell(repo, &cmd.run, json, &[])?.map_err(|e| spawn_error(&cmd.run, &e))?;
+        let status = run_shell(repo, &cmd.run, &[])?.map_err(|e| spawn_error(&cmd.run, &e))?;
         if !status.success() {
             return Err(SpliceError::Env(format!(
                 "post command `{}` failed ({})",
@@ -192,7 +191,6 @@ pub fn run_steps(
     from: &Version,
     to: &Version,
     still: &str,
-    json: bool,
 ) -> Result<(), SpliceError> {
     let envs = [
         ("SPLICE_FROM_VERSION", from.to_string()),
@@ -204,7 +202,7 @@ pub fn run_steps(
         }
         let restore =
             format!("{still}; `git checkout -- . && git clean -fd` restores the previous state");
-        let status = run_shell(repo, &step.run, json, &envs)?.map_err(|e| {
+        let status = run_shell(repo, &step.run, &envs)?.map_err(|e| {
             SpliceError::Env(format!(
                 "cannot run migration step `{}` (migration {version}): {e}; {restore}",
                 step.run
@@ -367,7 +365,7 @@ mod tests {
             cmd("echo a >> log", &[When::New, When::Add]),
             cmd("echo c >> log", &[When::New]),
         ];
-        run_post(dir.path(), &cmds, When::New, true).unwrap();
+        run_post(dir.path(), &cmds, When::New).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.path().join("log")).unwrap(),
             "a\nc\n"
@@ -381,7 +379,7 @@ mod tests {
             cmd("exit 4", &[When::New]),
             cmd("touch after", &[When::New]),
         ];
-        let e = run_post(dir.path(), &cmds, When::New, true).unwrap_err();
+        let e = run_post(dir.path(), &cmds, When::New).unwrap_err();
         assert_eq!(e.exit_code(), 3);
         assert!(e.to_string().contains("`exit 4`") && e.to_string().contains("exit 4"));
         assert!(!dir.path().join("after").exists());

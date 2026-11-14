@@ -135,7 +135,6 @@ pub fn run(g: &GlobalArgs, a: &AdoptArgs) -> Result<Report> {
         post,
         when: When::New,
         no_post: a.no_post,
-        json: g.json,
         command: "adopt",
         sections: &[],
     };
