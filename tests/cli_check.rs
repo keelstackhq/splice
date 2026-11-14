@@ -70,10 +70,14 @@ fn owned_drift_fails() {
         v["changes"],
         serde_json::json!([{"path":".editorconfig","action":"update","class":"owned"}])
     );
+    let m = messages(&v);
+    assert!(m.contains("`.editorconfig`") && m.contains("edited locally"), "{m}");
+    assert!(m.contains("splice update --force"), "{m}");
     // A deleted owned file is drift too.
     std::fs::remove_file(repo.path().join(".editorconfig")).unwrap();
     let (code, v) = check(&repo, &["--offline"]);
     assert_eq!(code, 1);
+    assert!(messages(&v).contains("was deleted"), "{v}");
     assert_eq!(v["changes"][0]["path"], ".editorconfig");
 }
 

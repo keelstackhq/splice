@@ -58,6 +58,15 @@ fn check_files(repo: &Path, lock: &Lock, prefix: &str, report: &mut Report) -> R
         {
             report.push(path, Action::Update, Class::Owned);
             drifted += 1;
+            let cause = if bytes.is_none() {
+                "was deleted"
+            } else {
+                "was edited locally"
+            };
+            report.msg(format!(
+                "{prefix}`{path}` is owned by the template but {cause}; \
+                 `splice update --force` restores it, or revert the change"
+            ));
         }
         if let Some(bytes) = bytes {
             let lines = find_markers(&String::from_utf8_lossy(&bytes));
