@@ -61,6 +61,40 @@ fn check_dest(dest: &Path, force: bool) -> Result<bool> {
     Ok(occupied)
 }
 
+/// Refuse when the enclosing git repo's ignore rules hide the lock or any rendered file.
+fn refuse_ignored<'a>(dest: &Path, files: impl Iterator<Item = &'a str>) -> Result<()> {
+    let mut probe = dest;
+    while !probe.exists() {
+        probe = probe.parent().unwrap_or(Path::new("."));
+    }
+    let prefix = dest
+        .strip_prefix(probe)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let join = |f: &str| {
+        if prefix.is_empty() {
+            f.to_string()
+        } else {
+            format!("{prefix}/{f}")
+        }
+    };
+    let rels: Vec<String> = std::iter::once(LOCK_PATH).chain(files).map(join).collect();
+    if let Some(hit) = Git::ignored(probe, &rels)?.and_then(|v| v.into_iter().next()) {
+        return usage(format!(
+            "{hit} is ignored by a .gitignore of the enclosing git repo, so the files would never \
+             be committed; pick another destination or remove the ignore rule"
+        ));
+    }
+    Ok(())
+}
+
+/// A failure after files were written: exit 3, with the written `changes` kept in `--json`.
+fn applied(mut report: Report, msg: String) -> SpliceError {
+    report.ok = false;
+    report.msg(msg);
+    SpliceError::Applied(report)
+}
+
 pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     let mut report = Report::new("new");
 
@@ -125,6 +159,9 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
         },
     )?;
 
+    // A destination the enclosing repo ignores would silently drop files from every commit.
+    refuse_ignored(&dest, tree.values().map(|f| f.path.as_str()))?;
+
     // Write every file; seeds only when absent.
     // Check every target first so a refusal (symlink, `..`) changes nothing.
     for file in tree.values() {
@@ -161,27 +198,38 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
                 cmds.extend(template.pieces[&inst.id].post.iter().cloned());
             }
         }
-        run_post(&dest, &cmds, When::New, g.json).map_err(|e| match e {
-            SpliceError::Env(m) => SpliceError::Env(format!(
-                "{m}; files were written but no {LOCK_PATH} yet: fix the command and rerun \
-                 `splice new … --force`"
-            )),
-            other => other,
-        })?;
+        if let Err(e) = run_post(&dest, &cmds, When::New, g.json) {
+            return Err(match e {
+                SpliceError::Env(m) => applied(
+                    report,
+                    format!(
+                        "{m}; files were written but no {LOCK_PATH} yet: fix the command and \
+                         rerun `splice new … --force`"
+                    ),
+                ),
+                other => other,
+            });
+        }
     }
 
-    Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)?;
+    if let Err(e) =
+        Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)
+    {
+        return Err(applied(report, format!("writing {LOCK_PATH} failed: {e}")));
+    }
     if a.commit {
-        Git::commit_all(
+        if let Err(e) = Git::commit_all(
             &dest,
             &format!("chore: apply template {}", template.manifest.name),
-        )
-        .map_err(|e| {
-            SpliceError::Env(format!(
-                "files and {LOCK_PATH} were written but git commit failed ({e}); fix it (identity, \
-                 hooks, signing) and run `git add -A && git commit`"
-            ))
-        })?;
+        ) {
+            return Err(applied(
+                report,
+                format!(
+                    "files and {LOCK_PATH} were written but {e}; fix it (identity, hooks, \
+                     signing) and run `git add -A && git commit`"
+                ),
+            ));
+        }
     } else {
         report.msg(
             "next: commit the result (`git add -A && git commit`) before `splice add` or \

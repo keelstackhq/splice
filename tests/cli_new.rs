@@ -339,7 +339,13 @@ fn failing_post_is_env_error_without_lock() {
         .clone();
     // Post output goes to stderr: stdout is still exactly one object.
     let r = json(out);
-    let m = r["messages"][0].as_str().unwrap();
+    let m = r["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .as_str()
+        .unwrap();
     assert!(m.contains("exit 7") && m.contains("echo boom"), "{m}");
     assert!(!dest.path().join(".splice/lock.toml").exists());
     assert!(dest.path().join("package.json").exists());
@@ -662,4 +668,85 @@ fn new_commit_refuses_dirty_enclosing_repo_and_occupied_dest() {
         .assert()
         .code(2);
     assert!(!occupied.path().join(".splice").exists());
+}
+
+#[test]
+fn new_refuses_destination_ignored_by_parent_gitignore() {
+    let tpl = template_repo(&["v1"]);
+    let outer = tempfile::tempdir().unwrap();
+    common::git(outer.path(), "2026-01-01T00:00:00Z", &["init", "-q"]);
+    std::fs::write(outer.path().join(".gitignore"), "sub/\n").unwrap();
+    common::commit_all(outer.path());
+    let sub = outer.path().join("sub");
+    let out = splice_cmd()
+        .args(["new", s(&tpl), sub.to_str().unwrap()])
+        .args(["--data", "project=d", "--yes", "--json"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    let msg = r["messages"].to_string();
+    assert!(msg.contains("ignored") && msg.contains(".gitignore"), "{r}");
+    assert!(!sub.exists(), "nothing written");
+}
+
+#[cfg(unix)]
+#[test]
+fn new_commit_failure_keeps_changes_in_json() {
+    use std::os::unix::fs::PermissionsExt;
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let hooks = tempfile::tempdir().unwrap();
+    let hook = hooks.path().join("pre-commit");
+    std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = splice_cmd()
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", hooks.path())
+        .args(["new", s(&tpl), s(&dest), "--data", "project=d", "--yes"])
+        .args(["--commit", "--json"])
+        .assert()
+        .code(3)
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert_eq!(r["ok"], false);
+    assert!(r["changes"].as_array().unwrap().len() > 1, "{r}");
+    let last = r["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()
+        .to_string();
+    assert!(last.contains("git commit failed"), "{r}");
+    assert!(dest.path().join(".splice/lock.toml").exists());
+}
+
+#[test]
+fn new_failed_post_keeps_changes_in_json() {
+    let tpl = template_repo(&["v1"]);
+    with_post(&tpl, "exit 7");
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args([
+            "new",
+            s(&tpl),
+            s(&dest),
+            "--data",
+            "project=d",
+            "--yes",
+            "--json",
+        ])
+        .assert()
+        .code(3)
+        .get_output()
+        .stdout
+        .clone();
+    let r = json(out);
+    assert!(!r["changes"].as_array().unwrap().is_empty(), "{r}");
+    assert!(r["messages"].to_string().contains("--force"), "{r}");
 }

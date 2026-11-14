@@ -26,10 +26,12 @@ fn run(mut cmd: Command, what: &str) -> Result<Output, SpliceError> {
     if out.status.success() {
         Ok(out)
     } else {
-        Err(SpliceError::Env(format!(
-            "git {what} failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        )))
+        let err = String::from_utf8_lossy(&out.stderr);
+        let detail = match err.trim() {
+            "" => format!("exit status {}", out.status.code().unwrap_or(-1)),
+            e => e.to_string(),
+        };
+        Err(SpliceError::Env(format!("git {what} failed: {detail}")))
     }
 }
 
@@ -204,6 +206,44 @@ impl Git {
         cmd.arg("-C").arg(repo).args(["status", "--porcelain"]);
         let out = run(cmd, "status")?;
         Ok(Some(out.stdout.is_empty()))
+    }
+
+    /// Whether the enclosing repo of `dir` ignores `rel` (a path under `dir`, which may not
+    /// exist yet). `None` when `dir` is not inside a git work tree.
+    pub fn ignored(dir: &Path, rels: &[String]) -> Result<Option<Vec<String>>, SpliceError> {
+        use std::io::Write;
+        use std::process::Stdio;
+        if Git::is_clean(dir)?.is_none() {
+            return Ok(None);
+        }
+        let mut cmd = command();
+        cmd.arg("-C")
+            .arg(dir)
+            .args(["check-ignore", "--no-index", "-z", "--stdin"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| SpliceError::Env(format!("cannot run git ({e})")))?;
+        let mut input = rels.join("\0").into_bytes();
+        input.push(0);
+        child.stdin.take().expect("piped").write_all(&input)?;
+        let out = child.wait_with_output()?;
+        // 0 = some ignored, 1 = none; anything else is a real failure.
+        match out.status.code() {
+            Some(0) | Some(1) => Ok(Some(
+                String::from_utf8_lossy(&out.stdout)
+                    .split('\0')
+                    .filter(|p| !p.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            )),
+            _ => Err(SpliceError::Env(format!(
+                "git check-ignore failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ))),
+        }
     }
 
     /// `git init` in `dir` (created if missing).
