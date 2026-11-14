@@ -66,7 +66,8 @@ fn post_runs_without_git_credential_helpers() {
         gitconfig.path(),
         format!(
             "[credential]\n\thelper = \"!f() {{ echo ran >> '{}'; }}; f\"\n",
-            marker.display()
+            // Forward slashes: a backslash is an escape inside a git config string (Windows paths).
+            marker.display().to_string().replace('\\', "/")
         ),
     )
     .unwrap();
