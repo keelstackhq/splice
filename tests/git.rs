@@ -137,3 +137,23 @@ fn is_ancestor_follows_history() {
         Err(splice::error::SpliceError::Env(_))
     ));
 }
+
+#[test]
+fn ignored_streams_thousands_of_paths_without_deadlock() {
+    let repo = tempdir().unwrap();
+    common::git(repo.path(), "2026-01-01T00:00:00Z", &["init", "-q"]);
+    std::fs::write(repo.path().join(".gitignore"), "out/\n").unwrap();
+    let rels: Vec<String> = (0..6000)
+        .map(|i| format!("out/some/long/nested/directory/file-number-{i}.txt"))
+        .collect();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let dir = repo.path().to_path_buf();
+    let sent = rels.clone();
+    std::thread::spawn(move || tx.send(Git::ignored(&dir, &sent)).ok());
+    let hits = rx
+        .recv_timeout(std::time::Duration::from_secs(30))
+        .expect("check-ignore deadlocked")
+        .unwrap()
+        .unwrap();
+    assert_eq!(hits.len(), rels.len());
+}
