@@ -71,7 +71,8 @@ impl Command {
 
 #[derive(Debug, Clone, Args)]
 pub struct NewArgs {
-    /// Template source (`gh:owner/repo//subdir`, a git URL or a local path).
+    /// Template source (`gh:owner/repo//subdir`, a git URL, or a local git repo with a `vX.Y.Z`
+    /// tag or `--ref`).
     pub source: String,
     /// Destination directory.
     #[arg(default_value = ".")]
@@ -97,6 +98,9 @@ pub struct NewArgs {
     /// Write into an existing git repo that has uncommitted changes.
     #[arg(long)]
     pub allow_dirty: bool,
+    /// Make the first commit (`git add -A`), so `add` and `update` start from a clean tree.
+    #[arg(long, conflicts_with = "allow_dirty")]
+    pub commit: bool,
 }
 
 #[derive(Debug, Clone, Args)]

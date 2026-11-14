@@ -570,3 +570,61 @@ fn empty_subdir_of_dirty_repo_is_fine() {
         .success();
     assert!(sub.join(".splice/lock.toml").exists());
 }
+
+#[test]
+fn new_without_commit_says_so_in_messages() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let r = new_ok(&tpl, dest.path(), &[]);
+    let msgs: Vec<&str> = r["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m.as_str().unwrap())
+        .collect();
+    assert!(
+        msgs.iter()
+            .any(|m| m.starts_with("next: ") && m.contains("git add -A") && m.contains("--commit")),
+        "{msgs:?}"
+    );
+    // no commit yet
+    let out = std::process::Command::new("git")
+        .current_dir(dest.path())
+        .args(["rev-parse", "--verify", "-q", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
+fn new_commit_makes_the_first_commit_and_add_works_at_once() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let r = new_ok(&tpl, dest.path(), &["--commit"]);
+    assert!(!r["messages"].to_string().contains("next: commit"), "{r}");
+    let log = common::git_stdout(dest.path(), &["log", "--format=%s"]);
+    assert_eq!(log.lines().count(), 1, "{log}");
+    assert!(
+        log.starts_with("chore: initial commit from fixture"),
+        "{log}"
+    );
+    assert_eq!(
+        common::git_stdout(dest.path(), &["status", "--porcelain"]),
+        ""
+    );
+    splice_cmd()
+        .args(["-C", s(&dest), "add", "app", "--yes", "--json"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn new_commit_conflicts_with_allow_dirty() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", s(&tpl), s(&dest), "--data", "project=d", "--yes"])
+        .args(["--commit", "--allow-dirty"])
+        .assert()
+        .code(2);
+}

@@ -1,6 +1,5 @@
 ---
 source: tests/cli_new.rs
-assertion_line: 77
 expression: r
 ---
 {
@@ -89,6 +88,7 @@ expression: r
     }
   ],
   "messages": [
-    "the template source is a local path: the lock records it as given, so it is not portable to another machine; use a git source such as `gh:owner/repo` for a lock others can update"
+    "the template source is a local path: the lock records it as given, so it is not portable to another machine; use a git source such as `gh:owner/repo` for a lock others can update",
+    "next: commit the result (`git add -A && git commit`) before `splice add` or `splice update`, which refuse a dirty tree; or pass --commit next time"
   ]
 }

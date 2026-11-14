@@ -84,7 +84,7 @@ fn sh_command() -> Result<Command, SpliceError> {
 
 /// Whether an environment variable looks like a credential. The name is ASCII-uppercased and
 /// split on `_` (empty segments ignored). It matches when the last segment is `TOKEN`, `PAT`,
-/// `SECRET`, `PASSWORD` or `KEY` (`GH_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`), when an
+/// `SECRET`, `PASSWORD`, `PASSWD`, `KEY`, `APIKEY` or `CREDENTIALS` (`GH_TOKEN`, `MY_PAT`, `DB_PASSWORD`, `SOPS_AGE_KEY`), when an
 /// earlier segment is `TOKEN` or `SECRET` (`ACTIONS_ID_TOKEN_REQUEST_URL`), or when it starts
 /// with `NPM_CONFIG_` and contains `_AUTH` (`npm_config_//registry.npmjs.org/:_authToken`).
 /// `AWS_ACCESS_KEY_ID` (last segment `ID`) and `SSH_AUTH_SOCK` are kept. Non-UTF-8 names are
@@ -95,8 +95,10 @@ fn is_secret_var(name: &OsStr) -> bool {
     let Some((last, rest)) = segs.split_last() else {
         return false;
     };
-    matches!(*last, "TOKEN" | "PAT" | "SECRET" | "PASSWORD" | "KEY")
-        || rest.iter().any(|s| matches!(*s, "TOKEN" | "SECRET"))
+    matches!(
+        *last,
+        "TOKEN" | "PAT" | "SECRET" | "PASSWORD" | "PASSWD" | "KEY" | "APIKEY" | "CREDENTIALS"
+    ) || rest.iter().any(|s| matches!(*s, "TOKEN" | "SECRET"))
         || (n.starts_with("NPM_CONFIG_") && n.contains("_AUTH"))
 }
 
@@ -272,6 +274,10 @@ mod token_tests {
             "AWS_SECRET_ACCESS_KEY",
             "X_SECRET_VALUE",
             "__TOKEN__",
+            "DB_PASSWD",
+            "STRIPE_APIKEY",
+            "GCP_CREDENTIALS",
+            "GH_TOKEN_FILE",
             "NPM_CONFIG__AUTH",
             "NPM_CONFIG__AUTHTOKEN",
             "npm_config_//registry.npmjs.org/:_authToken",
@@ -293,6 +299,8 @@ mod token_tests {
             "NPM_CONFIG_REGISTRY",
             "AWS_ACCESS_KEY_ID",
             "SSH_AUTH_SOCK",
+            "CREDENTIAL_HELPER_PATH",
+            "KEY_ID",
             "",
         ];
         for n in yes {

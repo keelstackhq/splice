@@ -28,7 +28,7 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 
 | Command | What it does |
 |---|---|
-| `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest` |
+| `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest`; runs `git init` if needed, commits only with `--commit` (else the last message says to commit) |
 | `splice adopt <source>` | Apply the template to an existing repo that has no lock (see Adopt an existing repo) |
 | `splice add <piece>` | Add a piece (or another instance of a `multiple` piece); other files merge as on `update`, and a conflict writes nothing |
 | `splice update [--to V \| --ref R]` | Move to a newer template version, or to a branch or sha with `--ref`; your edits are merged, never lost |
@@ -198,12 +198,12 @@ token as above: the app needs Contents and Pull requests (read and write), plus 
 updates touch workflow files, and its key lives in an environment limited to `main`. Without a
 bot, run the update in a session and open the PR yourself ("session mode"). Both, and a
 fine-grained token as a last resort, are spelled out in
-[`docs/getting-started.md` section 8](docs/getting-started.md#8-automate-updates-with-the-bot).
+[`docs/getting-started.md` section 6](getting-started.md#6-automate-updates).
 The push always uses `token`, even if checkout kept its credentials, and it also authenticates the
 template fetches of `splice update`: for a private template or channel repo, install the app there
 too and give the token step `owner:` and `repositories:` naming this repo and the template repos.
 Template `post` commands and migration steps run without secret-like environment variables
-(names ending in `_TOKEN`, `_PAT`, `_SECRET`, `_PASSWORD` or `_KEY`, with a `TOKEN` or `SECRET` part
+(names ending in `_TOKEN`, `_PAT`, `_SECRET`, `_PASSWORD`, `_PASSWD`, `_KEY`, `_APIKEY` or `_CREDENTIALS`, with a `TOKEN` or `SECRET` part
 elsewhere, or `npm_config_*_auth*`); a post or step that needs a token is not supported. This
 keeps the bot's token out of tool logs, telemetry and package lifecycle scripts. It does not
 contain hostile template code: a process of the same user can still read splice's own environment

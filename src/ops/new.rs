@@ -153,5 +153,22 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     }
 
     Lock::from_tree(&resolved, &template_vars, &instances, &tree).write_atomic(&dest)?;
+    if a.commit {
+        Git::commit_all(
+            &dest,
+            &format!("chore: initial commit from {}", template.manifest.name),
+        )
+        .map_err(|e| {
+            SpliceError::Env(format!(
+                "files and {LOCK_PATH} were written but the commit failed ({e}); fix git \
+                 (user.name, user.email) and run `git add -A && git commit`"
+            ))
+        })?;
+    } else {
+        report.msg(
+            "next: commit the result (`git add -A && git commit`) before `splice add` or \
+             `splice update`, which refuse a dirty tree; or pass --commit next time",
+        );
+    }
     Ok(report)
 }
