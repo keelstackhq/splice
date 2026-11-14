@@ -3,7 +3,7 @@
 use crate::cli::{ExplainArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
-use crate::lock::{LOCK_PATH, Lock};
+use crate::lock::Lock;
 use crate::manifest::{MergeStrategy, Template};
 use crate::output::{Action, Class, Report};
 use crate::render::{PieceInstance, RenderInput, RenderedTree, render_tree};
@@ -80,10 +80,7 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
 
     let sources = Sources::load(repo)?;
     if sources.main.is_none() && sources.channels.is_empty() {
-        return Err(SpliceError::Usage(format!(
-            "{} has no {LOCK_PATH}; run `splice new` first",
-            repo.display()
-        )));
+        return Err(super::no_lock(repo));
     }
     let mut found = None;
     if let Some(lock) = &sources.main

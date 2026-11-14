@@ -1098,3 +1098,22 @@ fn remove_broken_markers_refusal_does_not_offer_force() {
     assert!(m.contains("fixed by hand"), "{m}");
     assert_eq!(status(r), "");
 }
+
+#[test]
+fn check_falls_back_to_cached_tags_when_a_channel_remote_is_gone() {
+    let (_tpl, repo) = {
+        let tpl = template_repo(&["v1"]);
+        let repo = new_repo_at(&tpl, "v1.0.0");
+        (tpl, repo)
+    };
+    let ch = channel_repo(&["v1"]);
+    let url = format!("file://{}//channel", ch.path().display());
+    chan_commit(repo.path(), &["channel", "add", &url, "--ref", "v1.0.0"]);
+    chan(repo.path(), &["check"]).success();
+    drop(ch);
+    let out = chan(repo.path(), &["check"]).success();
+    let v: serde_json::Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    let msgs = v["messages"].to_string();
+    assert!(msgs.contains("cached tags"), "{msgs}");
+    assert!(!msgs.contains("could not look"), "{msgs}");
+}

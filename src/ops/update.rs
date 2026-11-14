@@ -442,8 +442,8 @@ fn prepare_lock(
         });
     }
 
-    // `--force` on a current main lock re-renders it to restore drifted owned files.
-    let render_current = force && matches!(kind, Kind::Main)
+    // `--force` on a current lock re-renders it to restore drifted owned files.
+    let render_current = force
         || matches!(
             kind,
             Kind::Channel {
@@ -584,10 +584,7 @@ pub fn prepare(
 ) -> Result<Prepared> {
     let repo = g.dir.as_path();
     let Some(lock) = Lock::read(repo)? else {
-        return usage(format!(
-            "{} has no {LOCK_PATH}; run `splice new` first",
-            repo.display()
-        ));
+        return Err(super::no_lock(repo));
     };
     let mut r = prepare_lock(g, &lock, target, data, Kind::Main, force, data_ok)?;
     let Some(rendered) = r.rendered.take() else {
@@ -701,25 +698,7 @@ pub fn prepare_channel(
     let mut r = prepare_lock(g, &cl.lock, target, &IndexMap::new(), kind, force, false)?;
     let me = SourceId::Channel(name.to_string());
     let Some(rendered) = r.rendered.take() else {
-        r.messages.push(up_to_date_message(&r));
-        return Ok(Prepared {
-            plan: Plan::default(),
-            lock_new: cl.lock.clone(),
-            from: r.from.clone(),
-            to: r.from,
-            template: r.template,
-            instances: r.instances,
-            up_to_date: true,
-            tracked: r.tracked,
-            migrations: Vec::new(),
-            messages: r.messages,
-            restore_only: false,
-            channel: Some(ChannelPrepared {
-                lock_new: cl.clone(),
-                sections: SectionPlan::default(),
-                claim: Claim::from_lock(me, &cl.lock, &cl.sections),
-            }),
-        });
+        return Ok(channel_up_to_date(r, cl, me));
     };
     let Rendered {
         base,
@@ -791,13 +770,31 @@ pub fn prepare_channel(
         removing: false,
         force,
     });
+    // `--force` on a current lock re-rendered only to find drift: nothing to restore = up to date.
+    let restore_only = r.current && filter_new.is_none();
+    if restore_only
+        && plan.changes.is_empty()
+        && plan.drift.is_empty()
+        && sections.changes.is_empty()
+        && sections.drift.is_empty()
+        && sections.broken.is_empty()
+    {
+        return Ok(channel_up_to_date(r, cl, me));
+    }
     let mut meta = cl.meta.clone();
     if let Some((only, exclude)) = filter_new {
         meta.only = only.to_vec();
         meta.exclude = exclude.to_vec();
     }
-    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+    let mut lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
         .keep_relative_source(&cl.lock.template.source);
+    // A restore never moves the lock (a same-tree commit, G4, stays unlocked) nor runs steps.
+    let migrations = if restore_only {
+        lock.template = cl.lock.template.clone();
+        Vec::new()
+    } else {
+        migrations
+    };
     let lock_new = ChannelLock {
         meta,
         lock: lock.clone(),
@@ -814,13 +811,36 @@ pub fn prepare_channel(
         tracked: r.tracked,
         migrations,
         messages: r.messages,
-        restore_only: false,
+        restore_only,
         channel: Some(ChannelPrepared {
             lock_new,
             sections,
             claim,
         }),
     })
+}
+
+/// The "up to date" result of a channel: nothing planned, the lock as it is.
+fn channel_up_to_date(mut r: Resolved, cl: &ChannelLock, me: SourceId) -> Prepared {
+    r.messages.push(up_to_date_message(&r));
+    Prepared {
+        plan: Plan::default(),
+        lock_new: cl.lock.clone(),
+        from: r.from.clone(),
+        to: r.from,
+        template: r.template,
+        instances: r.instances,
+        up_to_date: true,
+        tracked: r.tracked,
+        migrations: Vec::new(),
+        messages: r.messages,
+        restore_only: false,
+        channel: Some(ChannelPrepared {
+            lock_new: cl.clone(),
+            sections: SectionPlan::default(),
+            claim: Claim::from_lock(me, &cl.lock, &cl.sections),
+        }),
+    }
 }
 
 /// Spec §8.3 step 1: refuse (exit 2) outside a git work tree or with uncommitted changes.

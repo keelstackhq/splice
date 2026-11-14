@@ -187,3 +187,28 @@ fn readme_channel_flags_exist() {
     // Whole flag words: a prefix of a real flag is not a flag.
     assert_eq!(unknown_flags("use --chan", &help), ["--chan"]);
 }
+
+#[test]
+fn no_lock_message_names_new_and_adopt() {
+    let dir = tempfile::tempdir().unwrap();
+    for cmd in ["update", "check", "diff", "add"] {
+        let mut args = vec!["--json", cmd];
+        if cmd == "add" {
+            args.push("p");
+        }
+        if cmd == "add" || cmd == "update" {
+            args.push("--allow-dirty");
+        }
+        let out = splice_cmd()
+            .arg("-C")
+            .arg(dir.path())
+            .args(&args)
+            .assert()
+            .code(2);
+        let msg = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+        assert!(
+            msg.contains("splice adopt") && msg.contains("splice new"),
+            "{cmd}: {msg}"
+        );
+    }
+}

@@ -43,6 +43,11 @@ Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts
 and `new` into a non-empty directory (`--force`) refuse a dirty git tree (exit 2) unless
 `--allow-dirty`.
 
+A git source URL must not carry a credential (exit 2): no userinfo on `https://`-style URLs
+(`https://TOKEN@host/…`, `https://user:token@host/…`) and no `?token=`-style query. The lock
+records the source, so a lock that already has one fails every command: remove it from `source`.
+`ssh://git@host/…` and `git@host:o/r` are fine. Use a git credential helper.
+
 **Untagged commits.** A repo rendered with `--ref <branch|sha>` records version `0.0.0+g<sha7>`.
 `splice update --ref <branch|sha>` moves it to a later commit; the target must be a git
 descendant of the locked commit (exit 2 otherwise, `--force` overrides). Without `--ref`, such a
@@ -52,7 +57,7 @@ repo moves only to a stable tag that descends from its commit, and `check` repor
 
 | Class | On `update` |
 |---|---|
-| `owned` | Replaced. Local edits block the update (`--force` overrides; on a current main lock `update --force` restores drifted owned files only, not for channels). |
+| `owned` | Replaced. Local edits block the update (`--force` overrides; `update --force` on a current lock, main or channel, restores drifted owned files only). |
 | `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). JSON and YAML key conflicts keep your value and are named in the messages; text and TOML conflicts get diff3 markers. |
 | `seed` | Written once, then yours. |
 

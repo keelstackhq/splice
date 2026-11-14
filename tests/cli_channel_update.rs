@@ -1111,3 +1111,30 @@ fn untagged_channel_with_only_an_older_tag_is_up_to_date() {
     assert_eq!(bytes(repo.path(), RIG_TOML), before);
     assert_eq!(status(repo.path()), "");
 }
+
+#[test]
+fn up_to_date_channel_force_restores_owned_drift() {
+    let (_tpl, repo) = main_repo();
+    let ch = channel_repo(&["v1"]);
+    let r = repo.path();
+    add_full(r, &ch);
+    let owned = ".claude/agents/reviewer.md";
+    let good = read(r, owned);
+    std::fs::write(r.join(owned), "# mine\n").unwrap();
+    commit_all(r);
+    let rig_before = bytes(r, RIG_TOML);
+    // Without --force a current lock is a no-op.
+    assert!(
+        stdout_json(update_rig(r, &[]).success())["messages"]
+            .to_string()
+            .contains("up to date")
+    );
+    assert_eq!(read(r, owned), "# mine\n");
+    let v = stdout_json(update_rig(r, &["--force"]).success());
+    assert_eq!(read(r, owned), good, "{v}");
+    assert_eq!(bytes(r, RIG_TOML), rig_before);
+    // Nothing drifted any more: plain up to date.
+    commit_all(r);
+    let v = stdout_json(update_rig(r, &["--force"]).success());
+    assert!(v["messages"].to_string().contains("up to date"), "{v}");
+}

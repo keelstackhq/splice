@@ -666,8 +666,8 @@ Items 11–14 and 18 stay splice's own decisions.
     version is rendered (base = theirs) and planned as usual: drifted or deleted owned files are
     rewritten, nothing else changes (shared files keep ours, seeds stay), and the lock is written
     atomically (unchanged unless the render differs). Nothing drifted: still "up to date". Restoring
-    runs no `[[post]]`. Main lock only; `update --channel NAME --force` on a current channel stays
-    "up to date". Without `--force`, still "up to date".
+    runs no `[[post]]`. Applies to a channel lock too (`update --channel NAME --force`; a drifted
+    section block is restored the same way). Without `--force`, still "up to date".
 25. `check` owned-drift messages (F2). Each drifted owned file gets a message naming the file, the
     cause (`was edited locally` or `was deleted`) and the fix (`splice update --force` restores
     it, or revert the change). The change shape is unchanged (`update`/`owned`).
@@ -682,9 +682,16 @@ Items 11–14 and 18 stay splice's own decisions.
 27. `check` without `--offline` after a failed fetch (F9). A remote source that already has a
     cached mirror is read from it: the message says it fell back to the cached tags, and an
     available update is still reported from them. No cache: the old "could not look for updates"
-    message. Main lock only; channels keep the old message.
+    message. Main and channel locks alike.
 28. `new` from a local path (F10) adds a message that the lock records the path as given and is
     not portable to another machine. `add`, `channel add` and `update` do not.
+29. A git source URL that carries a credential is refused (exit 2, `new`, `channel add` and any
+    command reading a lock): any userinfo on a non-ssh scheme (`https://TOKEN@host/…`,
+    `https://user:token@host/…`, encoded `%3A` included), a `:` password on an ssh scheme, or a
+    secret-looking query parameter (`token`, `access_token`, `password`, `key`, `pat`, `auth`, …).
+    The check runs first, and the message shows the URL masked (`***@`, `token=***`), never the
+    raw text, so neither the lock nor an error holds the secret. `ssh://git@host/…` and scp-like
+    `git@host:o/r` stay allowed. Use a credential helper.
 
 ## 11. Testing
 

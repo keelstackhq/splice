@@ -8,7 +8,7 @@ use crate::cli::{AddArgs, GlobalArgs};
 use crate::error::SpliceError;
 use crate::fetch::Fetcher;
 use crate::filter::Filter;
-use crate::lock::{ChannelLock, LOCK_PATH, Lock, LockPiece};
+use crate::lock::{ChannelLock, Lock, LockPiece};
 use crate::manifest::{PostCmd, Template, When};
 use crate::output::{Action, Class, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan};
@@ -120,10 +120,7 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
 
     // 1. The lock, then the template at the lock's commit (no version change).
     let Some(lock) = Lock::read(repo)? else {
-        return usage(format!(
-            "{} has no {LOCK_PATH}; run `splice new` first",
-            repo.display()
-        ));
+        return Err(super::no_lock(repo));
     };
     let src = TemplateSource::parse_from(&lock.template.source, repo)?;
     let resolved =
