@@ -34,8 +34,7 @@ Run `splice explain <path> --json`; read `class` and `source`.
 
 - Never edit `.splice/lock.toml` or `.splice/channels/*.toml`.
 - A dirty tree is refused (exit 2): commit or stash. No `--allow-dirty` unless asked.
-- After a failed `add` or `update` (exit 3), run the restore command in the last message; never
-  retry on a half-written tree.
+- After a failed `add` or `update` (exit 3), run the restore command in the last message first.
 - No `--force` unless the user accepts losing edits to owned files. `update --force` on a current
   repo restores drifted owned files only.
 - No `--no-post` to hide a failing post command; fix the command.

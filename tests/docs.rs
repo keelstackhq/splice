@@ -55,7 +55,6 @@ fn docs_mention_only_real_flags() {
 fn skill_body_is_short_and_named() {
     let text = std::fs::read_to_string("skills/splice/SKILL.md").unwrap();
     assert!(text.starts_with("---\nname: splice\ndescription: Use when "));
-    let body = text.splitn(3, "---\n").nth(2).unwrap();
     assert!(text.lines().count() <= 60, "SKILL.md over 60 lines");
 }
 
