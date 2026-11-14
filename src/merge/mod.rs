@@ -13,10 +13,13 @@ use crate::markers::find_markers;
 
 /// The result of a merge. `conflicts` holds one entry per conflict: a key path for structured
 /// formats, `line N` (1-based, in `text`) for text. A conflicted file keeps diff3 markers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Merged {
     pub text: String,
     pub conflicts: Vec<String>,
+    /// Set by a key-level json/yaml conflict: one line per key (ours and theirs values). The
+    /// text then holds ours on those keys and no diff3 markers.
+    pub details: Vec<String>,
 }
 
 /// A side of a structured merge that does not parse; `merge3` falls back to the text merge.
@@ -55,7 +58,10 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
         let m = toml_still_parses(strategy, base, ours, theirs, m);
         return no_new_duplicates(strategy, base, ours, theirs, m);
     };
-    if merged.conflicts.is_empty() {
+    // json and yaml: key-level merge. Non-conflicting changes are applied, ours stays on each
+    // conflicting key, and `details` names the keys. No diff3 markers: they would break the file.
+    if merged.conflicts.is_empty() || matches!(strategy, MergeStrategy::Json | MergeStrategy::Yaml)
+    {
         return merged;
     }
     let text = merge_text(base, ours, theirs).text;
@@ -67,6 +73,7 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
     Merged {
         text,
         conflicts: merged.conflicts,
+        ..Merged::default()
     }
 }
 
@@ -95,6 +102,7 @@ fn no_new_duplicates(
     Merged {
         text: wrap_whole(base, ours, theirs),
         conflicts: introduced,
+        ..Merged::default()
     }
 }
 
@@ -119,6 +127,7 @@ fn toml_still_parses(
     Merged {
         text: wrap_whole(base, ours, theirs),
         conflicts: vec!["line 1".to_string()],
+        ..Merged::default()
     }
 }
 
@@ -133,7 +142,7 @@ fn parses(strategy: MergeStrategy, text: &str) -> bool {
 fn clean(text: &str) -> Merged {
     Merged {
         text: text.to_string(),
-        conflicts: Vec::new(),
+        ..Merged::default()
     }
 }
 
@@ -184,7 +193,8 @@ mod tests {
             r#"{"a":[1,3]}"#,
         );
         assert_eq!(m.conflicts, ["a"]);
-        assert!(!find_markers(&m.text).is_empty());
+        assert_eq!(m.text, r#"{"a":[1,2]}"#);
+        assert!(find_markers(&m.text).is_empty());
     }
 
     #[test]
@@ -196,7 +206,47 @@ mod tests {
             "{\n  \"a\": 1,\n  \"b\": 2\n}\n",
         );
         assert_eq!(m.conflicts, ["b"]);
-        assert!(!find_markers(&m.text).is_empty());
+        assert_eq!(m.text, "{\n  \"a\": 1\n}\n");
+        assert_eq!(
+            m.details,
+            ["key `b`: yours (deleted), template 2; kept yours"]
+        );
+    }
+
+    #[test]
+    fn yaml_key_conflict_with_nothing_else_merged_keeps_ours_verbatim() {
+        let b = "on: [push]\n# pin the runner\nruns-on: a\n";
+        let o = "on: [push]\n# pin the runner\nruns-on: b\n";
+        let t = "on: [push]\n# pin the runner\nruns-on: c\n";
+        let m = merge3(MergeStrategy::Yaml, b, o, t);
+        assert_eq!(m.conflicts, ["runs-on"]);
+        assert_eq!(m.text, o);
+    }
+
+    #[test]
+    fn json_key_conflict_with_nothing_else_merged_keeps_ours_verbatim() {
+        let b = "{\"a\":1,\"b\":[1,2]}";
+        let o = "{\"a\":2,\"b\":[1,2]}";
+        let t = "{\"a\":3,\"b\":[1,2]}";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(m.conflicts, ["a"]);
+        assert_eq!(m.text, o);
+    }
+
+    #[test]
+    fn json_key_conflict_keeps_other_changes_and_valid_json() {
+        let b = "{\n  \"a\": 1,\n  \"b\": 1,\n  \"c\": 1\n}\n";
+        let o = "{\n  \"a\": 2,\n  \"b\": 5,\n  \"c\": 1\n}\n";
+        let t = "{\n  \"a\": 1,\n  \"b\": 6,\n  \"c\": 3,\n  \"d\": 4\n}\n";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(m.conflicts, ["b"]);
+        assert_eq!(
+            m.text,
+            "{\n  \"a\": 2,\n  \"b\": 5,\n  \"c\": 3,\n  \"d\": 4\n}\n"
+        );
+        assert!(find_markers(&m.text).is_empty());
+        assert!(json::parses_strict(&m.text));
+        assert_eq!(m.details, ["key `b`: yours 5, template 6; kept yours"]);
     }
 
     #[test]
@@ -289,14 +339,20 @@ mod tests {
     }
 
     #[test]
-    fn yaml_same_key_conflict_has_markers() {
+    fn yaml_same_key_conflict_keeps_ours() {
         let b = "jobs:\n  ci:\n    runs-on: ubuntu-22.04\n";
         let o = "jobs:\n  ci:\n    runs-on: ubuntu-24.04\n";
         let t = "jobs:\n  ci:\n    runs-on: macos-latest\n";
         let m = merge3(MergeStrategy::Yaml, b, o, t);
         assert_eq!(m.conflicts, ["jobs.ci.runs-on"]);
-        assert!(m.text.contains("<<<<<<< ours"));
-        assert!(!find_markers(&m.text).is_empty());
+        assert_eq!(m.text, o);
+        assert!(find_markers(&m.text).is_empty());
+        assert_eq!(
+            m.details,
+            [
+                "key `jobs.ci.runs-on`: yours \"ubuntu-24.04\", template \"macos-latest\"; kept yours"
+            ]
+        );
     }
 
     #[test]
@@ -415,23 +471,10 @@ mod tests {
         let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"x\": 2\n}\n";
         let m = merge3(MergeStrategy::Json, b, o, t);
         assert_eq!(m.conflicts, ["x"]);
-        assert!(!find_markers(&m.text).is_empty());
-        let mut inside = false;
-        let outside: Vec<&str> = m
-            .text
-            .lines()
-            .filter(|l| {
-                if l.starts_with("<<<<<<< ") {
-                    inside = true;
-                }
-                let keep = !inside;
-                if l.starts_with(">>>>>>> ") {
-                    inside = false;
-                }
-                keep
-            })
-            .collect();
-        assert!(outside.iter().filter(|l| l.contains("\"x\"")).count() <= 1);
+        assert!(json::parses_strict(&m.text));
+        assert!(find_markers(&m.text).is_empty());
+        assert_eq!(m.text.matches("\"x\"").count(), 1, "{}", m.text);
+        assert!(m.text.contains("\"x\": 1"), "ours kept: {}", m.text);
     }
 
     const FIVE: &str = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"e\": 5\n}\n";

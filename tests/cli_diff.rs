@@ -50,6 +50,10 @@ fn diff_writes_nothing() {
     let repo = edited_repo(&tpl);
     // Owned drift too: `update` would refuse; `diff` still reports.
     std::fs::write(repo.path().join("tool.config.mts"), "mine\n").unwrap();
+    // A TOML key conflict keeps diff3 markers (json/yaml key conflicts keep ours instead).
+    common::edit(&repo, "config/settings.toml", |t| {
+        t.replace("es2020", "es2021")
+    });
     commit_all(repo.path());
     let out = splice_cmd()
         .current_dir(repo.path())

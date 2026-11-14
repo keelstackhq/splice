@@ -156,6 +156,37 @@ fn downgrade_refused() {
 }
 
 #[test]
+fn json_key_conflict_keeps_ours_and_valid_json() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    common::edit(&repo, "package.json", |t| {
+        t.replace("5.0.0", "5.1.0")
+            .replace("\"private\": true,", "\"private\": true,\n  \"mine\": 1,")
+    });
+    commit_all(repo.path());
+
+    let out = update(&repo, &[]).code(1).get_output().stdout.clone();
+    let v = json(&out);
+    let m = messages(&v);
+    assert!(
+        m.contains("key `devDependencies.typescript`: yours \"5.1.0\", template \"5.4.0\""),
+        "{m}"
+    );
+    assert!(m.contains("lock already at 2.0.0"), "{m}");
+    assert!(
+        m.contains("git checkout -- . && git checkout HEAD -- .splice/lock.toml"),
+        "{m}"
+    );
+    let text = read(&repo, "package.json");
+    assert!(!text.contains("<<<<<<<"), "{text}");
+    let parsed: serde_json::Value = serde_json::from_str(&text).expect("still valid JSON");
+    assert_eq!(parsed["devDependencies"]["typescript"], "5.1.0");
+    assert_eq!(parsed["mine"], 1);
+    assert_eq!(parsed["scripts"]["lint"], "echo lint");
+    assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
+}
+
+#[test]
 fn conflicts_written_lock_records_target() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
@@ -184,6 +215,57 @@ fn min_splice_refused_before_write() {
         .clone();
     assert!(messages(&json(&out)).contains("99.0.0"));
     assert_eq!(porcelain(&repo), "");
+}
+
+#[test]
+fn up_to_date_force_restores_owned_drift_only() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--piece", "app"]);
+    let owned = "apps/web/tsconfig.json";
+    let good = read(&repo, owned);
+    std::fs::write(repo.path().join(owned), "{ \"mine\": 1 }\n").unwrap();
+    let seed = repo.path().join("apps/web/extra-seed-note.txt");
+    std::fs::write(&seed, "keep me\n").unwrap();
+    std::fs::write(repo.path().join(".post-ran"), "marker\n").unwrap();
+    commit_all(repo.path());
+    let lock_before = lock_bytes(&repo);
+
+    // Without --force: still a no-op.
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert!(messages(&json(&out)).contains("up to date"));
+    assert_eq!(read(&repo, owned), "{ \"mine\": 1 }\n");
+
+    let out = update(&repo, &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert_eq!(read(&repo, owned), good);
+    assert_eq!(std::fs::read_to_string(&seed).unwrap(), "keep me\n");
+    let changes = v["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 1, "{v}");
+    assert_eq!(changes[0]["path"], owned);
+    assert_eq!(lock_bytes(&repo), lock_before);
+    // Restoring runs no post command (the fixture's post writes `.post-ran`).
+    assert_eq!(read(&repo, ".post-ran"), "marker\n");
+
+    // Nothing drifted: --force stays a plain "up to date", and post does not run again.
+    commit_all(repo.path());
+    let out = update(&repo, &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert!(messages(&v).contains("up to date"), "{v}");
+    assert_eq!(read(&repo, ".post-ran"), "marker\n");
+
+    // Deleted owned file comes back too.
+    std::fs::remove_file(repo.path().join(owned)).unwrap();
+    commit_all(repo.path());
+    update(&repo, &["--force"]).success();
+    assert_eq!(read(&repo, owned), good);
 }
 
 #[test]

@@ -8,6 +8,28 @@ use serde_json::Value;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Leaf(pub Value);
 
+/// One key changed on both sides (or deleted on one, changed on the other): the dotted path and
+/// both values (`None` = deleted). The merge keeps ours.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conflict {
+    pub path: String,
+    pub ours: Option<Value>,
+    pub theirs: Option<Value>,
+}
+
+impl Conflict {
+    /// `key `a.b` changed on both sides: yours `1`, template `2`; kept yours`.
+    pub fn describe(&self) -> String {
+        let show = |v: &Option<Value>| v.as_ref().map_or("(deleted)".to_string(), Value::to_string);
+        format!(
+            "key `{}`: yours {}, template {}; kept yours",
+            self.path,
+            show(&self.ours),
+            show(&self.theirs)
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tree {
     Map(IndexMap<String, Tree>),
@@ -53,7 +75,7 @@ pub fn merge_tree(
     ours: &Tree,
     theirs: &Tree,
     path: &mut Vec<String>,
-    conflicts: &mut Vec<String>,
+    conflicts: &mut Vec<Conflict>,
 ) -> Tree {
     match (base, ours, theirs) {
         (_, Tree::Map(o), Tree::Map(t)) => {
@@ -70,7 +92,11 @@ pub fn merge_tree(
             } else if ours == base {
                 theirs.clone()
             } else {
-                conflicts.push(join(path));
+                conflicts.push(Conflict {
+                    path: join(path),
+                    ours: Some(ours.clone().into_value()),
+                    theirs: Some(theirs.clone().into_value()),
+                });
                 ours.clone()
             }
         }
@@ -82,7 +108,7 @@ fn merge_maps(
     ours: &IndexMap<String, Tree>,
     theirs: &IndexMap<String, Tree>,
     path: &mut Vec<String>,
-    conflicts: &mut Vec<String>,
+    conflicts: &mut Vec<Conflict>,
 ) -> IndexMap<String, Tree> {
     let keys = ours
         .keys()
@@ -102,7 +128,11 @@ fn merge_maps(
             Some(merged)
         } else {
             path.push(key.clone());
-            conflicts.push(join(path));
+            conflicts.push(Conflict {
+                path: join(path),
+                ours: o.cloned().map(Tree::into_value),
+                theirs: t.cloned().map(Tree::into_value),
+            });
             path.pop();
             o.cloned()
         };
@@ -135,7 +165,10 @@ mod tests {
             &mut Vec::new(),
             &mut conflicts,
         );
-        (tree.into_value(), conflicts)
+        (
+            tree.into_value(),
+            conflicts.into_iter().map(|c| c.path).collect(),
+        )
     }
 
     #[test]

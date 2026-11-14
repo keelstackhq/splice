@@ -33,7 +33,11 @@ pub fn merge_text(base: &str, ours: &str, theirs: &str) -> Merged {
     } else {
         text
     };
-    Merged { text, conflicts }
+    Merged {
+        text,
+        conflicts,
+        ..Merged::default()
+    }
 }
 
 /// The whole file as one diff3 conflict block, for files that cannot be merged line by line.

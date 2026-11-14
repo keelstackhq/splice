@@ -71,6 +71,13 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
     let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version");
     template.check_min_splice(&running)?;
     report.messages.extend(template.warnings.iter().cloned());
+    if matches!(src.kind, crate::source::SourceKind::Local { .. }) {
+        report.msg(
+            "the template source is a local path: the lock records it as given, so it is not \
+             portable to another machine; use a git source such as `gh:owner/repo` for a lock \
+             others can update",
+        );
+    }
 
     // 2. Destination.
     let dest: PathBuf = g.dir.join(&a.dest);

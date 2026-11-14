@@ -8,7 +8,8 @@ no Python. First consumer: `keelstackhq/hull` (`gh:keelstackhq/hull//template`).
 - Spec: `docs/superpowers/specs/2026-10-14-splice-design.md` — source of truth. Read only the
   section you touch; update it in the same commit when behaviour changes.
 - Plans: `docs/superpowers/plans/` (01 render-new, 02 update-check, 03 release-action).
-- Progress: `docs/PROGRESS.md` — one line per finished task; human-only items under Blocked.
+- Progress: `docs/PROGRESS.md` — 3-line Status (version must equal Cargo.toml) and human-only
+  Blocked items; one line per finished task goes in `docs/history.md` (not imported).
 
 ## Layout
 
@@ -57,16 +58,16 @@ Run fmt, clippy and the tests you touched before every commit; the full suite be
 
 ## How to work here
 
-- Model routing: use the subagents in `.claude/agents/` — `explorer` (haiku) for searching
-  code/docs, `implementer` (sonnet) for one plan task, `reviewer` (opus) for the task diff. The
-  main session orchestrates and stays thin.
+- Model routing: default is `implementer` (sonnet) for one plan task plus CI; the main session
+  orchestrates and stays thin. Use `reviewer` (opus) only for risky tasks (merge, planner, apply,
+  lock, subset gate, public behaviour); `explorer` (haiku) for searching code/docs.
 - Test first (superpowers:test-driven-development): failing test → watch it fail → implement →
   pass → commit. One commit per task, message as in the plan.
 - Execute plans with superpowers:subagent-driven-development, one task at a time, in order.
 - Read big files by section (offset/limit or grep), not whole.
 - Ask before adding a crate or npm package not in a plan's Tech Stack.
 - Evidence before claims (superpowers:verification-before-completion): paste real output.
-- Public behaviour (flags, JSON, exit codes, lock, Action inputs) changes only with spec + README.
+- Public behaviour (flags, JSON, exit codes, lock, Action inputs) changes only with spec + `docs/reference.md` (README is a short pitch).
 
 ## Gotchas
 

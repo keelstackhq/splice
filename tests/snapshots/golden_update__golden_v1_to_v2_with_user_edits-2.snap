@@ -1,9 +1,10 @@
 ---
 source: tests/golden_update.rs
+assertion_line: 35
 expression: redact(&tree_snapshot(repo.path()))
 ---
 .editorconfig 5a36f7d5ebd96ceec93361ba60a452776dd483214e0921114667dd9eee2c3fe6
-.github/workflows/ci.yml 4983f2b3dfef3575ffda12d95188b9ddf9fac727f15e7b334af0311a14f6fa48
+.github/workflows/ci.yml b7e9e2382c3902f80da45d3b7d7e1904ffd8029751d7a1e6a15d0cd2f8a54d89
 .post-ran 8030404398e6639ff1395dd8e38c782bf6c9e00229adfc54408c967a2e981b51
 .splice/lock.toml [sha]
 .splice/migrated.txt b0a1de67696fb59a924cd5f5b1d51f7e5bcc1352ac47cb9866ee66689c05bb4b
@@ -32,13 +33,7 @@ name: ci
 on: [push]
 jobs:
   test:
-<<<<<<< ours
     runs-on: macos-latest
-||||||| base
-    runs-on: ubuntu-latest
-=======
-    runs-on: ubuntu-24.04
->>>>>>> template
     steps:
       - run: echo demo
 == .post-ran ==

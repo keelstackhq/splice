@@ -11,8 +11,21 @@ function cargoVersion(cargoToml) {
   return m[1];
 }
 
-export function checkVersion({ tag, cargoToml, launcherPkg, platforms }) {
+function actionPin(actionYml) {
+  const m = actionYml.match(/^ {2}version:\s*\n(?: {4}[^\n]*\n)*? {4}default:\s*"?([^"\n]+?)"?\s*$/m);
+  if (!m) throw new Error("action/action.yml has no `version` input default");
+  return m[1];
+}
+
+export function checkVersion({ tag, cargoToml, launcherPkg, platforms, actionYml }) {
   const version = cargoVersion(cargoToml);
+  if (actionYml !== undefined) {
+    // The Action installs this exact splice, so a release must bump the pin with the version.
+    const pin = actionPin(actionYml);
+    if (pin !== version) {
+      throw new Error(`action/action.yml pins splice ${pin}, expected ${version}`);
+    }
+  }
   if (tag !== null && tag !== undefined) {
     if (!tag.startsWith("v") || !SEMVER.test(tag.slice(1))) {
       throw new Error(`tag ${tag} is not a release tag (expected v<major>.<minor>.<patch>[-pre])`);
@@ -52,6 +65,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       tag,
       cargoToml: readFileSync(new URL("../Cargo.toml", import.meta.url), "utf8"),
       launcherPkg,
+      actionYml: readFileSync(new URL("../action/action.yml", import.meta.url), "utf8"),
     });
     console.log(version);
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);

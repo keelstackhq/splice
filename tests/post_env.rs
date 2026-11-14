@@ -57,6 +57,73 @@ fn tagged_template() -> TempDir {
     t
 }
 
+#[test]
+fn post_runs_without_git_credential_helpers() {
+    let marker = tempfile::tempdir().unwrap();
+    let marker = marker.path().join("helper-ran");
+    let gitconfig = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        gitconfig.path(),
+        format!(
+            "[credential]\n\thelper = \"!f() {{ echo ran >> '{}'; }}; f\"\n",
+            // Forward slashes: a backslash is an escape inside a git config string (Windows paths).
+            marker.display().to_string().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let piece = PIECE.replace(
+        "run = \"env | sort\"",
+        "run = \"printf 'protocol=https\\\\nhost=example.com\\\\n\\\\n' | git credential fill >/dev/null 2>&1 || true\"",
+    );
+    let t = inline_template(&[("base", &piece, &[("a.txt", "one\n")])]);
+    git(t.path(), DATE, &["init", "-q", "-b", "main"]);
+    stage_all(t.path(), DATE);
+    git(t.path(), DATE, &["commit", "-q", "-m", "v1"]);
+    git(t.path(), DATE, &["tag", "v1.0.0"]);
+    let dest = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .env("GIT_CONFIG_GLOBAL", gitconfig.path())
+        .args([
+            "new",
+            t.path().to_str().unwrap(),
+            dest.path().to_str().unwrap(),
+        ])
+        .args(["--yes", "--json"])
+        .assert()
+        .success();
+    assert!(
+        !marker.exists(),
+        "the post command reached the credential helper (spec §10 item 26)"
+    );
+}
+
+#[test]
+fn post_drops_inherited_git_config_injection() {
+    let tpl = tagged_template();
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
+        .env("GIT_CONFIG_VALUE_0", "AUTHORIZATION: basic s3cret-hdr")
+        .env("GIT_CONFIG_PARAMETERS", "'http.extraheader=s3cret-params'")
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            dest.path().to_str().unwrap(),
+        ])
+        .args(["--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("s3cret-hdr") && !stderr.contains("s3cret-params"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("GIT_CONFIG_COUNT=2"), "{stderr}");
+}
+
 fn assert_clean(stderr: &str) {
     assert!(stderr.contains("SPLICE_KEEP_ME=visible"), "{stderr}");
     for s in SECRETS {

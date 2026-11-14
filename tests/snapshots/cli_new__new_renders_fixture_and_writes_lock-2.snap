@@ -1,5 +1,6 @@
 ---
 source: tests/cli_new.rs
+assertion_line: 77
 expression: r
 ---
 {
@@ -87,5 +88,7 @@ expression: r
       "class": "owned"
     }
   ],
-  "messages": []
+  "messages": [
+    "the template source is a local path: the lock records it as given, so it is not portable to another machine; use a git source such as `gh:owner/repo` for a lock others can update"
+  ]
 }

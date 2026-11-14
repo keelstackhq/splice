@@ -58,6 +58,9 @@ pub struct Prepared {
     pub messages: Vec<String>,
     /// A channel update's lock, section plan and planned claim; `None` for the main template.
     pub channel: Option<ChannelPrepared>,
+    /// `update --force` on a current lock: only drifted owned files are rewritten; no post
+    /// commands run (spec §10.24).
+    pub restore_only: bool,
 }
 
 /// The channel part of [`Prepared`].
@@ -207,6 +210,8 @@ struct Resolved {
     no_newer: bool,
     /// A tracked branch head: no version comparison, no migrations (B5).
     tracked: bool,
+    /// The target is the locked commit (rendered anyway when `--force` asks for a restore).
+    current: bool,
     messages: Vec<String>,
     /// `None` when up to date and `render_current` is false.
     rendered: Option<Rendered>,
@@ -437,13 +442,15 @@ fn prepare_lock(
         });
     }
 
-    let render_current = matches!(
-        kind,
-        Kind::Channel {
-            render_current: true,
-            ..
-        }
-    );
+    // `--force` on a current main lock re-renders it to restore drifted owned files.
+    let render_current = force && matches!(kind, Kind::Main)
+        || matches!(
+            kind,
+            Kind::Channel {
+                render_current: true,
+                ..
+            }
+        );
     let rendered = if up_to_date && !render_current {
         None
     } else {
@@ -509,6 +516,7 @@ fn prepare_lock(
         instances,
         no_newer,
         tracked,
+        current: up_to_date,
         messages,
         rendered,
     })
@@ -583,20 +591,7 @@ pub fn prepare(
     };
     let mut r = prepare_lock(g, &lock, target, data, Kind::Main, force, data_ok)?;
     let Some(rendered) = r.rendered.take() else {
-        r.messages.push(up_to_date_message(&r));
-        return Ok(Prepared {
-            plan: Plan::default(),
-            lock_new: lock,
-            from: r.from.clone(),
-            to: r.from,
-            template: r.template,
-            instances: r.instances,
-            up_to_date: true,
-            tracked: r.tracked,
-            migrations: Vec::new(),
-            messages: r.messages,
-            channel: None,
-        });
+        return Ok(up_to_date_prepared(r, lock));
     };
     let Rendered {
         base,
@@ -622,6 +617,11 @@ pub fn prepare(
         removes,
         force,
     });
+    // `--force` on a current lock re-rendered only to find drift: nothing to restore = up to date.
+    if r.current && plan.changes.is_empty() && plan.drift.is_empty() {
+        return Ok(up_to_date_prepared(r, lock));
+    }
+    let restore_only = r.current;
     let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
         .keep_relative_source(&lock.template.source);
     Ok(Prepared {
@@ -636,7 +636,27 @@ pub fn prepare(
         migrations,
         messages: r.messages,
         channel: None,
+        restore_only,
     })
+}
+
+/// The "up to date" result of the main lock: nothing planned, the lock as it is.
+fn up_to_date_prepared(mut r: Resolved, lock: Lock) -> Prepared {
+    r.messages.push(up_to_date_message(&r));
+    Prepared {
+        plan: Plan::default(),
+        lock_new: lock,
+        from: r.from.clone(),
+        to: r.from,
+        template: r.template,
+        instances: r.instances,
+        up_to_date: true,
+        tracked: r.tracked,
+        migrations: Vec::new(),
+        messages: r.messages,
+        channel: None,
+        restore_only: false,
+    }
 }
 
 /// [`prepare`] for channel `cl`: its own lock, vars and pieces (never the main template's),
@@ -693,6 +713,7 @@ pub fn prepare_channel(
             tracked: r.tracked,
             migrations: Vec::new(),
             messages: r.messages,
+            restore_only: false,
             channel: Some(ChannelPrepared {
                 lock_new: cl.clone(),
                 sections: SectionPlan::default(),
@@ -793,6 +814,7 @@ pub fn prepare_channel(
         tracked: r.tracked,
         migrations,
         messages: r.messages,
+        restore_only: false,
         channel: Some(ChannelPrepared {
             lock_new,
             sections,
@@ -981,7 +1003,7 @@ fn apply_prepared(
         lock,
         post: post_of(prep),
         when: When::Update,
-        no_post: a.no_post,
+        no_post: a.no_post || prep.restore_only,
         json: g.json,
         command: "update",
         sections,
@@ -1036,6 +1058,9 @@ fn steps_of(prep: &Prepared) -> Vec<(&Version, &Step)> {
 /// The `[[post]]` commands of every piece in the update, once per piece id.
 fn post_of(prep: &Prepared) -> Vec<PostCmd> {
     let mut post: Vec<PostCmd> = Vec::new();
+    if prep.restore_only {
+        return post;
+    }
     let mut seen: Vec<&str> = Vec::new();
     for inst in &prep.instances {
         if !seen.contains(&inst.id.as_str()) {
@@ -1237,7 +1262,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             )));
         }
     }
-    let mut conflicts: Vec<(&SourceId, &Vec<String>)> = Vec::new();
+    let mut conflicts = Vec::new();
     for s in &changed {
         let ctx = ctx_of(s);
         report.msg(s.id.tag());
@@ -1250,7 +1275,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             Err(e) => return Err(all_failed(report, &format!("{}: ", s.id), e)),
         }
         if !s.prep.plan.conflicts.is_empty() {
-            conflicts.push((&s.id, &s.prep.plan.conflicts));
+            conflicts.push((&s.id, &s.prep.plan, &s.prep.to, s.lock_out().path()));
         }
     }
 
@@ -1281,10 +1306,10 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     } else {
         report.ok = false;
         // One line per source: a global line after the last source's tag would read as its own.
-        for (id, paths) in conflicts {
+        for (id, plan, to, lock) in conflicts {
             report.msg(format!(
-                "{id}: conflicts in {}: resolve the diff3 markers",
-                paths.join(", ")
+                "{id}: {}",
+                crate::apply::conflict_summary(plan, to, &lock)
             ));
         }
         Err(SpliceError::Conflict(report))

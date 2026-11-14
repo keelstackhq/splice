@@ -403,9 +403,11 @@ between them (it runs after both).
 - YAML mapping keys must be strings: `1: a` is not coerced to `"1"`; such a file, like a
   multi-document one, is a parse error and falls back to text.
 - A parse error in any side falls back to text.
-- **Structured conflict → markers:** run the text merge; if it yields markers, use them; if it
+- **TOML conflict → markers:** run the text merge; if it yields markers, use them; if it
   merges cleanly anyway, wrap the whole file in one diff3 block (ours / base / theirs), with the
-  text merge's CRLF rule. Every conflict therefore leaves markers that `check` finds.
+  text merge's CRLF rule. `check` finds those markers.
+- **JSON and YAML conflict → key-level merge (§10.23):** every non-conflicting change is applied,
+  ours stays on each conflicting key, no markers; `Merged.details` holds one line per key.
 - **Text fallback guards:** a clean JSON text merge that introduces a duplicate key ours did not
   have, and a clean TOML text merge (a side did not parse) that no longer parses while ours does
   (e.g. a merge-introduced duplicate key), become one whole-file conflict block.
@@ -648,6 +650,41 @@ Items 11–14 and 18 stay splice's own decisions.
       Two tagged sides select by semver exactly as the contract says.
     - The lock shape is unchanged: `version = "0.0.0+g<sha7>"` and the full `commit`.
 22. Secret-like variables are not passed to template commands (security: the update Action runs `splice update` with `GH_TOKEN`, and a post such as `pnpm install` loads repo code). Rule: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD` or `KEY`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`AWS_ACCESS_KEY_ID` and `SSH_AUTH_SOCK` are kept; `TOKENIZER_PATH`, `KEYBOARD`, `SECRETS_DIR` are not matches); non-UTF-8 names are compared lossily. Applies to `run_shell`, so to both post commands and steps; git calls made by splice keep the token. Not a sandbox: splice cannot scrub its own environment (no `unsafe`), which a same-user child can read.
+23. JSON and YAML key conflicts (review finding F3). One key changed on both sides must not turn
+    the whole file into diff3 markers: that is invalid JSON/YAML and hides the changes that did
+    not conflict. The merge applies every non-conflicting change and keeps ours on each
+    conflicting key (a key ours deleted stays deleted). When only conflicting keys differ from ours
+    the file is returned byte for byte (YAML comments and flow style survive). The change is `conflict`, exit 1, the lock
+    is written; one message per key names the file, both values (`(deleted)` for an absent key)
+    and what was kept. There are no markers, so `check` does not flag a key conflict later: the
+    messages are the only record. The contract (§5) says only that such a key "is a conflict",
+    so it needs no change. YAML still loses comments and layout on a real merge (spec §8.5).
+    TOML and text keep diff3 markers. The last conflict message also says the lock is already at
+    the target and how to abort (`git checkout -- . && git checkout HEAD -- <lock path>`).
+24. `update --force` on a current lock (review finding F1). Step 2's "up to date" return skipped the
+    drift check, so a deleted or edited owned file had no fix path. With `--force` the current
+    version is rendered (base = theirs) and planned as usual: drifted or deleted owned files are
+    rewritten, nothing else changes (shared files keep ours, seeds stay), and the lock is written
+    atomically (unchanged unless the render differs). Nothing drifted: still "up to date". Restoring
+    runs no `[[post]]`. Main lock only; `update --channel NAME --force` on a current channel stays
+    "up to date". Without `--force`, still "up to date".
+25. `check` owned-drift messages (F2). Each drifted owned file gets a message naming the file, the
+    cause (`was edited locally` or `was deleted`) and the fix (`splice update --force` restores
+    it, or revert the change). The change shape is unchanged (`update`/`owned`).
+26. Template commands see no git credentials (F5). Besides the secret-like variables of item 22,
+    `[[post]]` and `[[step]]` children get `GIT_CONFIG_COUNT`/`KEY`/`VALUE` entries (appended to
+    any set) that reset `credential.helper` and `http.https://github.com/.extraheader`, so a
+    post command cannot reuse the credentials `gh auth setup-git` or `actions/checkout` left for
+    splice's own git calls (template fetches keep them). Every inherited `GIT_CONFIG_COUNT`,
+    `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_KEY_*` and `GIT_CONFIG_VALUE_*` is dropped first. This
+    is defense in depth, not a sandbox: the real protection is `persist-credentials: false` on
+    checkout (README of the Action, reference).
+27. `check` without `--offline` after a failed fetch (F9). A remote source that already has a
+    cached mirror is read from it: the message says it fell back to the cached tags, and an
+    available update is still reported from them. No cache: the old "could not look for updates"
+    message. Main lock only; channels keep the old message.
+28. `new` from a local path (F10) adds a message that the lock records the path as given and is
+    not portable to another machine. `add`, `channel add` and `update` do not.
 
 ## 11. Testing
 

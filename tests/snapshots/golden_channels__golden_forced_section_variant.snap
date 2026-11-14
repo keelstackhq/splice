@@ -1,5 +1,6 @@
 ---
 source: tests/golden_channels.rs
+assertion_line: 135
 expression: v
 ---
 {
@@ -84,8 +85,9 @@ expression: v
   ],
   "messages": [
     "source=main",
-    "main: `.github/workflows/ci.yml` has conflicts (jobs.test.runs-on); resolve the diff3 markers",
+    "main: `.github/workflows/ci.yml` key `jobs.test.runs-on`: yours \"macos-latest\", template \"ubuntu-24.04\"; kept yours",
+    "main: `.github/workflows/ci.yml` has conflicts (jobs.test.runs-on); the file keeps your values there, edit those keys to take the template's",
     "source=channel:rig",
-    "main: conflicts in .github/workflows/ci.yml: resolve the diff3 markers"
+    "main: conflicts in .github/workflows/ci.yml: review the kept keys (your values stay; edit them to take the template's); lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml"
   ]
 }

@@ -26,7 +26,8 @@ pub fn merge_toml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     }
     Ok(Merged {
         text: o.to_string(),
-        conflicts,
+        conflicts: conflicts.into_iter().map(|c| c.path).collect(),
+        ..Merged::default()
     })
 }
 

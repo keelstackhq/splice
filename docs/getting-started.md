@@ -1,5 +1,7 @@
 # Getting started: a new repository with splice and hull
 
+> **Human-only guide.** Agents read `skills/splice/SKILL.md` (the contract), not this file.
+
 This guide takes you from nothing to a repository that is generated from the `hull` template
 and kept current by a weekly pull request. The output blocks were captured from the real
 binary (splice 0.2.0) against a local copy of the test template (`tests/fixtures/template`,
@@ -13,7 +15,7 @@ versions 1.0.0 and 2.0.0). They are shortened, and hull's own file names will di
 
 - `git` on `PATH`. splice fetches templates only through the git CLI.
 - One of: Node 20+ with pnpm (`pnpm dlx @keelstackhq/splice ...` runs it without installing), or
-  a binary from the GitHub release (see the README, "Install"), or `cargo build --release`.
+  a binary from the GitHub release (see [the reference](reference.md#install)), or `cargo build --release`.
 
 Check with `splice --version`.
 
@@ -105,7 +107,7 @@ src/x  unmanaged
 | Class | For you | On `splice update` |
 |---|---|---|
 | `owned` | Do not edit. The template controls it. | Replaced. If you edited it, the update is refused (exit 1, nothing written) until you revert the edit or pass `--force`. |
-| `shared` | Edit freely; add your own keys and lines. | 3-way merged: JSON, YAML and TOML by key, text by line. Real conflicts get markers. |
+| `shared` | Edit freely; add your own keys and lines. | 3-way merged: JSON, YAML and TOML by key, text by line. Real text and TOML conflicts get markers; a JSON or YAML key conflict keeps your value and is named in the messages. |
 | `seed` | Yours from day one. | Never touched. |
 | unmanaged | Not splice's. | Ignored. |
 
@@ -183,7 +185,7 @@ conflict  notes.txt  shared
 delete  old.txt  owned
 ...
 `notes.txt` has conflicts (line 1); resolve the diff3 markers
-conflicts in notes.txt: resolve the diff3 markers
+conflicts in notes.txt: resolve the diff3 markers; lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml
 exit 1
 ```
 
@@ -252,18 +254,18 @@ pnpm dlx @keelstackhq/splice check            # covers every channel too
 
 `explain` then names the owner of a path (`source=main` or `source=channel:NAME`). Never edit
 inside a `<!-- splice:NAME:begin ... -->` block that a channel put into a file of yours: change
-the channel source instead. The README section "Channels" lists the flags (`--only`,
+the channel source instead. The reference section "Channels" lists the flags (`--only`,
 `--exclude`, `--track`, `--ref`, `channel remove`), and the design is in
 [`docs/superpowers/specs/2026-10-17-splice-channels-design.md`](superpowers/specs/2026-10-17-splice-channels-design.md).
 
 ## 8. Automate updates with the bot
 
 The bot is the `keelstackhq/splice/action` Action: it runs `splice update` and opens or refreshes
-one pull request from the branch `splice/update` (title prefixed `[conflicts]` when markers were
+one pull request from the branch `splice/update` (title prefixed `[conflicts]` when conflicts were
 written), and closes it when you are current. Owned drift and template errors fail the job. If
 the repo has channels, the bot updates them too (the `scope` input, default `all` when
 `.splice/channels/` holds a `*.toml`). Inputs and outputs are in
-[the README](../README.md#update-bot).
+[the reference](reference.md#update-bot).
 
 **What plain `GITHUB_TOKEN` cannot do.** Templates ship workflow files, and the default
 `GITHUB_TOKEN`:
@@ -345,8 +347,10 @@ gh pr create   # or open the PR in the GitHub UI
 ```
 
 `update` exits 0 when it applied cleanly or there was nothing to do. Exit 1 means owned drift
-(nothing written: revert the files or pass `--force`) or conflicts (diff3 markers written:
-resolve them, section 6, before you commit). `splice check` then confirms no markers are left.
+(nothing written: revert the files or pass `--force`) or conflicts (text and TOML files get diff3
+markers: resolve them, section 6, before you commit; JSON and YAML key conflicts keep your value
+and are named in the messages, with no markers, so read them). `splice check` confirms no markers
+are left; it does not see key conflicts.
 Run `splice check` from CI or a scheduled job if you want to be told when an update is
 available (exit 1).
 
@@ -363,7 +367,7 @@ and lives until it expires, which is why the app is preferred.
 | Code | Meaning | Common messages and what to do |
 |---|---|---|
 | 0 | ok; `check` found nothing | |
-| 1 | drift, conflicts, or an update available | `update available: A → B`: run `splice diff`, then `splice update`. `... is owned by the template but was edited locally`: revert it or use `--force`. `... has conflicts` or `unresolved conflict markers` in `check`: resolve them (section 6). |
+| 1 | drift, conflicts, or an update available | `update available: A → B`: run `splice diff`, then `splice update`. `... is owned by the template but was edited locally`: revert it or use `--force`. `... has conflicts` or `unresolved conflict markers` in `check`: resolve them (section 6); a key conflict message says which keys kept your value. |
 | 2 | usage error | `the working tree has uncommitted changes; commit or stash them first (or pass --allow-dirty)`. `missing value for var `X`; pass --data X=…`. On `update` of a piece var, with `--channel` or `--all`, and in `splice diff`, the message says to give the var a default in the template or to rerun the command at a terminal, because `--data` is not accepted there. `unknown piece `P``. `piece `app` already has an instance named `docs``. `<dir> has no .splice/lock.toml; run `splice new` first` (run in the project, or pass `-C <dir>`). `<dir> already has a .splice/lock.toml; use `splice update` or `splice add``. `target X is older than the locked Y`. |
 | 3 | template or environment error | `template source X is not a git repository`: wrong path or URL, or no access. `template needs splice >= X (running Y); run `pnpm dlx @keelstackhq/splice@latest ...``: upgrade splice. Bad manifest, render error, a git failure, or a failed migration step or post command: read the message on stderr. After a failed update the lock still matches the old state, so fix the cause and rerun. |
 

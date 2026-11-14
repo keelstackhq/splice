@@ -8,7 +8,7 @@ use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 use serde_json::ser::{PrettyFormatter, Serializer};
 
-use super::keypath::{Tree, merge_tree};
+use super::keypath::{Conflict, Tree, merge_tree};
 use super::{Merged, ParseError};
 
 /// True when `text` is one JSON value without a repeated object key at any depth.
@@ -116,10 +116,17 @@ pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     };
     let (o, t) = (parse(ours)?, parse(theirs)?);
     let mut conflicts = Vec::new();
-    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts).into_value();
+    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts);
+    // Only conflicting keys differ from ours: nothing merged, so ours stays byte for byte.
+    let text = if !conflicts.is_empty() && merged == o {
+        ours.to_string()
+    } else {
+        print(&merged.into_value(), ours)
+    };
     Ok(Merged {
-        text: print(&merged, ours),
-        conflicts,
+        text,
+        conflicts: conflicts.iter().map(|c| c.path.clone()).collect(),
+        details: conflicts.iter().map(Conflict::describe).collect(),
     })
 }
 

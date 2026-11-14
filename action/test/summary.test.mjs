@@ -24,7 +24,7 @@ test("conflict title and body", () => {
   assert.equal(s.title, "[conflicts] chore: splice update to 2.0.0");
   assert.equal(s.result, "conflicts");
   assert.match(s.body, /\| conflict \| `[^`]+` \| shared \|/);
-  assert.match(s.body, /Resolve the conflict markers, then run `splice check --json`\./);
+  assert.match(s.body, /Resolve the conflict markers, or the kept keys.*then run `splice check --json`\./);
 });
 
 test("drift is its own result", () => {

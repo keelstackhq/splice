@@ -66,6 +66,38 @@ fn relative_source_from_new_works_from_inside_and_outside_the_repo() {
 }
 
 #[test]
+fn new_from_a_local_source_warns_the_lock_is_not_portable() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            dest.path().to_str().unwrap(),
+        ])
+        .args([
+            "--ref",
+            "v1.0.0",
+            "--piece",
+            "app:web",
+            "--data",
+            "project=demo",
+        ])
+        .args(["--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let msgs = v["messages"].to_string();
+    assert!(
+        msgs.contains("local path") && msgs.contains("not portable"),
+        "{msgs}"
+    );
+}
+
+#[test]
 fn relative_source_from_channel_add_works_from_inside_the_repo() {
     let tpl = template_repo(&["v1"]);
     let app = new_repo_at(&tpl, "v1.0.0");

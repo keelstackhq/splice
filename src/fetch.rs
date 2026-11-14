@@ -24,6 +24,9 @@ pub struct ResolvedTemplate {
 #[derive(Debug, Clone)]
 pub struct Fetcher {
     pub cache: PathBuf,
+    /// Read remote sources from their cached mirror without fetching (`check` falls back to it
+    /// when the network fails).
+    pub offline: bool,
 }
 
 /// The semver of a `v<semver>` tag, if it is one.
@@ -46,11 +49,17 @@ impl Fetcher {
                 .unwrap_or_else(std::env::temp_dir)
                 .join("splice"),
         };
-        Fetcher { cache }
+        Fetcher {
+            cache,
+            offline: false,
+        }
     }
 
     pub fn new(cache: PathBuf) -> Self {
-        Fetcher { cache }
+        Fetcher {
+            cache,
+            offline: false,
+        }
     }
 
     /// The git directory to read from, and where to list tags. Local sources are used in
@@ -77,11 +86,32 @@ impl Fetcher {
                     .cache
                     .join("git")
                     .join(format!("{}.git", src.cache_key()));
-                Git::ensure_mirror(url, &mirror)?;
+                if !(self.offline && mirror.join("HEAD").exists()) {
+                    Git::ensure_mirror(url, &mirror)?;
+                }
                 let tags_from = mirror.to_string_lossy().into_owned();
                 Ok((mirror, tags_from))
             }
         }
+    }
+
+    /// The same fetcher reading cached mirrors only.
+    pub fn cached_only(&self) -> Self {
+        Fetcher {
+            offline: true,
+            ..self.clone()
+        }
+    }
+
+    /// Whether `src` is remote and already mirrored in the cache.
+    pub fn has_cached_mirror(&self, src: &TemplateSource) -> bool {
+        matches!(src.kind, SourceKind::Git { .. })
+            && self
+                .cache
+                .join("git")
+                .join(format!("{}.git", src.cache_key()))
+                .join("HEAD")
+                .exists()
     }
 
     /// `(tag, version, commit)` for every `v<semver>` tag, prereleases only when `pre`.

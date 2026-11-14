@@ -120,12 +120,35 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         Ok(report)
     } else {
         report.ok = false;
-        report.msg(format!(
-            "conflicts in {}: resolve the diff3 markers",
-            plan.conflicts.join(", ")
-        ));
+        report.msg(conflict_summary(plan, &ctx.to, &ctx.lock.path()));
         Err(SpliceError::Conflict(report))
     }
+}
+
+/// The last message of a conflicted run: which files, that the lock is already at the target
+/// and how to abort.
+pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str) -> String {
+    // A conflicted file holds diff3 markers (text, TOML) or, for a JSON/YAML key conflict, ours
+    // on the conflicting keys with no markers.
+    let marked = |p: &String| {
+        plan.changes
+            .iter()
+            .find(|c| &c.path == p)
+            .and_then(|c| c.bytes.as_deref())
+            .is_some_and(|b| !crate::markers::find_markers(&String::from_utf8_lossy(b)).is_empty())
+    };
+    let any_markers = plan.conflicts.iter().any(marked);
+    let any_keys = plan.conflicts.iter().any(|p| !marked(p));
+    let what = match (any_markers, any_keys) {
+        (true, true) => "resolve the diff3 markers and review the kept keys",
+        (false, _) => "review the kept keys (your values stay; edit them to take the template's)",
+        _ => "resolve the diff3 markers",
+    };
+    format!(
+        "conflicts in {}: {what}; lock already at {to}; to abort: git checkout -- . && git \
+         checkout HEAD -- {lock_path}",
+        plan.conflicts.join(", ")
+    )
 }
 
 /// Check every write target of `ctx` (the lock path, every change, every section host) without

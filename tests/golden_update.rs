@@ -87,7 +87,12 @@ fn rerun_after_restore_succeeds() {
         redact(&tree_snapshot(repo.path())),
         redact(&tree_snapshot(reference.path()))
     );
-    assert!(read(&repo, ".github/workflows/ci.yml").contains("<<<<<<< ours"));
+    // The yaml key conflict keeps ours (no markers) and changes nothing else in the file.
+    let ci = read(&repo, ".github/workflows/ci.yml");
+    assert!(
+        ci.contains("macos-latest") && !ci.contains("<<<<<<<"),
+        "{ci}"
+    );
 }
 
 #[test]
@@ -96,9 +101,13 @@ fn resolve_conflict_then_check_passes() {
     let repo = new_repo_at(&tpl, "v1.0.0");
     apply_user_edits(&repo);
     update_cmd(&repo).assert().code(1);
-    // Resolve the conflict by keeping the template side, then commit.
+    // A yaml key conflict keeps ours and leaves valid YAML (no markers); resolve by taking the
+    // template's value, then commit.
     let ci = read(&repo, ".github/workflows/ci.yml");
-    assert!(ci.contains("<<<<<<< ours") && ci.contains(">>>>>>> template"));
+    assert!(
+        ci.contains("macos-latest") && !ci.contains("<<<<<<<"),
+        "{ci}"
+    );
     std::fs::write(
         repo.path().join(".github/workflows/ci.yml"),
         "name: ci\non: [push]\njobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo demo\n",

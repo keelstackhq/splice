@@ -81,5 +81,25 @@ test("release.yml build matrix covers exactly the platforms.json targets", () =>
 test("the real npm/splice/package.json matches Cargo.toml", () => {
   const cargoToml = readFileSync(new URL("../Cargo.toml", import.meta.url), "utf8");
   const launcherPkg = JSON.parse(readFileSync(new URL("../npm/splice/package.json", import.meta.url), "utf8"));
-  assert.equal(checkVersion({ tag: null, cargoToml, launcherPkg }), launcherPkg.version);
+  const actionYml = readFileSync(new URL("../action/action.yml", import.meta.url), "utf8");
+  assert.equal(checkVersion({ tag: null, cargoToml, launcherPkg, actionYml }), launcherPkg.version);
+});
+
+const action = (d) =>
+  `inputs:\n  version:\n    description: "splice npm version"\n    default: ${d}\n  to:\n    default: ""\n`;
+
+test("action default must pin the Cargo version", () => {
+  assert.equal(checkVersion({ tag: null, cargoToml: cargo("0.2.0"), actionYml: action("0.2.0") }), "0.2.0");
+  assert.throws(
+    () => checkVersion({ tag: null, cargoToml: cargo("0.2.0"), actionYml: action("latest") }),
+    /action\/action\.yml pins splice latest, expected 0\.2\.0/,
+  );
+  assert.throws(
+    () => checkVersion({ tag: null, cargoToml: cargo("0.2.0"), actionYml: action("0.1.9") }),
+    /pins splice 0\.1\.9/,
+  );
+  assert.throws(
+    () => checkVersion({ tag: null, cargoToml: cargo("0.2.0"), actionYml: "inputs: {}\n" }),
+    /no `version` input default/,
+  );
 });
