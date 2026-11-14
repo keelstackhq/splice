@@ -174,7 +174,7 @@ bumps SHA and comment together. `create-github-app-token` v3.3.0 is commit `64ab
 
 It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
 
-Inputs: `version` (`latest`, `next`, a semver, or `none` to use the `splice` on `PATH`), `to`
+Inputs: `version` (a semver, default the splice release this Action was tagged with; `latest`, `next`, or `none` to use the `splice` on `PATH`), `to`
 (template version, default latest), `scope` (`main` or `all`; default `all` when
 `.splice/channels/` holds a `*.toml`, else `main`; `all` runs `splice update --all` and groups the PR
 body by source; `to` needs `scope: main`), `token` (default `github.token`), `branch` (default

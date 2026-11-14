@@ -2,8 +2,8 @@ name: splice update bot
 description: Run `splice update` and open or refresh one pull request with the result.
 inputs:
   version:
-    description: "splice npm version: latest, next, a semver, or none (use the splice on PATH)"
-    default: latest
+    description: "splice npm version: a semver, latest, next, or none (use the splice on PATH). The default is pinned and bumped with each release"
+    default: 0.4.0
   to:
     description: Template version to update to (default latest)
     default: ""
@@ -50,7 +50,8 @@ runs:
       run: |
         set -euo pipefail
         if [ "$VERSION" != none ]; then
-          npm i -g "@keelstackhq/splice@$VERSION"
+          # --ignore-scripts: no install scripts from the package or its dependencies.
+          npm i -g --ignore-scripts "@keelstackhq/splice@$VERSION"
         fi
     - name: Run splice update
       id: update
