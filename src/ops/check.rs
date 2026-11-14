@@ -16,9 +16,13 @@ use crate::sources::Sources;
 type Result<T> = std::result::Result<T, SpliceError>;
 
 /// The newest stable version of the locked template, if it is newer than the lock.
-fn newer_stable(repo: &Path, lock: &Lock) -> Result<Option<semver::Version>> {
+fn newer_stable(repo: &Path, lock: &Lock, cached: bool) -> Result<Option<semver::Version>> {
     let src = TemplateSource::parse_from(&lock.template.source, repo)?;
-    let fetcher = Fetcher::from_env();
+    let fetcher = if cached {
+        Fetcher::from_env().cached_only()
+    } else {
+        Fetcher::from_env()
+    };
     if is_untagged(&lock.template.version) {
         // Git ancestry, never semver order (spec §10 item 21).
         return Ok(fetcher
@@ -30,6 +34,17 @@ fn newer_stable(repo: &Path, lock: &Lock) -> Result<Option<semver::Version>> {
         .into_iter()
         .max()
         .filter(|v| *v > lock.template.version))
+}
+
+/// The message that says `check` went offline after a failed fetch, when the source is remote and
+/// has a cached mirror; `None` when there is no cache to fall back to.
+fn degrade(repo: &Path, source: &str, e: &SpliceError) -> Option<String> {
+    let src = TemplateSource::parse_from(source, repo).ok()?;
+    Fetcher::from_env().has_cached_mirror(&src).then(|| {
+        format!(
+            "could not fetch the template tags ({e}); using the cached tags (as with --offline)"
+        )
+    })
 }
 
 /// Every path a lock lists (files, and for a channel its section hosts) is checked before any is
@@ -205,7 +220,17 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
     if let Some(lock) = main {
         check_files(repo, lock, "", &mut report)?;
         if !a.offline {
-            match newer_stable(repo, lock) {
+            let found = match newer_stable(repo, lock, false) {
+                Err(e) => match degrade(repo, &lock.template.source, &e) {
+                    Some(note) => {
+                        report.msg(note);
+                        newer_stable(repo, lock, true)
+                    }
+                    None => Err(e),
+                },
+                ok => ok,
+            };
+            match found {
                 Ok(Some(v)) => {
                     update_available = true;
                     report.msg(format!("update available: {} → {v}", lock.template.version));

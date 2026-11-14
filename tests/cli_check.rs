@@ -180,6 +180,30 @@ fn fetch_failure_is_message_not_error() {
 }
 
 #[test]
+fn fetch_failure_with_a_cache_degrades_to_cached_tags() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let url = format!("file://{}", tpl.path().to_str().unwrap());
+    let repo = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", &url, repo.path().to_str().unwrap()])
+        .args(["--piece", "app:web", "--data", "project=demo", "--yes"])
+        .args(["--ref", "v1.0.0"])
+        .assert()
+        .success();
+    commit_all(repo.path());
+    // The mirror now exists in the cache; the source goes away.
+    let gone = tpl.path().with_extension("gone");
+    std::fs::rename(tpl.path(), &gone).unwrap();
+    let (code, v) = check(&repo, &[]);
+    std::fs::rename(&gone, tpl.path()).unwrap();
+    let m = messages(&v);
+    assert_eq!(code, 1, "{v}");
+    assert!(m.contains("using the cached tags"), "{v}");
+    assert!(m.contains("update available: 1.0.0 → 2.0.0"), "{v}");
+    assert!(!m.contains("could not look for updates"), "{v}");
+}
+
+#[test]
 fn check_writes_nothing() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, Some("v1.0.0"));
