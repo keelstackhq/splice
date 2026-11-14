@@ -92,8 +92,35 @@ fn post_runs_without_git_credential_helpers() {
         .success();
     assert!(
         !marker.exists(),
-        "the post command reached the credential helper (spec §10 item 22)"
+        "the post command reached the credential helper (spec §10 item 26)"
     );
+}
+
+#[test]
+fn post_drops_inherited_git_config_injection() {
+    let tpl = tagged_template();
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader")
+        .env("GIT_CONFIG_VALUE_0", "AUTHORIZATION: basic s3cret-hdr")
+        .env("GIT_CONFIG_PARAMETERS", "'http.extraheader=s3cret-params'")
+        .args([
+            "new",
+            tpl.path().to_str().unwrap(),
+            dest.path().to_str().unwrap(),
+        ])
+        .args(["--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("s3cret-hdr") && !stderr.contains("s3cret-params"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("GIT_CONFIG_COUNT=2"), "{stderr}");
 }
 
 fn assert_clean(stderr: &str) {

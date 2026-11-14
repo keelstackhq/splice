@@ -61,6 +61,6 @@ expression: "serde_json::from_slice::<serde_json::Value>(&out).unwrap()"
   "messages": [
     "`.github/workflows/ci.yml` key `jobs.test.runs-on`: yours \"macos-latest\", template \"ubuntu-24.04\"; kept yours",
     "`.github/workflows/ci.yml` has conflicts (jobs.test.runs-on); the file keeps your values there, edit those keys to take the template's",
-    "conflicts in .github/workflows/ci.yml: resolve the diff3 markers or the kept keys; lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml"
+    "conflicts in .github/workflows/ci.yml: review the kept keys (your values stay; edit them to take the template's); lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml"
   ]
 }

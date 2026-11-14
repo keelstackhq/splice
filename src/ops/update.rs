@@ -1275,12 +1275,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
             Err(e) => return Err(all_failed(report, &format!("{}: ", s.id), e)),
         }
         if !s.prep.plan.conflicts.is_empty() {
-            conflicts.push((
-                &s.id,
-                &s.prep.plan.conflicts,
-                &s.prep.to,
-                s.lock_out().path(),
-            ));
+            conflicts.push((&s.id, &s.prep.plan, &s.prep.to, s.lock_out().path()));
         }
     }
 
@@ -1311,10 +1306,10 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     } else {
         report.ok = false;
         // One line per source: a global line after the last source's tag would read as its own.
-        for (id, paths, to, lock) in conflicts {
+        for (id, plan, to, lock) in conflicts {
             report.msg(format!(
                 "{id}: {}",
-                crate::apply::conflict_summary(paths, to, &lock)
+                crate::apply::conflict_summary(plan, to, &lock)
             ));
         }
         Err(SpliceError::Conflict(report))

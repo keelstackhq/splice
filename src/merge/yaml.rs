@@ -15,7 +15,19 @@ pub fn merge_yaml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     };
     let (o, t) = (parse(ours)?, parse(theirs)?);
     let mut conflicts = Vec::new();
-    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts).into_value();
+    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts);
+    let details: Vec<String> = conflicts.iter().map(Conflict::describe).collect();
+    let paths: Vec<String> = conflicts.iter().map(|c| c.path.clone()).collect();
+    // Only conflicting keys differ from ours: nothing merged, so ours stays byte for byte
+    // (comments and flow style kept).
+    if !conflicts.is_empty() && merged == o {
+        return Ok(Merged {
+            text: ours.to_string(),
+            conflicts: paths,
+            details,
+        });
+    }
+    let merged = merged.into_value();
     let mut text = yaml_serde::to_string(&merged).map_err(|e| ParseError(e.to_string()))?;
     let seq = sequence_indent(ours);
     if seq > 0 {
@@ -29,8 +41,8 @@ pub fn merge_yaml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     }
     Ok(Merged {
         text,
-        conflicts: conflicts.iter().map(|c| c.path.clone()).collect(),
-        details: conflicts.iter().map(Conflict::describe).collect(),
+        conflicts: paths,
+        details,
     })
 }
 

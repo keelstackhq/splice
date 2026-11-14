@@ -116,9 +116,15 @@ pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     };
     let (o, t) = (parse(ours)?, parse(theirs)?);
     let mut conflicts = Vec::new();
-    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts).into_value();
+    let merged = merge_tree(&b, &o, &t, &mut Vec::new(), &mut conflicts);
+    // Only conflicting keys differ from ours: nothing merged, so ours stays byte for byte.
+    let text = if !conflicts.is_empty() && merged == o {
+        ours.to_string()
+    } else {
+        print(&merged.into_value(), ours)
+    };
     Ok(Merged {
-        text: print(&merged, ours),
+        text,
         conflicts: conflicts.iter().map(|c| c.path.clone()).collect(),
         details: conflicts.iter().map(Conflict::describe).collect(),
     })

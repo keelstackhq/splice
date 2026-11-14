@@ -52,7 +52,7 @@ repo moves only to a stable tag that descends from its commit, and `check` repor
 
 | Class | On `update` |
 |---|---|
-| `owned` | Replaced. Local edits block the update (`--force` overrides). |
+| `owned` | Replaced. Local edits block the update (`--force` overrides; on a current main lock `update --force` restores drifted owned files only, not for channels). |
 | `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). JSON and YAML key conflicts keep your value and are named in the messages; text and TOML conflicts get diff3 markers. |
 | `seed` | Written once, then yours. |
 
@@ -203,8 +203,10 @@ elsewhere, or `npm_config_*_auth*`); a post or step that needs a token is not su
 keeps the bot's token out of tool logs, telemetry and package lifecycle scripts. It does not
 contain hostile template code: a process of the same user can still read splice's own environment
 (on Linux, `/proc/<pid>/environ`). Use templates you trust, give the bot a token scoped to this
-repository, and keep `persist-credentials: false` on checkout so the job's `GITHUB_TOKEN` is not
-left in `.git/config` either.
+repository, and always use `persist-credentials: false` on `actions/checkout` so the job's `GITHUB_TOKEN` is not
+left in `.git/config` either. As defense in depth, template commands also run with every git
+credential helper and the `github.com` auth header reset (spec §10.26), but a process of the same
+user can still read other files; the checkout setting is the real protection.
 Run the bot right after checkout: untracked files left by earlier steps count as an update and get
 committed. The job itself needs only `contents: read`; `token` needs Contents and Pull requests
 (write), plus Workflows when updates touch workflow files.

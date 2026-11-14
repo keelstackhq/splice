@@ -118,21 +118,24 @@ fn run_shell(
             shell.env_remove(name);
         }
     }
-    // ...nor push with the credentials the update bot configured for splice's own git calls:
-    // reset every credential helper and the checkout's auth header for the child (appended to any
-    // GIT_CONFIG_COUNT entries already set).
-    let n: usize = std::env::var("GIT_CONFIG_COUNT")
-        .ok()
-        .and_then(|c| c.parse().ok())
-        .unwrap_or(0);
-    shell.env("GIT_CONFIG_COUNT", (n + 2).to_string());
-    shell.env(format!("GIT_CONFIG_KEY_{n}"), "credential.helper");
-    shell.env(format!("GIT_CONFIG_VALUE_{n}"), "");
-    shell.env(
-        format!("GIT_CONFIG_KEY_{}", n + 1),
-        "http.https://github.com/.extraheader",
-    );
-    shell.env(format!("GIT_CONFIG_VALUE_{}", n + 1), "");
+    // ...nor push with the credentials the update bot configured for splice's own git calls
+    // (defense in depth; the Action also checks out without persisted credentials): drop every
+    // inherited GIT_CONFIG_* injection, then reset credential helpers and the auth header.
+    for (name, _) in std::env::vars_os() {
+        let n = name.to_string_lossy();
+        if n == "GIT_CONFIG_COUNT"
+            || n == "GIT_CONFIG_PARAMETERS"
+            || n.starts_with("GIT_CONFIG_KEY_")
+            || n.starts_with("GIT_CONFIG_VALUE_")
+        {
+            shell.env_remove(&name);
+        }
+    }
+    shell.env("GIT_CONFIG_COUNT", "2");
+    shell.env("GIT_CONFIG_KEY_0", "credential.helper");
+    shell.env("GIT_CONFIG_VALUE_0", "");
+    shell.env("GIT_CONFIG_KEY_1", "http.https://github.com/.extraheader");
+    shell.env("GIT_CONFIG_VALUE_1", "");
     shell.envs(envs.iter().map(|(k, v)| (*k, v.as_str())));
     let out = match stderr_stdio() {
         Ok(o) => o,

@@ -193,7 +193,7 @@ mod tests {
             r#"{"a":[1,3]}"#,
         );
         assert_eq!(m.conflicts, ["a"]);
-        assert_eq!(m.text, "{\n  \"a\": [\n    1,\n    2\n  ]\n}");
+        assert_eq!(m.text, r#"{"a":[1,2]}"#);
         assert!(find_markers(&m.text).is_empty());
     }
 
@@ -211,6 +211,26 @@ mod tests {
             m.details,
             ["key `b`: yours (deleted), template 2; kept yours"]
         );
+    }
+
+    #[test]
+    fn yaml_key_conflict_with_nothing_else_merged_keeps_ours_verbatim() {
+        let b = "on: [push]\n# pin the runner\nruns-on: a\n";
+        let o = "on: [push]\n# pin the runner\nruns-on: b\n";
+        let t = "on: [push]\n# pin the runner\nruns-on: c\n";
+        let m = merge3(MergeStrategy::Yaml, b, o, t);
+        assert_eq!(m.conflicts, ["runs-on"]);
+        assert_eq!(m.text, o);
+    }
+
+    #[test]
+    fn json_key_conflict_with_nothing_else_merged_keeps_ours_verbatim() {
+        let b = "{\"a\":1,\"b\":[1,2]}";
+        let o = "{\"a\":2,\"b\":[1,2]}";
+        let t = "{\"a\":3,\"b\":[1,2]}";
+        let m = merge3(MergeStrategy::Json, b, o, t);
+        assert_eq!(m.conflicts, ["a"]);
+        assert_eq!(m.text, o);
     }
 
     #[test]
@@ -451,22 +471,10 @@ mod tests {
         let t = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"x\": 2\n}\n";
         let m = merge3(MergeStrategy::Json, b, o, t);
         assert_eq!(m.conflicts, ["x"]);
-        let mut inside = false;
-        let outside: Vec<&str> = m
-            .text
-            .lines()
-            .filter(|l| {
-                if l.starts_with("<<<<<<< ") {
-                    inside = true;
-                }
-                let keep = !inside;
-                if l.starts_with(">>>>>>> ") {
-                    inside = false;
-                }
-                keep
-            })
-            .collect();
-        assert!(outside.iter().filter(|l| l.contains("\"x\"")).count() <= 1);
+        assert!(json::parses_strict(&m.text));
+        assert!(find_markers(&m.text).is_empty());
+        assert_eq!(m.text.matches("\"x\"").count(), 1, "{}", m.text);
+        assert!(m.text.contains("\"x\": 1"), "ours kept: {}", m.text);
     }
 
     const FIVE: &str = "{\n  \"a\": 1,\n  \"b\": 2,\n  \"c\": 3,\n  \"d\": 4,\n  \"e\": 5\n}\n";
