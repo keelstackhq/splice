@@ -685,9 +685,13 @@ Items 11–14 and 18 stay splice's own decisions.
     message. Main and channel locks alike.
 28. `new` from a local path (F10) adds a message that the lock records the path as given and is
     not portable to another machine. `add`, `channel add` and `update` do not.
-29. A git source URL that embeds a password (`https://user:token@host/…`) is refused (exit 2,
-    both `new` and `channel add`, the message shows `***@`): the lock would store the secret.
-    A user without a password (`ssh://git@host/…`) is fine. Use a credential helper.
+29. A git source URL that carries a credential is refused (exit 2, `new`, `channel add` and any
+    command reading a lock): any userinfo on a non-ssh scheme (`https://TOKEN@host/…`,
+    `https://user:token@host/…`, encoded `%3A` included), a `:` password on an ssh scheme, or a
+    secret-looking query parameter (`token`, `access_token`, `password`, `key`, `pat`, `auth`, …).
+    The check runs first, and the message shows the URL masked (`***@`, `token=***`), never the
+    raw text, so neither the lock nor an error holds the secret. `ssh://git@host/…` and scp-like
+    `git@host:o/r` stay allowed. Use a credential helper.
 
 ## 11. Testing
 

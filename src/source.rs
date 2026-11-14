@@ -23,15 +23,63 @@ fn bad(spec: &str, why: &str) -> SpliceError {
     SpliceError::Usage(format!("invalid template source `{spec}`: {why}"))
 }
 
-/// `scheme://user:secret@host/...`: a password in the authority.
-fn embeds_password(url: &str) -> bool {
-    let Some(rest) = scheme_len(url).map(|n| &url[n..]) else {
-        return false;
+/// A scheme URL that carries a secret: any userinfo, except a bare user on an SSH scheme
+/// (`ssh://git@host`; an encoded or plain `:` still counts as a password), or a secret-looking
+/// query parameter. Returns the URL with the secret parts masked, never the raw text.
+fn masked_secret(url: &str) -> Option<String> {
+    let n = scheme_len(url)?;
+    let (scheme, rest) = (&url[..n - 3], &url[n..]);
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let (userinfo, host) = match authority.split_once('@') {
+        Some((u, h)) => (Some(u), h),
+        None => (None, authority),
     };
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-    authority
-        .rsplit_once('@')
-        .is_some_and(|(userinfo, _)| userinfo.contains(':'))
+    let ssh = scheme.to_ascii_lowercase().contains("ssh");
+    let user_secret = userinfo.is_some_and(|u| {
+        !u.is_empty() && (!ssh || u.contains(':') || u.to_ascii_lowercase().contains("%3a"))
+    });
+    let (path, query) = match tail.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (tail, None),
+    };
+    let secret_param = |kv: &str| {
+        let key = kv.split('=').next().unwrap_or("").to_ascii_lowercase();
+        ["key", "pat", "auth"].contains(&key.as_str())
+            || [
+                "token",
+                "secret",
+                "passw",
+                "apikey",
+                "api_key",
+                "access_key",
+            ]
+            .iter()
+            .any(|w| key.contains(w))
+    };
+    let query_secret = query.is_some_and(|q| q.split(['&', '#']).any(secret_param));
+    if !user_secret && !query_secret {
+        return None;
+    }
+    let who = match userinfo {
+        Some(_) if user_secret => "***@".to_string(),
+        Some(u) => format!("{u}@"),
+        None => String::new(),
+    };
+    let q = query.map(|q| {
+        let masked: Vec<String> = q
+            .split('&')
+            .map(|kv| match kv.split_once('=') {
+                Some((k, _)) if secret_param(kv) => format!("{k}=***"),
+                _ => kv.to_string(),
+            })
+            .collect();
+        format!("?{}", masked.join("&"))
+    });
+    Some(format!(
+        "{scheme}://{who}{host}{path}{}",
+        q.unwrap_or_default()
+    ))
 }
 
 /// Length of a leading `scheme://`, if the spec has one.
@@ -88,6 +136,15 @@ impl TemplateSource {
     fn parse_raw(spec: &str) -> Result<Self, SpliceError> {
         // Split `//subdir` on the first `//` after the scheme's own `//`.
         let skip = scheme_len(spec).unwrap_or(0);
+        // Before anything can echo the spec: a URL with a secret is never recorded or shown.
+        let head = &spec[..spec[skip..].find("//").map_or(spec.len(), |i| skip + i)];
+        if let Some(shown) = masked_secret(head) {
+            return Err(bad(
+                &shown,
+                "the URL embeds a credential, which would be written to the lock and git \
+                 traces; use a git credential helper or an ssh:// or git@host: URL",
+            ));
+        }
         let (main, subdir) = match spec[skip..].find("//") {
             Some(i) => {
                 let at = skip + i;
@@ -105,19 +162,6 @@ impl TemplateSource {
                 url: format!("https://github.com/{}/{repo}.git", parts[0]),
             }
         } else if scheme_len(main).is_some() || is_scp_like(main) {
-            if embeds_password(main) {
-                let at = spec.rfind('@').map_or(0, |i| i + 1);
-                let shown = format!(
-                    "{}***@{}",
-                    &spec[..scheme_len(spec).unwrap_or(0)],
-                    &spec[at..]
-                );
-                return Err(bad(
-                    &shown,
-                    "the URL embeds a password or token, which would be written to the lock \
-                     and git traces; use a git credential helper or an SSH URL",
-                ));
-            }
             SourceKind::Git {
                 url: main.to_string(),
             }
@@ -218,21 +262,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_url_with_a_password_is_refused_but_a_user_is_fine() {
-        for bad in [
-            "https://user:tok@example.com/o/r.git",
-            "https://x-access-token:abc@github.com/o/r.git//t",
+    fn a_url_with_a_credential_is_refused_and_masked() {
+        for (bad, shown) in [
+            (
+                "https://user:tok@example.com/o/r.git",
+                "https://***@example.com/o/r.git",
+            ),
+            (
+                "https://ghp_SECRET@github.com/o/r.git//t",
+                "https://***@github.com/o/r.git",
+            ),
+            (
+                "https://user%3Atok@example.com/o/r.git",
+                "https://***@example.com/o/r.git",
+            ),
+            ("ssh://git:tok@host/o/r.git", "ssh://***@host/o/r.git"),
+            (
+                "https://example.com/o/r.git?access_token=abc",
+                "https://example.com/o/r.git?access_token=***",
+            ),
+            (
+                "https://h/r.git?a=1&token=abc//sub@x",
+                "https://h/r.git?a=1&token=***",
+            ),
         ] {
             let e = TemplateSource::parse(bad).unwrap_err().to_string();
-            assert!(
-                e.contains("credential helper") && !e.contains("tok@"),
-                "{e}"
-            );
+            assert!(e.contains(shown) && e.contains("credential helper"), "{e}");
+            for leak in ["tok@", "SECRET", "Atok", "=abc"] {
+                assert!(!e.contains(leak), "{leak} leaked: {e}");
+            }
         }
         for ok in [
             "ssh://git@host/o/r.git",
-            "https://example.com/a:b/r.git",
+            "ssh://git@host:22/o/r.git//t",
             "git@host:o/r.git",
+            "https://example.com/a:b/r.git",
+            "https://example.com/r.git?path=x",
+            "https://example.com/r.git//dir@x",
         ] {
             TemplateSource::parse(ok).unwrap();
         }

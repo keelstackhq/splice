@@ -43,8 +43,10 @@ Every command takes `--json` (one JSON object on stdout) and `--yes` (no prompts
 and `new` into a non-empty directory (`--force`) refuse a dirty git tree (exit 2) unless
 `--allow-dirty`.
 
-A git source URL must not embed a password (`https://user:token@host/…`; exit 2): the lock records
-the source (a lock that already has one fails every command, exit 2: remove the password from its `source`). Use a git credential helper or an SSH URL.
+A git source URL must not carry a credential (exit 2): no userinfo on `https://`-style URLs
+(`https://TOKEN@host/…`, `https://user:token@host/…`) and no `?token=`-style query. The lock
+records the source, so a lock that already has one fails every command: remove it from `source`.
+`ssh://git@host/…` and `git@host:o/r` are fine. Use a git credential helper.
 
 **Untagged commits.** A repo rendered with `--ref <branch|sha>` records version `0.0.0+g<sha7>`.
 `splice update --ref <branch|sha>` moves it to a later commit; the target must be a git
