@@ -437,13 +437,15 @@ fn prepare_lock(
         });
     }
 
-    let render_current = matches!(
-        kind,
-        Kind::Channel {
-            render_current: true,
-            ..
-        }
-    );
+    // `--force` on a current main lock re-renders it to restore drifted owned files.
+    let render_current = force && matches!(kind, Kind::Main)
+        || matches!(
+            kind,
+            Kind::Channel {
+                render_current: true,
+                ..
+            }
+        );
     let rendered = if up_to_date && !render_current {
         None
     } else {

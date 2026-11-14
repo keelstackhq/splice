@@ -187,6 +187,43 @@ fn min_splice_refused_before_write() {
 }
 
 #[test]
+fn up_to_date_force_restores_owned_drift_only() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--piece", "app"]);
+    let owned = "apps/web/tsconfig.json";
+    let good = read(&repo, owned);
+    std::fs::write(repo.path().join(owned), "{ \"mine\": 1 }\n").unwrap();
+    let seed = repo.path().join("apps/web/extra-seed-note.txt");
+    std::fs::write(&seed, "keep me\n").unwrap();
+    commit_all(repo.path());
+    let lock_before = lock_bytes(&repo);
+
+    // Without --force: still a no-op.
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    assert!(messages(&json(&out)).contains("up to date"));
+    assert_eq!(read(&repo, owned), "{ \"mine\": 1 }\n");
+
+    let out = update(&repo, &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert_eq!(read(&repo, owned), good);
+    assert_eq!(std::fs::read_to_string(&seed).unwrap(), "keep me\n");
+    let changes = v["changes"].as_array().unwrap();
+    assert_eq!(changes.len(), 1, "{v}");
+    assert_eq!(changes[0]["path"], owned);
+    assert_eq!(lock_bytes(&repo), lock_before);
+
+    // Deleted owned file comes back too.
+    std::fs::remove_file(repo.path().join(owned)).unwrap();
+    commit_all(repo.path());
+    update(&repo, &["--force"]).success();
+    assert_eq!(read(&repo, owned), good);
+}
+
+#[test]
 fn owned_drift_refused_then_forced() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, &["--ref", "v1.0.0", "--piece", "app"]);
