@@ -156,6 +156,37 @@ fn downgrade_refused() {
 }
 
 #[test]
+fn json_key_conflict_keeps_ours_and_valid_json() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    common::edit(&repo, "package.json", |t| {
+        t.replace("5.0.0", "5.1.0")
+            .replace("\"private\": true,", "\"private\": true,\n  \"mine\": 1,")
+    });
+    commit_all(repo.path());
+
+    let out = update(&repo, &[]).code(1).get_output().stdout.clone();
+    let v = json(&out);
+    let m = messages(&v);
+    assert!(
+        m.contains("key `devDependencies.typescript`: yours \"5.1.0\", template \"5.4.0\""),
+        "{m}"
+    );
+    assert!(m.contains("lock already at 2.0.0"), "{m}");
+    assert!(
+        m.contains("git checkout -- . && git checkout HEAD -- .splice/lock.toml"),
+        "{m}"
+    );
+    let text = read(&repo, "package.json");
+    assert!(!text.contains("<<<<<<<"), "{text}");
+    let parsed: serde_json::Value = serde_json::from_str(&text).expect("still valid JSON");
+    assert_eq!(parsed["devDependencies"]["typescript"], "5.1.0");
+    assert_eq!(parsed["mine"], 1);
+    assert_eq!(parsed["scripts"]["lint"], "echo lint");
+    assert_eq!(lock(&repo).template.version.to_string(), "2.0.0");
+}
+
+#[test]
 fn conflicts_written_lock_records_target() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);

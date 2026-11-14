@@ -105,7 +105,7 @@ src/x  unmanaged
 | Class | For you | On `splice update` |
 |---|---|---|
 | `owned` | Do not edit. The template controls it. | Replaced. If you edited it, the update is refused (exit 1, nothing written) until you revert the edit or pass `--force`. |
-| `shared` | Edit freely; add your own keys and lines. | 3-way merged: JSON, YAML and TOML by key, text by line. Real conflicts get markers. |
+| `shared` | Edit freely; add your own keys and lines. | 3-way merged: JSON, YAML and TOML by key, text by line. Real text and TOML conflicts get markers; a JSON or YAML key conflict keeps your value and is named in the messages. |
 | `seed` | Yours from day one. | Never touched. |
 | unmanaged | Not splice's. | Ignored. |
 

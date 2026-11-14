@@ -71,7 +71,10 @@ fn owned_drift_fails() {
         serde_json::json!([{"path":".editorconfig","action":"update","class":"owned"}])
     );
     let m = messages(&v);
-    assert!(m.contains("`.editorconfig`") && m.contains("edited locally"), "{m}");
+    assert!(
+        m.contains("`.editorconfig`") && m.contains("edited locally"),
+        "{m}"
+    );
     assert!(m.contains("splice update --force"), "{m}");
     // A deleted owned file is drift too.
     std::fs::remove_file(repo.path().join(".editorconfig")).unwrap();
@@ -85,9 +88,10 @@ fn owned_drift_fails() {
 fn markers_fail_and_stray_separator_does_not() {
     let tpl = template_repo(&["v1", "v2"]);
     let repo = new_repo(&tpl, Some("v1.0.0"));
-    let ci = repo.path().join(".github/workflows/ci.yml");
+    // A TOML key conflict leaves diff3 markers (json/yaml key conflicts keep ours instead).
+    let ci = repo.path().join("config/settings.toml");
     let text = std::fs::read_to_string(&ci).unwrap();
-    std::fs::write(&ci, text.replace("ubuntu-latest", "macos-latest")).unwrap();
+    std::fs::write(&ci, text.replace("es2020", "es2021")).unwrap();
     commit_all(repo.path());
     splice_cmd()
         .current_dir(repo.path())
@@ -98,11 +102,11 @@ fn markers_fail_and_stray_separator_does_not() {
     assert_eq!(code, 1);
     assert_eq!(
         v["changes"],
-        serde_json::json!([{"path":".github/workflows/ci.yml","action":"conflict","class":"shared"}])
+        serde_json::json!([{"path":"config/settings.toml","action":"conflict","class":"shared"}])
     );
 
     // Resolved; a lone `=======` in a seed (not in the lock) and in a shared file is plain text.
-    std::fs::write(&ci, "name: ci\non: [push]\n").unwrap();
+    std::fs::write(&ci, "[build]\ntarget = \"es2022\"\n").unwrap();
     for rel in ["README.md", "notes.txt"] {
         let p = repo.path().join(rel);
         let mut t = std::fs::read_to_string(&p).unwrap();
@@ -115,14 +119,14 @@ fn markers_fail_and_stray_separator_does_not() {
     // CRLF line endings: markers are still found.
     std::fs::write(
         &ci,
-        "name: ci\r\n<<<<<<< ours\r\na\r\n||||||| base\r\nb\r\n=======\r\nc\r\n>>>>>>> template\r\n",
+        "[build]\r\n<<<<<<< ours\r\na\r\n||||||| base\r\nb\r\n=======\r\nc\r\n>>>>>>> template\r\n",
     )
     .unwrap();
     let (code, v) = check(&repo, &["--offline"]);
     assert_eq!(code, 1);
     assert_eq!(
         v["changes"],
-        serde_json::json!([{"path":".github/workflows/ci.yml","action":"conflict","class":"shared"}])
+        serde_json::json!([{"path":"config/settings.toml","action":"conflict","class":"shared"}])
     );
     assert!(messages(&v).contains("line 2"), "{v}");
 }

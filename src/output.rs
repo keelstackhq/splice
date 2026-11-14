@@ -81,8 +81,14 @@ impl Report {
         });
     }
 
+    /// Adds a message; a text of several lines becomes one message per line.
     pub fn msg(&mut self, s: impl Into<String>) {
-        self.messages.push(s.into());
+        let s = s.into();
+        if s.contains('\n') {
+            self.messages.extend(s.lines().map(str::to_string));
+        } else {
+            self.messages.push(s);
+        }
     }
 
     /// The one JSON object of `--json`; changes are sorted by path.

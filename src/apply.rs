@@ -120,12 +120,19 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         Ok(report)
     } else {
         report.ok = false;
-        report.msg(format!(
-            "conflicts in {}: resolve the diff3 markers",
-            plan.conflicts.join(", ")
-        ));
+        report.msg(conflict_summary(&plan.conflicts, &ctx.to, &ctx.lock.path()));
         Err(SpliceError::Conflict(report))
     }
+}
+
+/// The last message of a conflicted run: which files, that the lock is already at the target
+/// and how to abort.
+pub fn conflict_summary(paths: &[String], to: &Version, lock_path: &str) -> String {
+    format!(
+        "conflicts in {}: resolve the diff3 markers or the kept keys; lock already at {to}; \
+         to abort: git checkout -- . && git checkout HEAD -- {lock_path}",
+        paths.join(", ")
+    )
 }
 
 /// Check every write target of `ctx` (the lock path, every change, every section host) without

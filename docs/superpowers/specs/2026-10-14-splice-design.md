@@ -403,9 +403,11 @@ between them (it runs after both).
 - YAML mapping keys must be strings: `1: a` is not coerced to `"1"`; such a file, like a
   multi-document one, is a parse error and falls back to text.
 - A parse error in any side falls back to text.
-- **Structured conflict → markers:** run the text merge; if it yields markers, use them; if it
+- **TOML conflict → markers:** run the text merge; if it yields markers, use them; if it
   merges cleanly anyway, wrap the whole file in one diff3 block (ours / base / theirs), with the
-  text merge's CRLF rule. Every conflict therefore leaves markers that `check` finds.
+  text merge's CRLF rule. `check` finds those markers.
+- **JSON and YAML conflict → key-level merge (§10.23):** every non-conflicting change is applied,
+  ours stays on each conflicting key, no markers; `Merged.details` holds one line per key.
 - **Text fallback guards:** a clean JSON text merge that introduces a duplicate key ours did not
   have, and a clean TOML text merge (a side did not parse) that no longer parses while ours does
   (e.g. a merge-introduced duplicate key), become one whole-file conflict block.
@@ -648,6 +650,16 @@ Items 11–14 and 18 stay splice's own decisions.
       Two tagged sides select by semver exactly as the contract says.
     - The lock shape is unchanged: `version = "0.0.0+g<sha7>"` and the full `commit`.
 22. Secret-like variables are not passed to template commands (security: the update Action runs `splice update` with `GH_TOKEN`, and a post such as `pnpm install` loads repo code). Rule: any variable whose name, ASCII-uppercased and split on `_`, ends in a segment `TOKEN`, `PAT`, `SECRET`, `PASSWORD` or `KEY`, has a `TOKEN` or `SECRET` segment before the last, or starts with `NPM_CONFIG_` and contains `_AUTH` (`AWS_ACCESS_KEY_ID` and `SSH_AUTH_SOCK` are kept; `TOKENIZER_PATH`, `KEYBOARD`, `SECRETS_DIR` are not matches); non-UTF-8 names are compared lossily. Applies to `run_shell`, so to both post commands and steps; git calls made by splice keep the token. Not a sandbox: splice cannot scrub its own environment (no `unsafe`), which a same-user child can read.
+23. JSON and YAML key conflicts (review finding F3). One key changed on both sides must not turn
+    the whole file into diff3 markers: that is invalid JSON/YAML and hides the changes that did
+    not conflict. The merge applies every non-conflicting change and keeps ours on each
+    conflicting key (a key ours deleted stays deleted). The change is `conflict`, exit 1, the lock
+    is written; one message per key names the file, both values (`(deleted)` for an absent key)
+    and what was kept. There are no markers, so `check` does not flag a key conflict later: the
+    messages are the only record. The contract (§5) says only that such a key "is a conflict",
+    so it needs no change. YAML still loses comments and layout on a real merge (spec §8.5).
+    TOML and text keep diff3 markers. The last conflict message also says the lock is already at
+    the target and how to abort (`git checkout -- . && git checkout HEAD -- <lock path>`).
 
 ## 11. Testing
 

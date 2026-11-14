@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 
-use super::keypath::{Tree, merge_tree};
+use super::keypath::{Conflict, Tree, merge_tree};
 use super::{Merged, ParseError};
 
 pub fn merge_yaml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseError> {
@@ -27,7 +27,11 @@ pub fn merge_yaml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
     if ours.contains("\r\n") {
         text = text.replace('\n', "\r\n");
     }
-    Ok(Merged { text, conflicts })
+    Ok(Merged {
+        text,
+        conflicts: conflicts.iter().map(|c| c.path.clone()).collect(),
+        details: conflicts.iter().map(Conflict::describe).collect(),
+    })
 }
 
 /// Parse one document into a tree. Every mapping key must be a string: yaml_serde would

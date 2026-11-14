@@ -272,16 +272,23 @@ fn shared(
             change(path, Action::Merge, class, Some(m.text.as_bytes()))
         }
     } else {
-        noted(
-            path,
-            Action::Conflict,
-            class,
-            Some(m.text.as_bytes()),
+        let note = if m.details.is_empty() {
             format!(
                 "`{path}` has conflicts ({}); resolve the diff3 markers",
                 m.conflicts.join(", ")
-            ),
-        )
+            )
+        } else {
+            // Key-level merge: one line per key, then what was kept.
+            let mut lines: Vec<String> =
+                m.details.iter().map(|d| format!("`{path}` {d}")).collect();
+            lines.push(format!(
+                "`{path}` has conflicts ({}); the file keeps your values there, edit those keys \
+                 to take the template's",
+                m.conflicts.join(", ")
+            ));
+            lines.join("\n")
+        };
+        noted(path, Action::Conflict, class, Some(m.text.as_bytes()), note)
     }
 }
 

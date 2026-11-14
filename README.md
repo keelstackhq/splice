@@ -54,7 +54,7 @@ repo moves only to a stable tag that descends from its commit, and `check` repor
 | Class | On `update` |
 |---|---|
 | `owned` | Replaced. Local edits block the update (`--force` overrides). |
-| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). Conflicts get diff3 markers. |
+| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). JSON and YAML key conflicts keep your value and are named in the messages; text and TOML conflicts get diff3 markers. |
 | `seed` | Written once, then yours. |
 
 ## Writing templates
