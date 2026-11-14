@@ -750,3 +750,34 @@ fn new_failed_post_keeps_changes_in_json() {
     assert!(!r["changes"].as_array().unwrap().is_empty(), "{r}");
     assert!(r["messages"].to_string().contains("--force"), "{r}");
 }
+
+#[test]
+fn new_refuses_nested_destination_under_ignored_dir() {
+    let tpl = template_repo(&["v1"]);
+    let outer = tempfile::tempdir().unwrap();
+    common::git(outer.path(), "2026-01-01T00:00:00Z", &["init", "-q"]);
+    std::fs::write(outer.path().join(".gitignore"), "build/\n").unwrap();
+    common::commit_all(outer.path());
+    let nested = outer.path().join("build").join("deep");
+    splice_cmd()
+        .args(["new", s(&tpl), nested.to_str().unwrap()])
+        .args(["--data", "project=d", "--yes"])
+        .assert()
+        .code(2);
+    assert!(!outer.path().join("build").exists());
+}
+
+#[test]
+fn new_into_unignored_sibling_still_works() {
+    let tpl = template_repo(&["v1"]);
+    let outer = tempfile::tempdir().unwrap();
+    common::git(outer.path(), "2026-01-01T00:00:00Z", &["init", "-q"]);
+    std::fs::write(outer.path().join(".gitignore"), "build/\n").unwrap();
+    common::commit_all(outer.path());
+    let ok = outer.path().join("apps").join("web");
+    splice_cmd()
+        .args(["new", s(&tpl), ok.to_str().unwrap()])
+        .args(["--data", "project=d", "--yes"])
+        .assert()
+        .success();
+}

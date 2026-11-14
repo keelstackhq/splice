@@ -1,14 +1,11 @@
 //! The `git` CLI behind one wrapper. No network crates: all fetching goes through git.
 
 use crate::error::SpliceError;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output};
 
-/// Namespace for git operations; `git_dir` is reserved for callers that bind one repository.
-#[derive(Debug, Default, Clone)]
-pub struct Git {
-    pub git_dir: Option<PathBuf>,
-}
+/// Namespace for git operations.
+pub struct Git;
 
 fn command() -> Command {
     let mut cmd = Command::new("git");

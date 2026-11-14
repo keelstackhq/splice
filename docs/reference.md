@@ -28,7 +28,7 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 
 | Command | What it does |
 |---|---|
-| `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest`; runs `git init` if needed, commits only with `--commit` (else the last message says to commit) |
+| `splice new <source> [dest]` | Render the template's base piece and any `--piece` into `dest`; runs `git init` if needed, commits only with `--commit` (else the last message says to commit); refuses (exit 2) a destination a parent `.gitignore` ignores; a late failure (post, lock, commit) exits 3 and `--json` keeps the written `changes` |
 | `splice adopt <source>` | Apply the template to an existing repo that has no lock (see Adopt an existing repo) |
 | `splice add <piece>` | Add a piece (or another instance of a `multiple` piece); other files merge as on `update`, and a conflict writes nothing |
 | `splice update [--to V \| --ref R]` | Move to a newer template version, or to a branch or sha with `--ref`; your edits are merged, never lost |

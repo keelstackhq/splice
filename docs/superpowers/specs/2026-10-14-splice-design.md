@@ -227,11 +227,14 @@ Per-file record: `RenderedFile { path, bytes, class, strategy, piece_id, piece_n
 5. Render, write every file (seeds only when absent), `git init` if `dest` is not inside a git
    work tree, run `[[post]]` with `when` ∋ `new` (all instantiated pieces, identical commands once),
    then write the lock (§8.6) as the very last step. A failed post command (exit 3) therefore
-   leaves the files but no lock; `new --force` redoes it.
+   leaves the files but no lock; `new --force` redoes it. Any failure after the first write
+   (post, lock write, `--commit`) is exit 3 and `--json` still lists the files written in `changes`.
+   Before writing, if the enclosing git repo's ignore rules hide the lock or any rendered file,
+   `new` refuses (exit 2): such files would never be committed.
 6. `new` never commits by default: its last message says to commit before `add`/`update` (both refuse
    a dirty tree). `--commit` (exclusive with `--allow-dirty`; needs an empty `dest` inside no dirty work tree, else
    exit 2 before writing) runs `git add -A -- .` and commits `chore: apply template <name>` after the lock; a failed commit is exit 3 with files
-   and lock already written.
+   and lock already written (listed in `changes`).
 
 When `dest` already has entries besides `.git` (the `--force` path) and is inside a git work tree
 with uncommitted changes, `new` refuses (exit 2) unless `--allow-dirty`; an empty `dest`, even
