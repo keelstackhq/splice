@@ -44,7 +44,7 @@ and `new` into a non-empty directory (`--force`) refuse a dirty git tree (exit 2
 `--allow-dirty`.
 
 A git source URL must not embed a password (`https://user:token@host/…`; exit 2): the lock records
-the source. Use a git credential helper or an SSH URL.
+the source (a lock that already has one fails every command, exit 2: remove the password from its `source`). Use a git credential helper or an SSH URL.
 
 **Untagged commits.** A repo rendered with `--ref <branch|sha>` records version `0.0.0+g<sha7>`.
 `splice update --ref <branch|sha>` moves it to a later commit; the target must be a git

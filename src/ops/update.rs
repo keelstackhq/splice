@@ -442,7 +442,7 @@ fn prepare_lock(
         });
     }
 
-    // `--force` on a current main lock re-renders it to restore drifted owned files.
+    // `--force` on a current lock re-renders it to restore drifted owned files.
     let render_current = force
         || matches!(
             kind,
@@ -786,8 +786,15 @@ pub fn prepare_channel(
         meta.only = only.to_vec();
         meta.exclude = exclude.to_vec();
     }
-    let lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+    let mut lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
         .keep_relative_source(&cl.lock.template.source);
+    // A restore never moves the lock (a same-tree commit, G4, stays unlocked) nor runs steps.
+    let migrations = if restore_only {
+        lock.template = cl.lock.template.clone();
+        Vec::new()
+    } else {
+        migrations
+    };
     let lock_new = ChannelLock {
         meta,
         lock: lock.clone(),
