@@ -189,3 +189,63 @@ fn migration_step_runs_without_tokens() {
     assert_clean(&stderr);
     assert!(stderr.contains("SPLICE_TO_VERSION=2.0.0"), "{stderr}");
 }
+
+/// A post command that reads stdin must not hang an agent: stdin is closed, not inherited,
+/// even when the caller keeps a pipe open (no `--json`, no TTY).
+#[test]
+fn post_stdin_is_closed() {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    let piece = PIECE.replace(
+        "run = \"env | sort\"",
+        "run = \"cat >/dev/null; echo stdin-closed\"",
+    );
+    let t = inline_template(&[("base", &piece, &[("a.txt", "one\n")])]);
+    git(t.path(), DATE, &["init", "-q", "-b", "main"]);
+    stage_all(t.path(), DATE);
+    git(t.path(), DATE, &["commit", "-q", "-m", "v1"]);
+    git(t.path(), DATE, &["tag", "v1.0.0"]);
+    let dest = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_splice"))
+        .args([
+            "new",
+            t.path().to_str().unwrap(),
+            dest.path().to_str().unwrap(),
+            "--yes",
+        ])
+        .env("SPLICE_CACHE_DIR", cache.path())
+        .env("GIT_CONFIG_GLOBAL", common::empty_git_config())
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_AUTHOR_NAME", "T")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "T")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .stdin(Stdio::piped()) // held open below
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _keep_open = child.stdin.take();
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            let mut err = String::new();
+            child
+                .stderr
+                .take()
+                .unwrap()
+                .read_to_string(&mut err)
+                .unwrap();
+            assert!(status.success(), "{err}");
+            assert!(err.contains("stdin-closed"), "{err}");
+            return;
+        }
+        if start.elapsed() > Duration::from_secs(20) {
+            let _ = child.kill();
+            panic!("post command blocked on inherited stdin");
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}

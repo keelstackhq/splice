@@ -74,7 +74,6 @@ pub struct ApplyCtx<'a> {
     pub post: Vec<PostCmd>,
     pub when: When,
     pub no_post: bool,
-    pub json: bool,
     /// The report's `command` (`add`, `update`, `channel add`, …).
     pub command: &'static str,
     /// Section host writes and deletes. A channel's only: must be empty for `LockOut::Main`
@@ -101,7 +100,7 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
     let plan = ctx.plan;
     let still = ctx.lock.still_records(&ctx.from);
     if plan.conflicts.is_empty() && !ctx.no_post {
-        if let Err(e) = run_post(ctx.repo, &ctx.post, ctx.when, ctx.json) {
+        if let Err(e) = run_post(ctx.repo, &ctx.post, ctx.when) {
             let e = match e {
                 SpliceError::Env(m) => SpliceError::Env(format!(
                     "{m}; {still}; `git checkout -- . && git clean -fd` restores the previous state"
@@ -231,7 +230,7 @@ fn write_phase(ctx: &ApplyCtx) -> Result<(Report, bool), SpliceError> {
         push(&mut report, c);
     }
 
-    if let Err(e) = run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, &still, ctx.json) {
+    if let Err(e) = run_steps(ctx.repo, &ctx.steps, &ctx.from, &ctx.to, &still) {
         return Err(applied(report, e));
     }
     wrote |= !ctx.steps.is_empty();
@@ -403,7 +402,6 @@ mod tests {
             post: r.post,
             when: When::Update,
             no_post: r.no_post,
-            json: true,
             command,
             sections,
         }

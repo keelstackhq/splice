@@ -202,7 +202,7 @@ pub fn run(g: &GlobalArgs, a: &NewArgs) -> Result<Report> {
                 cmds.extend(template.pieces[&inst.id].post.iter().cloned());
             }
         }
-        if let Err(e) = run_post(&dest, &cmds, When::New, g.json) {
+        if let Err(e) = run_post(&dest, &cmds, When::New) {
             return Err(match e {
                 SpliceError::Env(m) => applied(
                     report,

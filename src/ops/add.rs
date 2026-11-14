@@ -211,7 +211,6 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         post,
         when: When::Add,
         no_post: a.no_post,
-        json: g.json,
         command: "add",
         sections: &[],
     })?;
@@ -347,7 +346,6 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
         post,
         when: When::Add,
         no_post: a.no_post,
-        json: g.json,
         command: "add",
         sections: &splan.changes,
     })?;

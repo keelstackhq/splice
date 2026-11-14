@@ -40,7 +40,7 @@ file, migrations, JSON output and exit codes. This spec only adds what the contr
 
 Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use defaults),
 `-C <dir>` (repo root, default `.`). Prompts also never appear when stdin is not a TTY or with
-`--json`. A missing value with no default is a usage error (exit 2) naming the variable and the
+`--json`. Template commands (`[[post]]`, migration steps) always run with stdin closed, so a command that reads it ends at once instead of hanging a caller. A missing value with no default is a usage error (exit 2) naming the variable and the
 `--data` flag to pass; update paths that do not accept `--data` for it (piece vars, `--channel`,
 `--all`, and `diff`) name the default or interactive route instead.
 

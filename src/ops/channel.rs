@@ -181,7 +181,6 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
         post,
         when: When::Add,
         no_post: a.no_post,
-        json: g.json,
         command: "channel add",
         sections: &splan.changes,
     });
@@ -338,7 +337,6 @@ pub fn remove(g: &GlobalArgs, a: &ChannelRemoveArgs) -> Result<Report> {
         post: Vec::new(),
         when: When::Update,
         no_post: true,
-        json: g.json,
         command: "channel remove",
         sections: &sections,
     })?;

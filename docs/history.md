@@ -85,3 +85,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - 2026-11-14 · improve round 2 · see the pull request · channel `update --force` restore, channel `check` cache fallback, refuse passwords in git source URLs (spec §10.29), one "no lock" message naming new/adopt
 - 2026-11-14 · round3/agent-first · `new --commit` and a `next:` message (new never committed); getting-started 380→170 lines; SKILL.md says local sources need a tag, `-C`, commit before add/update; secret-var heuristic adds PASSWD/APIKEY/CREDENTIALS with tests
 - Round 4: new keeps changes in --json on post/lock/commit failure, refuses a destination ignored by the parent .gitignore; dropped unused Git field.
+- Round 5: post and step commands run with stdin closed (was inherited without --json); release profile panic=abort + opt-level s (binary 5.2→4.0 MB, no slowdown; 5000-file new/diff/update all <1 s); dropped unused `json` ApplyCtx field.
