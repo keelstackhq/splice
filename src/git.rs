@@ -225,8 +225,13 @@ impl Git {
             .map_err(|e| SpliceError::Env(format!("cannot run git ({e})")))?;
         let mut input = rels.join("\0").into_bytes();
         input.push(0);
-        child.stdin.take().expect("piped").write_all(&input)?;
+        // Feed stdin from a thread: git streams matches while it reads, so writing everything
+        // before draining stdout would deadlock once both pipes fill.
+        let mut stdin = child.stdin.take().expect("piped");
+        let writer = std::thread::spawn(move || stdin.write_all(&input));
         let out = child.wait_with_output()?;
+        // A broken pipe just means git exited early; its status is judged below.
+        let _ = writer.join();
         // 0 = some ignored, 1 = none; anything else is a real failure.
         match out.status.code() {
             Some(0) | Some(1) => Ok(Some(

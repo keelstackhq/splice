@@ -80,6 +80,10 @@ fn refuse_ignored<'a>(dest: &Path, files: impl Iterator<Item = &'a str>) -> Resu
     };
     let rels: Vec<String> = std::iter::once(LOCK_PATH).chain(files).map(join).collect();
     if let Some(hit) = Git::ignored(probe, &rels)?.and_then(|v| v.into_iter().next()) {
+        let hit = hit
+            .strip_prefix(&format!("{prefix}/"))
+            .unwrap_or(&hit)
+            .to_string();
         return usage(format!(
             "{hit} is ignored by a .gitignore of the enclosing git repo, so the files would never \
              be committed; pick another destination or remove the ignore rule"
