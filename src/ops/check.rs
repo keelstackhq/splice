@@ -141,10 +141,14 @@ fn check_sections(repo: &Path, cl: &ChannelLock, report: &mut Report) -> Result<
 
 /// `Some("A → B (tag)")` when the channel's source has something newer whose template subtree
 /// differs from the locked commit; a tracked channel compares branch heads (short shas).
-fn channel_update(repo: &Path, cl: &ChannelLock) -> Result<Option<String>> {
+fn channel_update(repo: &Path, cl: &ChannelLock, cached: bool) -> Result<Option<String>> {
     let lock = &cl.lock;
     let src = TemplateSource::parse_from(&lock.template.source, repo)?;
-    let fetcher = Fetcher::from_env();
+    let fetcher = if cached {
+        Fetcher::from_env().cached_only()
+    } else {
+        Fetcher::from_env()
+    };
     let (target, label) = match &cl.meta.track {
         Some(branch) => {
             let head = fetcher.branch_head(&src, branch)?;
@@ -204,10 +208,7 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
         sources.main.as_ref()
     };
     if main.is_none() && channels.is_empty() && a.channel.is_none() {
-        return Err(SpliceError::Usage(format!(
-            "{} has no {LOCK_PATH}; run `splice new` first",
-            repo.display()
-        )));
+        return Err(super::no_lock(repo));
     }
     let mut report = Report::new("check");
     let mut update_available = false;
@@ -260,7 +261,17 @@ pub fn run(g: &GlobalArgs, a: &CheckArgs) -> Result<Report> {
             ));
         }
         if !a.offline {
-            match channel_update(repo, cl) {
+            let found = match channel_update(repo, cl, false) {
+                Err(e) => match degrade(repo, &cl.lock.template.source, &e) {
+                    Some(note) => {
+                        report.msg(format!("{prefix}{note}"));
+                        channel_update(repo, cl, true)
+                    }
+                    None => Err(e),
+                },
+                ok => ok,
+            };
+            match found {
                 Ok(Some(what)) => {
                     update_available = true;
                     report.msg(format!("{prefix}update available {what}"));

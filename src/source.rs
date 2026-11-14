@@ -23,6 +23,17 @@ fn bad(spec: &str, why: &str) -> SpliceError {
     SpliceError::Usage(format!("invalid template source `{spec}`: {why}"))
 }
 
+/// `scheme://user:secret@host/...`: a password in the authority.
+fn embeds_password(url: &str) -> bool {
+    let Some(rest) = scheme_len(url).map(|n| &url[n..]) else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    authority
+        .rsplit_once('@')
+        .is_some_and(|(userinfo, _)| userinfo.contains(':'))
+}
+
 /// Length of a leading `scheme://`, if the spec has one.
 fn scheme_len(s: &str) -> Option<usize> {
     let i = s.find("://")?;
@@ -94,6 +105,19 @@ impl TemplateSource {
                 url: format!("https://github.com/{}/{repo}.git", parts[0]),
             }
         } else if scheme_len(main).is_some() || is_scp_like(main) {
+            if embeds_password(main) {
+                let at = spec.rfind('@').map_or(0, |i| i + 1);
+                let shown = format!(
+                    "{}***@{}",
+                    &spec[..scheme_len(spec).unwrap_or(0)],
+                    &spec[at..]
+                );
+                return Err(bad(
+                    &shown,
+                    "the URL embeds a password or token, which would be written to the lock \
+                     and git traces; use a git credential helper or an SSH URL",
+                ));
+            }
             SourceKind::Git {
                 url: main.to_string(),
             }
@@ -192,6 +216,27 @@ pub fn key16(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_url_with_a_password_is_refused_but_a_user_is_fine() {
+        for bad in [
+            "https://user:tok@example.com/o/r.git",
+            "https://x-access-token:abc@github.com/o/r.git//t",
+        ] {
+            let e = TemplateSource::parse(bad).unwrap_err().to_string();
+            assert!(
+                e.contains("credential helper") && !e.contains("tok@"),
+                "{e}"
+            );
+        }
+        for ok in [
+            "ssh://git@host/o/r.git",
+            "https://example.com/a:b/r.git",
+            "git@host:o/r.git",
+        ] {
+            TemplateSource::parse(ok).unwrap();
+        }
+    }
 
     #[test]
     fn parses_sources() {

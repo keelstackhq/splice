@@ -82,3 +82,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - 2026-10-28 · fix/strip-tokens · see git log · template commands run without token, PAT, secret, password, key and npm auth env vars (spec §8.1, §10 item 22); post_env 2 and unit table passing
 - 2026-11-02 · adopt · see git log · `splice adopt` for an existing repo (--dry-run, `refuse:`/`replace:` messages) and `new --allow-dirty`; cli_adopt 8, cli_new +1 passing
 - 2026-11-14 · review fixes F1-F11 · see the pull request · `update --force` when current, check drift messages, json/yaml key-level conflicts (spec §10.23-28), pinned Action version, post without git credentials, status/history split, README split, check cache fallback, local-source warning
+- 2026-11-14 · improve round 2 · see the pull request · channel `update --force` restore, channel `check` cache fallback, refuse passwords in git source URLs (spec §10.29), one "no lock" message naming new/adopt
