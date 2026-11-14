@@ -10,7 +10,7 @@ expression: redact(&tree_snapshot(r))
 .claude/skills/caveman/SKILL.md fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4
 .claude/skills/verify/SKILL.md 69ca68ad4182760a3d132f902271c9c65c041b85b9d095d39bf35da2e229033b
 .editorconfig 5a36f7d5ebd96ceec93361ba60a452776dd483214e0921114667dd9eee2c3fe6
-.github/workflows/ci.yml 53ef4fead3f0c5556d408421797a9d5b9e07c065921ca1868f6527fcd9fb5831
+.github/workflows/ci.yml b7e9e2382c3902f80da45d3b7d7e1904ffd8029751d7a1e6a15d0cd2f8a54d89
 .post-ran 8030404398e6639ff1395dd8e38c782bf6c9e00229adfc54408c967a2e981b51
 .rig-post.log 27191d49c9f64030e65fe5be6741ef5c725e35d5ea2b8a48d767f5b243e2bc48
 .splice/channels/rig.toml [sha]
@@ -65,8 +65,7 @@ indent_style = space
 indent_size = 4
 == .github/workflows/ci.yml ==
 name: ci
-on:
-  - push
+on: [push]
 jobs:
   test:
     runs-on: macos-latest
