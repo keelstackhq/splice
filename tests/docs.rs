@@ -37,6 +37,7 @@ fn docs_mention_only_real_flags() {
     }
     for path in [
         "README.md",
+        "docs/reference.md",
         "skills/splice/SKILL.md",
         "docs/getting-started.md",
     ] {
@@ -55,5 +56,36 @@ fn skill_body_is_short_and_named() {
     let text = std::fs::read_to_string("skills/splice/SKILL.md").unwrap();
     assert!(text.starts_with("---\nname: splice\ndescription: Use when "));
     let body = text.splitn(3, "---\n").nth(2).unwrap();
-    assert!(body.lines().count() <= 80, "SKILL.md body over 80 lines");
+    assert!(text.lines().count() <= 60, "SKILL.md over 60 lines");
+}
+
+/// `docs/PROGRESS.md` Status names the version in `Cargo.toml` (a stale status misleads agents).
+#[test]
+fn progress_status_version_is_the_cargo_version() {
+    let progress =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/PROGRESS.md"))
+            .expect("docs/PROGRESS.md");
+    let status = progress
+        .split("## Status")
+        .nth(1)
+        .expect("a ## Status section")
+        .split("\n## ")
+        .next()
+        .unwrap();
+    let version = status
+        .split("splice ")
+        .skip(1)
+        .find_map(|rest| {
+            let v: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            (v.matches('.').count() == 2).then_some(v)
+        })
+        .expect("Status names `splice X.Y.Z`");
+    assert_eq!(
+        version,
+        env!("CARGO_PKG_VERSION"),
+        "update docs/PROGRESS.md Status"
+    );
 }

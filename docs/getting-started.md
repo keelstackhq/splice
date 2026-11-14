@@ -1,5 +1,7 @@
 # Getting started: a new repository with splice and hull
 
+> **Human-only guide.** Agents read `skills/splice/SKILL.md` (the contract), not this file.
+
 This guide takes you from nothing to a repository that is generated from the `hull` template
 and kept current by a weekly pull request. The output blocks were captured from the real
 binary (splice 0.2.0) against a local copy of the test template (`tests/fixtures/template`,
@@ -13,7 +15,7 @@ versions 1.0.0 and 2.0.0). They are shortened, and hull's own file names will di
 
 - `git` on `PATH`. splice fetches templates only through the git CLI.
 - One of: Node 20+ with pnpm (`pnpm dlx @keelstackhq/splice ...` runs it without installing), or
-  a binary from the GitHub release (see the README, "Install"), or `cargo build --release`.
+  a binary from the GitHub release (see [the reference](reference.md#install)), or `cargo build --release`.
 
 Check with `splice --version`.
 
@@ -252,7 +254,7 @@ pnpm dlx @keelstackhq/splice check            # covers every channel too
 
 `explain` then names the owner of a path (`source=main` or `source=channel:NAME`). Never edit
 inside a `<!-- splice:NAME:begin ... -->` block that a channel put into a file of yours: change
-the channel source instead. The README section "Channels" lists the flags (`--only`,
+the channel source instead. The reference section "Channels" lists the flags (`--only`,
 `--exclude`, `--track`, `--ref`, `channel remove`), and the design is in
 [`docs/superpowers/specs/2026-10-17-splice-channels-design.md`](superpowers/specs/2026-10-17-splice-channels-design.md).
 
@@ -263,7 +265,7 @@ one pull request from the branch `splice/update` (title prefixed `[conflicts]` w
 written), and closes it when you are current. Owned drift and template errors fail the job. If
 the repo has channels, the bot updates them too (the `scope` input, default `all` when
 `.splice/channels/` holds a `*.toml`). Inputs and outputs are in
-[the README](../README.md#update-bot).
+[the reference](reference.md#update-bot).
 
 **What plain `GITHUB_TOKEN` cannot do.** Templates ship workflow files, and the default
 `GITHUB_TOKEN`:
