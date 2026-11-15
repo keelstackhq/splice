@@ -20,6 +20,6 @@ Status and human-only blockers. Finished tasks go to `docs/history.md`, one line
 
 ## Status
 
-splice 0.4.0 is released (a merged version bump tags and releases itself); main carries the
+splice 0.5.0 is prepared in a release PR (a merged version bump tags and releases itself); main carries the
 contract rules 9.15-28, channels, `adopt`, the update-bot Action and the npm launcher.
 Everything that needs a human is under Blocked; the review-fix round is in its pull request.
