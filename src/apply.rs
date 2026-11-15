@@ -135,6 +135,11 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
 ///
 /// `lock_was_new`: the lock did not exist before this run (`adopt`, `channel add`), so it is
 /// untracked and only `git clean` removes it.
+pub const FIRST_LOCK_HINT: &str =
+    "; `git checkout -- . && git clean -fd` restores the previous state";
+/// What replaces [`FIRST_LOCK_HINT`] under `--allow-dirty`: the hint would wipe the user's own work.
+pub const DIRTY_NOTE: &str = "; the working tree had uncommitted changes, so review `git status`";
+
 pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str, lock_was_new: bool) -> String {
     // A conflicted file holds diff3 markers (text, TOML) or, for a JSON/YAML key conflict, ours
     // on the conflicting keys with no markers.
@@ -153,7 +158,7 @@ pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str, lock_was_new
         _ => "resolve the diff3 markers",
     };
     let abort = if lock_was_new {
-        "`git checkout -- . && git clean -fd` restores the previous state".to_string()
+        FIRST_LOCK_HINT.trim_start_matches("; ").to_string()
     } else {
         format!("to abort: git checkout -- . && git checkout HEAD -- {lock_path}")
     };

@@ -109,8 +109,8 @@ pub fn run(g: &GlobalArgs, a: &AdoptArgs) -> Result<Report> {
     let still = lock_out.still_records(&resolved.version);
     let none_yet = format!("no {LOCK_PATH} was written");
     // The restore hint would wipe the user's own uncommitted work under --allow-dirty.
-    let hint = "; `git checkout -- . && git clean -fd` restores the previous state";
-    let dirty_note = "; the working tree had uncommitted changes, so review `git status`";
+    let hint = crate::apply::FIRST_LOCK_HINT;
+    let dirty_note = crate::apply::DIRTY_NOTE;
     let swap = |m: &str| {
         let m = m.replace(&still, &none_yet);
         if a.allow_dirty {

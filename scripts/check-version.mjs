@@ -24,6 +24,7 @@ const PIN = /keelstackhq\/splice\/action@([0-9a-f]{40}) # v(\d+\.\d+\.\d+\S*)/g;
 function docPins(docs, version) {
   const seen = new Set();
   for (const [file, text] of Object.entries(docs)) {
+    if (!text.match(PIN)) throw new Error(`${file} has no \`keelstackhq/splice/action@<sha> # v<semver>\` pin`);
     for (const m of text.matchAll(PIN)) {
       seen.add(`${m[1]} v${m[2]}`);
       const rel = m[2].split(/[.-]/).slice(0, 3).map(Number);

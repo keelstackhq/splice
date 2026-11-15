@@ -357,3 +357,14 @@ fn template_cannot_plant_splice_state() {
     run(&tpl, repo.path(), &[]).success();
     assert!(repo.path().join(".splice/migrations/1.0.0-x.mjs").exists());
 }
+
+#[test]
+fn conflicted_adopt_allow_dirty_never_suggests_git_clean() {
+    let tpl = template_repo(&["v1"]);
+    let repo = repo_with(&[("notes.txt", "mine\n")]);
+    std::fs::write(repo.path().join("scratch.txt"), "uncommitted\n").unwrap();
+    let r = json(adopt(&tpl, repo.path(), &["--allow-dirty"]).code(1));
+    let last = msgs(&r).pop().unwrap();
+    assert!(last.contains("review `git status`"), "{last}");
+    assert!(!last.contains("git clean"), "{last}");
+}
