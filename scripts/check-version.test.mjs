@@ -103,3 +103,26 @@ test("action default must pin the Cargo version", () => {
     /no `version` input default/,
   );
 });
+
+const pin = (sha, v) => `- uses: keelstackhq/splice/action@${sha} # v${v}\n`;
+const A = "a".repeat(40);
+const B = "b".repeat(40);
+
+test("doc Action pins may lag the Cargo version", () => {
+  const docs = { "a.md": pin(A, "0.4.0"), "b.md": pin(A, "0.4.0") };
+  assert.equal(checkVersion({ tag: null, cargoToml: cargo("0.5.0"), docs }), "0.5.0");
+});
+
+test("doc Action pin newer than Cargo.toml throws", () => {
+  assert.throws(
+    () => checkVersion({ tag: null, cargoToml: cargo("0.5.0"), docs: { "a.md": pin(A, "0.6.0") } }),
+    /a\.md pins the Action at v0\.6\.0, newer than Cargo\.toml 0\.5\.0/,
+  );
+});
+
+test("docs pinning different Action releases throw", () => {
+  assert.throws(
+    () => checkVersion({ tag: null, cargoToml: cargo("0.5.0"), docs: { "a.md": pin(A, "0.4.0"), "b.md": pin(B, "0.5.0") } }),
+    /different Action releases/,
+  );
+});

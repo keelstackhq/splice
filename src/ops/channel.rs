@@ -187,6 +187,9 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
     let fix = |mut r: Report| {
         for m in &mut r.messages {
             *m = m.replace(&still, &none_yet);
+            if a.allow_dirty {
+                *m = m.replace(crate::apply::FIRST_LOCK_HINT, crate::apply::DIRTY_NOTE);
+            }
         }
         let mut all = messages.clone();
         all.append(&mut r.messages);

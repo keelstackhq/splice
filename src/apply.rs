@@ -96,6 +96,7 @@ pub fn apply_files(ctx: &ApplyCtx) -> Result<Report, SpliceError> {
 /// result is `Err(Conflict)`. A plan with drift is refused (`Err(Drift)`) before anything is
 /// written: the caller decides about `--force` when planning.
 pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
+    let lock_was_new = !ctx.repo.join(ctx.lock.path()).exists();
     let (mut report, mut wrote) = write_phase(&ctx)?;
     let plan = ctx.plan;
     let still = ctx.lock.still_records(&ctx.from);
@@ -119,14 +120,27 @@ pub fn apply(ctx: ApplyCtx) -> Result<Report, SpliceError> {
         Ok(report)
     } else {
         report.ok = false;
-        report.msg(conflict_summary(plan, &ctx.to, &ctx.lock.path()));
+        report.msg(conflict_summary(
+            plan,
+            &ctx.to,
+            &ctx.lock.path(),
+            lock_was_new,
+        ));
         Err(SpliceError::Conflict(report))
     }
 }
 
 /// The last message of a conflicted run: which files, that the lock is already at the target
 /// and how to abort.
-pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str) -> String {
+///
+/// `lock_was_new`: the lock did not exist before this run (`adopt`, `channel add`), so it is
+/// untracked and only `git clean` removes it.
+pub const FIRST_LOCK_HINT: &str =
+    "; `git checkout -- . && git clean -fd` restores the previous state";
+/// What replaces [`FIRST_LOCK_HINT`] under `--allow-dirty`: the hint would wipe the user's own work.
+pub const DIRTY_NOTE: &str = "; the working tree had uncommitted changes, so review `git status`";
+
+pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str, lock_was_new: bool) -> String {
     // A conflicted file holds diff3 markers (text, TOML) or, for a JSON/YAML key conflict, ours
     // on the conflicting keys with no markers.
     let marked = |p: &String| {
@@ -143,9 +157,13 @@ pub fn conflict_summary(plan: &Plan, to: &Version, lock_path: &str) -> String {
         (false, _) => "review the kept keys (your values stay; edit them to take the template's)",
         _ => "resolve the diff3 markers",
     };
+    let abort = if lock_was_new {
+        FIRST_LOCK_HINT.trim_start_matches("; ").to_string()
+    } else {
+        format!("to abort: git checkout -- . && git checkout HEAD -- {lock_path}")
+    };
     format!(
-        "conflicts in {}: {what}; lock already at {to}; to abort: git checkout -- . && git \
-         checkout HEAD -- {lock_path}",
+        "conflicts in {}: {what}; lock already at {to}; {abort}",
         plan.conflicts.join(", ")
     )
 }

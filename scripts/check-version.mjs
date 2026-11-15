@@ -17,8 +17,30 @@ function actionPin(actionYml) {
   return m[1];
 }
 
-export function checkVersion({ tag, cargoToml, launcherPkg, platforms, actionYml }) {
+const PIN = /keelstackhq\/splice\/action@([0-9a-f]{40}) # v(\d+\.\d+\.\d+\S*)/g;
+
+// Docs pin the Action by commit SHA. They name a released tag, so the tag can lag the
+// Cargo version but never lead it, and every doc must pin the same release.
+function docPins(docs, version) {
+  const seen = new Set();
+  for (const [file, text] of Object.entries(docs)) {
+    if (!text.match(PIN)) throw new Error(`${file} has no \`keelstackhq/splice/action@<sha> # v<semver>\` pin`);
+    for (const m of text.matchAll(PIN)) {
+      seen.add(`${m[1]} v${m[2]}`);
+      const rel = m[2].split(/[.-]/).slice(0, 3).map(Number);
+      const cur = version.split(/[.-]/).slice(0, 3).map(Number);
+      const i = rel.findIndex((n, k) => n !== cur[k]);
+      if (i >= 0 && rel[i] > cur[i]) {
+        throw new Error(`${file} pins the Action at v${m[2]}, newer than Cargo.toml ${version}`);
+      }
+    }
+  }
+  if (seen.size > 1) throw new Error(`docs pin different Action releases: ${[...seen].join(", ")}`);
+}
+
+export function checkVersion({ tag, cargoToml, launcherPkg, platforms, actionYml, docs }) {
   const version = cargoVersion(cargoToml);
+  if (docs) docPins(docs, version);
   if (actionYml !== undefined) {
     // The Action installs this exact splice, so a release must bump the pin with the version.
     const pin = actionPin(actionYml);
@@ -66,6 +88,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       cargoToml: readFileSync(new URL("../Cargo.toml", import.meta.url), "utf8"),
       launcherPkg,
       actionYml: readFileSync(new URL("../action/action.yml", import.meta.url), "utf8"),
+      docs: Object.fromEntries(
+        ["getting-started", "reference"].map((n) => [
+          `docs/${n}.md`,
+          readFileSync(new URL(`../docs/${n}.md`, import.meta.url), "utf8"),
+        ]),
+      ),
     });
     console.log(version);
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);

@@ -667,7 +667,10 @@ Items 11–14 and 18 stay splice's own decisions.
     messages are the only record. The contract (§5) says only that such a key "is a conflict",
     so it needs no change. YAML still loses comments and layout on a real merge (spec §8.5).
     TOML and text keep diff3 markers. The last conflict message also says the lock is already at
-    the target and how to abort (`git checkout -- . && git checkout HEAD -- <lock path>`).
+    the target and how to abort (`git checkout -- . && git checkout HEAD -- <lock path>`; when the
+    lock is new, as after `adopt` or `channel add`, it is untracked, so the hint is
+    `git checkout -- . && git clean -fd`). `adopt --dry-run` prints the same per-key and marker
+    notes as the real run.
 24. `update --force` on a current lock (review finding F1). Step 2's "up to date" return skipped the
     drift check, so a deleted or edited owned file had no fix path. With `--force` the current
     version is rendered (base = theirs) and planned as usual: drifted or deleted owned files are
