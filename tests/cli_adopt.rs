@@ -277,6 +277,24 @@ fn dry_run_shared_conflict_exits_1_and_writes_nothing() {
     assert_eq!(action(&r, "notes.txt"), "conflict");
     assert_eq!(git_stdout(repo.path(), &["status", "--porcelain"]), "");
     assert!(!lock(&repo).exists());
+    // The dry run says why, like the real run does.
+    assert!(
+        msgs(&r)
+            .iter()
+            .any(|m| m.contains("`notes.txt` has conflicts")),
+        "{r}"
+    );
+}
+
+#[test]
+fn conflicted_adopt_abort_hint_fits_a_first_lock() {
+    let tpl = template_repo(&["v1"]);
+    let repo = repo_with(&[("notes.txt", "mine\n")]);
+    let r = json(adopt(&tpl, repo.path(), &[]).code(1));
+    let last = msgs(&r).pop().unwrap();
+    // The lock is new, so `git checkout HEAD -- <lock>` would fail: untracked files need clean.
+    assert!(last.contains("git clean -fd"), "{last}");
+    assert!(!last.contains("checkout HEAD --"), "{last}");
 }
 
 #[test]

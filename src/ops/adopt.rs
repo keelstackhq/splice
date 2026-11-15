@@ -145,6 +145,9 @@ pub fn run(g: &GlobalArgs, a: &AdoptArgs) -> Result<Report> {
         let mut r = Report::new("adopt");
         for c in &fplan.changes {
             r.push(&c.path, c.action, c.class);
+            if let Some(n) = &c.note {
+                r.msg(n.clone());
+            }
         }
         for path in &fplan.drift {
             r.push(path, Action::Conflict, Class::Owned);

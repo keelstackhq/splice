@@ -1327,7 +1327,7 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         for (id, plan, to, lock) in conflicts {
             report.msg(format!(
                 "{id}: {}",
-                crate::apply::conflict_summary(plan, to, &lock)
+                crate::apply::conflict_summary(plan, to, &lock, false)
             ));
         }
         Err(SpliceError::Conflict(report))

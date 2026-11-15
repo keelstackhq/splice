@@ -167,14 +167,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: keelstackhq/splice/action@5d64f250fd1e0fcf27690b425a2f9f8de5fd4ac0 # v0.3.0
+      - uses: keelstackhq/splice/action@85c95b63f53836301f2405368767c6ae9138109f # v0.5.0
         with:
           token: ${{ steps.app-token.outputs.token }}
 ```
 
 Pin every action by full commit SHA with the tag as a comment, as above; Renovate (or Dependabot)
 bumps SHA and comment together. `create-github-app-token` v3.3.0 is commit `64ab729…`
-(2026-10-12); `keelstackhq/splice/action` v0.3.0 is `5d64f25…`.
+(2026-10-12); `keelstackhq/splice/action` v0.5.0 is `85c95b6…`.
 
 It opens or refreshes one pull request (`splice/update`) with a summary of the changes.
 
