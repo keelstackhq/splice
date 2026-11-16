@@ -710,7 +710,10 @@ Items 11–14 and 18 stay splice's own decisions.
     JSON/YAML key conflict, so `check` could not report it and the next update forgot it. Rule: a
     `shared` lock entry gets `kept = ["a.b", …]` (dotted key paths as in the messages, sorted,
     no duplicates; `(root)` for the whole document) for each key where the key-level merge kept
-    ours. Every plan (`update`, `add`, `adopt`, `channel add`, `update --channel`, `--force`
+    ours. The paths are not escaped, as in the item 23 messages: a key that contains `.` is
+    ambiguous (`{"a.b": 1}` and `{"a": {"b": 1}}` both give `a.b`), so a record may be kept a
+    little longer than needed (over-recorded), never misread as another file's. `add --force`
+    leaves a conflicting file as ours, so its record is checked against ours. Every plan (`update`, `add`, `adopt`, `channel add`, `update --channel`, `--force`
     restores) recomputes it per shared json/yaml file: the keys of this merge's conflicts plus
     the previously recorded keys, kept only where the file as written (or as on disk when not
     written) still differs from the new render at that key (a key missing on one side differs).

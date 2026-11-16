@@ -11,7 +11,7 @@ use crate::filter::Filter;
 use crate::lock::{ChannelLock, Lock, LockPiece};
 use crate::manifest::{PostCmd, Template, When};
 use crate::output::{Action, Class, Report};
-use crate::planner::{Disk, Plan, PlanInput, plan};
+use crate::planner::{Disk, Plan, PlanInput, keep_as_is, plan};
 use crate::render::{PieceInstance, RenderInput, render_sections, render_tree};
 use crate::sections::{SectionInput, SectionPlan, plan_sections};
 use crate::source::TemplateSource;
@@ -29,9 +29,9 @@ fn usage<T>(msg: String) -> Result<T> {
 /// `--force` on `add`: owned drift is already replaced by the planner; a conflict (shared file
 /// that does not merge, or a user file where a seed became tracked) is kept as it is, never
 /// overwritten and never given markers.
-fn keep_conflicts(plan: &mut Plan) {
-    // `plan.kept` stays: where the merge differs from the template it kept ours, so every
-    // recorded key is still a key where the file differs from the render.
+fn keep_conflicts(input: &PlanInput, plan: &mut Plan) {
+    // The file stays as ours, so its kept keys follow ours, not the (maybe marker) merge text.
+    keep_as_is(input, plan);
     for c in plan
         .changes
         .iter_mut()
@@ -170,16 +170,17 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
 
     // 4. Plan (pure) over a disk snapshot; no migrations: the commit does not change.
     let disk = Disk::snapshot(repo, base.keys().chain(theirs.keys()).map(String::as_str))?;
-    let mut plan = plan(&PlanInput {
+    let input = PlanInput {
         base: &base,
         theirs: &theirs,
         disk: &disk,
         lock: &lock,
         removes: Vec::new(),
         force: a.force,
-    });
+    };
+    let mut plan = plan(&input);
     if a.force {
-        keep_conflicts(&mut plan);
+        keep_conflicts(&input, &mut plan);
     }
     // Drift or a conflict (only without `--force`): write nothing, no files and no lock (C3).
     if !plan.drift.is_empty() || !plan.conflicts.is_empty() {
@@ -297,16 +298,17 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
             .chain(cl.sections.keys())
             .map(String::as_str),
     )?;
-    let mut plan = plan(&PlanInput {
+    let input = PlanInput {
         base: &base,
         theirs: &theirs,
         disk: &disk,
         lock,
         removes: Vec::new(),
         force: a.force,
-    });
+    };
+    let mut plan = plan(&input);
     if a.force {
-        keep_conflicts(&mut plan);
+        keep_conflicts(&input, &mut plan);
     }
     let splan = plan_sections(&SectionInput {
         channel: name,
