@@ -164,6 +164,8 @@ pub fn plan(input: &PlanInput) -> Plan {
             };
             let bytes = match &step {
                 Step::Change(Planned { bytes: Some(b), .. }) => Some(b.as_slice()),
+                // Nothing written (no change, a skip, drift, a deleted file): the file stays
+                // as on disk, so the record is checked against ours; `None` drops it.
                 _ => ours,
             };
             if let Some(keys) = kept_keys(input, path, theirs, new, bytes) {
@@ -182,6 +184,22 @@ pub fn plan(input: &PlanInput) -> Plan {
         }
     }
     out
+}
+
+/// For a caller that keeps every `conflict` file as it is on disk (`add --force`): recompute
+/// their kept keys against ours instead of the merge text, which may hold diff3 markers that
+/// do not parse and would drop the record.
+pub fn keep_as_is(input: &PlanInput, plan: &mut Plan) {
+    for c in plan.changes.iter().filter(|c| c.action == Action::Conflict) {
+        let Some(theirs) = input.theirs.get(&c.path) else {
+            continue;
+        };
+        let ours = input.disk.files.get(&c.path).and_then(|o| o.as_deref());
+        match kept_keys(input, &c.path, theirs, &c.kept, ours) {
+            Some(keys) => plan.kept.insert(c.path.clone(), keys),
+            None => plan.kept.remove(&c.path),
+        };
+    }
 }
 
 /// The kept keys of one shared json/yaml file after this plan (spec §10.30): this merge's
@@ -1155,6 +1173,44 @@ mod tests {
             Class::Shared,
         );
         assert_eq!(p.kept["p.json"], vec!["a.b".to_string()]);
+    }
+
+    #[test]
+    fn keep_as_is_recomputes_kept_keys_against_ours() {
+        // The old render does not parse, so the merge falls back to text and ends in markers;
+        // the marker text does not parse either and the recorded key would be dropped.
+        let (base, theirs, disk) = (
+            "{\n\"a\": 2,\n\"b\": 1,\n}\n",
+            "{\n\"a\": 2,\n\"b\": 5\n}\n",
+            "{\n\"a\": 3,\n\"b\": 9\n}\n",
+        );
+        let (b, t) = (
+            tree(&[json_file(base, Class::Shared)]),
+            tree(&[json_file(theirs, Class::Shared)]),
+        );
+        let mut l = lock(&[("p.json", Class::Shared, base.as_bytes())]);
+        l.files.get_mut("p.json").unwrap().kept = vec!["a".to_string()];
+        let d = Disk {
+            files: [("p.json".to_string(), Some(disk.as_bytes().to_vec()))].into(),
+        };
+        let input = PlanInput {
+            base: &b,
+            theirs: &t,
+            disk: &d,
+            lock: &l,
+            removes: Vec::new(),
+            force: true,
+        };
+        let mut p = plan(&input);
+        assert_eq!(p.changes[0].action, Action::Conflict);
+        assert!(
+            p.kept.is_empty(),
+            "marker text drops the record: {:?}",
+            p.kept
+        );
+        // `add --force` leaves ours on disk: the record follows ours.
+        keep_as_is(&input, &mut p);
+        assert_eq!(p.kept["p.json"], vec!["a".to_string()]);
     }
 
     #[test]
