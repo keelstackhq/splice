@@ -91,3 +91,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - 2026-11-16 · ci/release-major · release.yml `major` job moves the Action tag `v1` to the newest stable release commit after npm (tag-only, lease, environment `release`) and fails if `v1` is missing; `scripts/release-major.mjs` + tests
 - 2026-11-16 · ci/release-major-lease · lease on the major tag's own object (an annotated `v1` no longer wedges the push); e2e tests for an annotated `v1` and a lease refused on a race; spec counts any newer stable remote tag
 - 2026-11-16 · kept keys follow-ups · `add --force` checks kept keys against ours (planner `keep_as_is`), spec §10.30 notes unescaped dotted paths, comment on the not-written case
+- 2026-11-16 · release 0.6.0 · version bump (Cargo, npm launcher + platform pins, Action default); minor for the additive `kept` lock field (contract 9.29, format 1), plus the `major` release job and channel-add tests

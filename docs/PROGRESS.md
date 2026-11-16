@@ -22,6 +22,6 @@ Status and human-only blockers. Finished tasks go to `docs/history.md`, one line
 
 ## Status
 
-splice 0.5.1 is prepared in a release PR (v0.5.0 is the last tag; a merged version bump tags and releases itself); main carries the
-contract rules 9.15-28, channels, `adopt`, the update-bot Action and the npm launcher; each release moves the Action tag `v1` itself (still at ebf10b6 until the next release).
+splice 0.6.0 is prepared in a release PR (v0.5.1 is the last tag; a merged version bump tags and releases itself); main carries the
+contract rules 9.15-29 (kept-key lock records), channels, `adopt`, the update-bot Action and the npm launcher; each release moves the Action tag `v1` itself (still at ebf10b6 until the next release).
 Everything that needs a human is under Blocked; round R6 (existing-repo migration rehearsal) is in its pull request.
