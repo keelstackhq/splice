@@ -31,6 +31,25 @@ use crate::vars::{
 
 type Result<T> = std::result::Result<T, SpliceError>;
 
+/// Paths whose kept keys differ between the lock and the plan (a record to drop or add, spec
+/// §10.30).
+fn kept_changed(lock: &Lock, plan: &Plan) -> Vec<String> {
+    let none = Vec::new();
+    let paths: std::collections::BTreeSet<&String> = lock
+        .files
+        .keys()
+        .filter(|p| !lock.files[*p].kept.is_empty())
+        .chain(plan.kept.keys())
+        .collect();
+    paths
+        .into_iter()
+        .filter(|p| {
+            lock.files.get(*p).map_or(&none, |f| &f.kept) != plan.kept.get(*p).unwrap_or(&none)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Planned writes by path (`None`: deleted), see [`prepare_channel`].
 pub type Written = BTreeMap<String, Option<Vec<u8>>>;
 
@@ -615,11 +634,20 @@ pub fn prepare(
         force,
     });
     // `--force` on a current lock re-rendered only to find drift: nothing to restore = up to date.
-    if r.current && plan.changes.is_empty() && plan.drift.is_empty() {
+    let kept_paths = kept_changed(&lock, &plan);
+    if r.current && plan.changes.is_empty() && plan.drift.is_empty() && kept_paths.is_empty() {
         return Ok(up_to_date_prepared(r, lock));
+    }
+    if r.current {
+        r.messages.extend(
+            kept_paths
+                .iter()
+                .map(|p| format!("`{p}`: kept keys updated in the lock")),
+        );
     }
     let restore_only = r.current;
     let lock_new = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .with_kept(&plan.kept)
         .keep_relative_source(&lock.template.source);
     Ok(Prepared {
         plan,
@@ -772,14 +800,23 @@ pub fn prepare_channel(
     });
     // `--force` on a current lock re-rendered only to find drift: nothing to restore = up to date.
     let restore_only = r.current && filter_new.is_none();
+    let kept_paths = kept_changed(&cl.lock, &plan);
     if restore_only
         && plan.changes.is_empty()
         && plan.drift.is_empty()
+        && kept_paths.is_empty()
         && sections.changes.is_empty()
         && sections.drift.is_empty()
         && sections.broken.is_empty()
     {
         return Ok(channel_up_to_date(r, cl, me));
+    }
+    if r.current {
+        r.messages.extend(
+            kept_paths
+                .iter()
+                .map(|p| format!("channel {name}: `{p}`: kept keys updated in the lock")),
+        );
     }
     let mut meta = cl.meta.clone();
     if let Some((only, exclude)) = filter_new {
@@ -787,6 +824,7 @@ pub fn prepare_channel(
         meta.exclude = exclude.to_vec();
     }
     let mut lock = Lock::from_tree(&r.target, &r.vars, &r.instances, &theirs)
+        .with_kept(&plan.kept)
         .keep_relative_source(&cl.lock.template.source);
     // A restore never moves the lock (a same-tree commit, G4, stays unlocked) nor runs steps.
     let migrations = if restore_only {

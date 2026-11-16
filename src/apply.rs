@@ -351,6 +351,7 @@ mod tests {
             class: Class::Owned,
             bytes: bytes.map(|b| b.as_bytes().to_vec()),
             note: None,
+            kept: Vec::new(),
         }
     }
 
@@ -364,6 +365,7 @@ mod tests {
             changes,
             drift: vec![],
             conflicts,
+            kept: Default::default(),
         }
     }
 

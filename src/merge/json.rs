@@ -100,15 +100,17 @@ impl<'de> Visitor<'de> for Seed<'_> {
     }
 }
 
+pub(super) fn parse_tree(s: &str) -> Result<Tree, ParseError> {
+    if !parses_strict(s) {
+        return Err(ParseError("invalid JSON or duplicate key".to_string()));
+    }
+    serde_json::from_str::<Value>(s)
+        .map(Tree::from_value)
+        .map_err(|e| ParseError(e.to_string()))
+}
+
 pub fn merge_json(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseError> {
-    let parse = |s: &str| {
-        if !parses_strict(s) {
-            return Err(ParseError("invalid JSON or duplicate key".to_string()));
-        }
-        serde_json::from_str::<Value>(s)
-            .map(Tree::from_value)
-            .map_err(|e| ParseError(e.to_string()))
-    };
+    let parse = parse_tree;
     let b = if base.trim().is_empty() {
         Tree::empty_map()
     } else {

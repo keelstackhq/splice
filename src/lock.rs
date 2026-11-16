@@ -37,6 +37,8 @@ pub fn valid_channel_name(name: &str) -> bool {
 pub struct LockFile {
     pub class: Class,
     pub sha256: String,
+    /// Dotted json/yaml key paths where the merge kept the user's value (spec §10.30).
+    pub kept: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +96,8 @@ struct RawPiece {
 struct RawFile {
     class: String,
     sha256: String,
+    #[serde(default)]
+    kept: Vec<String>,
 }
 
 fn bad_lock(path: &str, hint: &str, why: impl std::fmt::Display) -> SpliceError {
@@ -140,6 +144,15 @@ fn parse_lock(text: &str, path: &str, hint: &str) -> Result<(Lock, toml::Table)>
             LockFile {
                 class,
                 sha256: f.sha256,
+                kept: if class == Class::Shared {
+                    f.kept
+                        .into_iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect()
+                } else {
+                    Vec::new()
+                },
             },
         );
     }
@@ -167,6 +180,21 @@ fn parse_lock(text: &str, path: &str, hint: &str) -> Result<(Lock, toml::Table)>
 }
 
 impl Lock {
+    /// Record kept json/yaml keys (spec §10.30) on shared entries; other paths are ignored.
+    #[must_use]
+    pub fn with_kept(mut self, kept: &BTreeMap<String, Vec<String>>) -> Lock {
+        for (path, keys) in kept {
+            if let Some(f) = self
+                .files
+                .get_mut(path)
+                .filter(|f| f.class == Class::Shared)
+            {
+                f.kept = keys.clone();
+            }
+        }
+        self
+    }
+
     /// The lock for a rendered tree. Seed files are not listed (contract §6).
     pub fn from_tree(
         t: &ResolvedTemplate,
@@ -183,6 +211,7 @@ impl Lock {
                     LockFile {
                         class: f.class,
                         sha256: sha256_hex(&f.bytes),
+                        kept: Vec::new(),
                     },
                 )
             })
@@ -301,6 +330,12 @@ impl Lock {
             let mut e = InlineTable::new();
             e.insert("class", f.class.as_str().into());
             e.insert("sha256", f.sha256.as_str().into());
+            if !f.kept.is_empty() {
+                e.insert(
+                    "kept",
+                    f.kept.iter().map(String::as_str).collect::<Array>().into(),
+                );
+            }
             files[path.as_str()] = value(e);
         }
         doc["files"] = toml_edit::Item::Table(files);
@@ -607,6 +642,77 @@ mod tests {
             lock.files["apps/web/vite.config.ts"].sha256,
             sha256_hex(b"cfg\n")
         );
+    }
+
+    #[test]
+    fn kept_keys_round_trip_and_are_omitted_when_empty() {
+        let plain = sample_lock();
+        let dir = tempfile::tempdir().unwrap();
+        plain.write_atomic(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(LOCK_PATH)).unwrap();
+        assert!(!text.contains("kept"));
+
+        let mut kept = BTreeMap::new();
+        kept.insert("apps/web/package.json".to_string(), vec!["a.b".to_string()]);
+        kept.insert("README.md".to_string(), vec!["ignored".to_string()]);
+        kept.insert(
+            "apps/web/vite.config.ts".to_string(),
+            vec!["owned".to_string()],
+        );
+        let lock = plain.with_kept(&kept);
+        lock.write_atomic(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(LOCK_PATH)).unwrap();
+        assert!(text.contains("kept = [\"a.b\"]"), "{text}");
+        assert_eq!(text.matches("kept").count(), 1, "{text}");
+        assert_eq!(Lock::read(dir.path()).unwrap().unwrap(), lock);
+    }
+
+    #[test]
+    fn kept_is_sorted_deduped_and_dropped_on_owned_entries_when_read() {
+        let dir = tempfile::tempdir().unwrap();
+        sample_lock().write_atomic(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(LOCK_PATH)).unwrap();
+        let text = text
+            .replacen(
+                "class = \"shared\",",
+                "class = \"shared\", kept = [\"b\", \"a\", \"b\"],",
+                1,
+            )
+            .replacen(
+                "class = \"owned\",",
+                "class = \"owned\", kept = [\"x\"],",
+                1,
+            );
+        write_raw(dir.path(), &text);
+        let lock = Lock::read(dir.path()).unwrap().unwrap();
+        let shared: Vec<_> = lock
+            .files
+            .values()
+            .filter(|f| f.class == Class::Shared)
+            .collect();
+        assert_eq!(shared.iter().filter(|f| !f.kept.is_empty()).count(), 1);
+        assert!(shared.iter().any(|f| f.kept == ["a", "b"]));
+        assert!(
+            lock.files
+                .values()
+                .filter(|f| f.class == Class::Owned)
+                .all(|f| f.kept.is_empty())
+        );
+    }
+
+    #[test]
+    fn kept_of_wrong_type_is_a_template_error() {
+        let dir = tempfile::tempdir().unwrap();
+        sample_lock().write_atomic(dir.path()).unwrap();
+        let text = std::fs::read_to_string(dir.path().join(LOCK_PATH)).unwrap();
+        let bad = text.replacen(
+            "class = \"shared\",",
+            "class = \"shared\", kept = \"x\",",
+            1,
+        );
+        assert_ne!(bad, text);
+        write_raw(dir.path(), &bad);
+        assert_eq!(Lock::read(dir.path()).unwrap_err().exit_code(), 3);
     }
 
     #[test]

@@ -90,6 +90,11 @@ fn check_files(repo: &Path, lock: &Lock, prefix: &str, report: &mut Report) -> R
                 ));
             }
         }
+        for key in &file.kept {
+            report.msg(format!(
+                "{prefix}`{path}` key `{key}` keeps your value over the template's"
+            ));
+        }
         if let Some(bytes) = bytes {
             let lines = find_markers(&String::from_utf8_lossy(&bytes));
             if !lines.is_empty() {

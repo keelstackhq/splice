@@ -1,6 +1,5 @@
 ---
 source: tests/golden_channels.rs
-assertion_line: 90
 expression: redact(&tree_snapshot(r))
 ---
 .agents/skills/caveman/SKILL.md fc053509d68627476a1dec7606dbde006954878a976a90cdfe5a222089431ae4
@@ -155,7 +154,7 @@ vars = { name = "web" }
 
 [files]
 ".editorconfig" = { class = "owned", sha256 = "5a36f7d5ebd96ceec93361ba60a452776dd483214e0921114667dd9eee2c3fe6" }
-".github/workflows/ci.yml" = { class = "shared", sha256 = "2bc5cc8e0365350e16659f55dbd3e9332e55794fa825601ebaa62e22dd018fc6" }
+".github/workflows/ci.yml" = { class = "shared", sha256 = "2bc5cc8e0365350e16659f55dbd3e9332e55794fa825601ebaa62e22dd018fc6", kept = ["jobs.test.runs-on"] }
 "apps.txt" = { class = "owned", sha256 = "884510c07970579c8a57332902710121c6b27fc1036596110dd7f3759f50e08a" }
 "apps/web/package.json" = { class = "shared", sha256 = "9f3f932b22d376f9e7487bfd1f0d45865b7ba4e37344bdf56a1c69f86f0f93b9" }
 "apps/web/tsconfig.json" = { class = "owned", sha256 = "c083d8ec1a8a4a45d0090c057ace383ebb7b405e52ff9fcbe9e69571a4f6e5ba" }

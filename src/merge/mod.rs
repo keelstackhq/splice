@@ -8,6 +8,8 @@ pub mod yaml;
 
 pub use text::{merge_text, wrap_whole};
 
+use std::collections::BTreeSet;
+
 use crate::manifest::MergeStrategy;
 use crate::markers::find_markers;
 
@@ -75,6 +77,25 @@ pub fn merge3(strategy: MergeStrategy, base: &str, ours: &str, theirs: &str) -> 
         conflicts: merged.conflicts,
         ..Merged::default()
     }
+}
+
+/// Dotted key paths at which two json/yaml documents differ (spec §10.30). `None` for other
+/// strategies or when a side does not parse; whitespace-only text is an empty map.
+pub fn differing_keys(strategy: MergeStrategy, a: &str, b: &str) -> Option<BTreeSet<String>> {
+    let parse = |s: &str| {
+        if s.trim().is_empty() {
+            return Some(keypath::Tree::empty_map());
+        }
+        match strategy {
+            MergeStrategy::Json => json::parse_tree(s).ok(),
+            MergeStrategy::Yaml => yaml::parse(s).ok(),
+            _ => None,
+        }
+    };
+    let (x, y) = (parse(a)?, parse(b)?);
+    let mut out = BTreeSet::new();
+    keypath::differing(&x, &y, &mut Vec::new(), &mut out);
+    Some(out)
 }
 
 /// A clean JSON text merge must not introduce a duplicate key that ours did not have (a
@@ -149,6 +170,30 @@ fn clean(text: &str) -> Merged {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keys(s: MergeStrategy, a: &str, b: &str) -> Option<Vec<String>> {
+        differing_keys(s, a, b).map(|k| k.into_iter().collect())
+    }
+
+    #[test]
+    fn differing_keys_nested_deleted_and_root() {
+        let j = MergeStrategy::Json;
+        let a = r#"{"a":{"b":1,"c":2},"d":3,"gone":1}"#;
+        let b = r#"{"a":{"b":1,"c":9},"d":3,"new":1}"#;
+        assert_eq!(keys(j, a, b).unwrap(), ["a.c", "gone", "new"]);
+        assert_eq!(keys(j, a, a).unwrap(), Vec::<String>::new());
+        assert_eq!(keys(j, "[1]", "[2]").unwrap(), ["(root)"]);
+        assert_eq!(keys(j, " \n", r#"{"x":1}"#).unwrap(), ["x"]);
+    }
+
+    #[test]
+    fn differing_keys_yaml_and_none_cases() {
+        let y = MergeStrategy::Yaml;
+        assert_eq!(keys(y, "a:\n  b: 1\n", "a:\n  b: 2\n").unwrap(), ["a.b"]);
+        assert_eq!(keys(MergeStrategy::Json, "{", "{}"), None);
+        assert_eq!(keys(MergeStrategy::Text, "a", "b"), None);
+        assert_eq!(keys(MergeStrategy::Toml, "a=1", "a=2"), None);
+    }
 
     #[test]
     fn json_both_sides_kept_order_and_indent() {

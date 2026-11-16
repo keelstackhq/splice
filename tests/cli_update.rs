@@ -844,3 +844,104 @@ fn a_lock_commit_missing_from_the_source_is_a_clear_error() {
         "{m}"
     );
 }
+
+fn kept_of(repo: &TempDir, path: &str) -> Vec<String> {
+    lock(repo).files[path].kept.clone()
+}
+
+#[test]
+fn json_key_conflict_is_recorded_reported_and_dropped_when_fixed() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    common::edit(&repo, "package.json", |t| t.replace("5.0.0", "5.1.0"));
+    commit_all(repo.path());
+    update(&repo, &[]).code(1);
+    assert_eq!(
+        kept_of(&repo, "package.json"),
+        vec!["devDependencies.typescript".to_string()]
+    );
+    assert!(read(&repo, ".splice/lock.toml").contains("kept = [\"devDependencies.typescript\"]"));
+    commit_all(repo.path());
+
+    // check: a message only, exit 0, same --json keys.
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["check", "--offline", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert!(
+        messages(&v).contains(
+            "`package.json` key `devDependencies.typescript` keeps your value over the template's"
+        ),
+        "{v}"
+    );
+    let mut keys: Vec<&String> = v.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["changes", "command", "messages", "ok"]
+            .iter()
+            .collect::<Vec<_>>()
+    );
+
+    // explain lists it.
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["explain", "package.json", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(messages(&json(&out)).contains("kept=devDependencies.typescript"));
+
+    // A forced re-render does not touch the key: still recorded, no conflict.
+    update(&repo, &["--force"]).success();
+    assert_eq!(kept_of(&repo, "package.json").len(), 1);
+    commit_all(repo.path());
+
+    // The user takes the template's value: the next update drops the record.
+    common::edit(&repo, "package.json", |t| t.replace("5.1.0", "5.4.0"));
+    commit_all(repo.path());
+    let out = update(&repo, &["--force"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(
+        messages(&json(&out)).contains("`package.json`: kept keys updated in the lock"),
+        "{}",
+        messages(&json(&out))
+    );
+    assert!(kept_of(&repo, "package.json").is_empty());
+    assert!(!read(&repo, ".splice/lock.toml").contains("kept"));
+}
+
+#[test]
+fn yaml_key_conflict_is_recorded_and_explain_shows_kept() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let ci = ".github/workflows/ci.yml";
+    common::edit(&repo, ci, |t| t.replace("ubuntu-latest", "self-hosted"));
+    commit_all(repo.path());
+    update(&repo, &[]).code(1);
+    assert_eq!(kept_of(&repo, ci), vec!["jobs.test.runs-on".to_string()]);
+    commit_all(repo.path());
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["explain", ci])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(out).unwrap();
+    assert!(
+        text.trim_end().ends_with("kept=jobs.test.runs-on"),
+        "{text}"
+    );
+}

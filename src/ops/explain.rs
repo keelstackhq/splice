@@ -111,7 +111,7 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
             }
             report.lines.push(format!("{path}  unmanaged"));
         }
-        Some((source, file)) => {
+        Some((owner_id, file)) => {
             let piece = format!("{}/{}", file.piece_id, file.piece_name);
             let glob = file.glob.as_deref().unwrap_or("default");
             // Only shared files are merged; the strategy is `none` for the other classes.
@@ -121,11 +121,23 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
                 "none"
             };
             // `source=` only when channels exist: a repo without channels explains as M2.
-            let source = match source {
+            let source = match &owner_id {
                 _ if sources.channels.is_empty() => None,
                 SourceId::Main => Some("source=main".to_string()),
                 SourceId::Channel(n) => Some(format!("source=channel:{n}")),
             };
+            let owner = match &owner_id {
+                SourceId::Main => sources.main.as_ref(),
+                SourceId::Channel(n) => sources
+                    .channels
+                    .iter()
+                    .find(|c| &c.meta.name == n)
+                    .map(|c| &c.lock),
+            };
+            let kept: Vec<&str> = owner
+                .and_then(|l| l.files.get(&path))
+                .map(|f| f.kept.iter().map(String::as_str).collect())
+                .unwrap_or_default();
             report.push(&path, Action::Skip, file.class);
             if g.json {
                 report.msg(format!("piece={piece}"));
@@ -134,8 +146,14 @@ pub fn run(g: &GlobalArgs, a: &ExplainArgs) -> Result<Report> {
                 if let Some(s) = &source {
                     report.msg(s.clone());
                 }
+                for k in &kept {
+                    report.msg(format!("kept={k}"));
+                }
             }
-            let column = source.map(|s| format!("  {s}")).unwrap_or_default();
+            let mut column = source.map(|s| format!("  {s}")).unwrap_or_default();
+            if !kept.is_empty() {
+                column.push_str(&format!("  kept={}", kept.join(",")));
+            }
             report.lines.push(format!(
                 "{path}  {}  {piece}  glob={glob}  merge={merge}{column}",
                 file.class.as_str()

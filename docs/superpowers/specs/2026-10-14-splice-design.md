@@ -425,7 +425,7 @@ Built from the theirs tree: `[files]` lists every owned and shared path with the
 **rendered** bytes; seeds are not listed. Written with `toml_edit` (stable order: files sorted)
 to an exclusively created temp file in `.splice/` (never `lock.toml.tmp`), fsynced, then renamed over the lock and the directory fsynced. Always the
 last step of `new`, `add` and `update`, after any post commands. `[[pieces]]` keeps instance order; `vars` is an inline
-table.
+table. A shared entry gets `kept = [...]` only when it has kept keys (§10 item 30).
 
 ### 8.7 `check`
 
@@ -433,7 +433,9 @@ Exit 1 if any of: an owned file in the lock whose disk sha differs (or is missin
 file containing a line that starts with `<<<<<<< ours`, `||||||| base`, `=======` inside such a
 block, or `>>>>>>> template`; a newer stable tag than the lock version (for an untagged lock: a stable tag whose commit
 descends from the lock commit, §4; skipped with `--offline`,
-and a fetch failure is a message, not an error). Changes: drift → `update/owned`, markers →
+and a fetch failure is a message, not an error). Each kept key recorded in the lock (§10 item 30)
+is one message (`` `PATH` key `KEY` keeps your value over the template's ``), never a change and
+never exit 1. Changes: drift → `update/owned`, markers →
 `conflict/<the file's lock class>`. An owned file whose render is empty has no lock entry (§8.6),
 so it is never reported as missing. Every lock path is checked like a write target (relative, no
 `..`, no symlink on the way) before any is read; an unsafe one is exit 3. Messages: `update available: 1.2.0 → 1.3.0`.
@@ -478,7 +480,9 @@ Re-renders the lock state from the cached tree (offline after the first fetch) a
 (nothing on stderr); `--json`: one change `{path, action: "skip", class}` and messages
 `piece=…`, `glob=…`, `merge=…`. An
 unmanaged path → ok, no changes, message `unmanaged`. `merge=` is the `[merge]` strategy for
-shared files and `none` for owned and seed files. Paths are normalised first (`./` prefix, `\`
+shared files and `none` for owned and seed files. A shared file with kept keys in its lock entry
+(§10 item 30) gets one message `kept=KEY` per key with `--json` and a trailing `kept=KEY,KEY`
+column on the human line. Paths are normalised first (`./` prefix, `\`
 separators); absolute paths and `..` are a usage error.
 
 With channels, `explain` searches the main lock, then every channel by name (the first hit owns
@@ -663,9 +667,9 @@ Items 11–14 and 18 stay splice's own decisions.
     conflicting key (a key ours deleted stays deleted). When only conflicting keys differ from ours
     the file is returned byte for byte (YAML comments and flow style survive). The change is `conflict`, exit 1, the lock
     is written; one message per key names the file, both values (`(deleted)` for an absent key)
-    and what was kept. There are no markers, so `check` does not flag a key conflict later: the
-    messages are the only record. The contract (§5) says only that such a key "is a conflict",
-    so it needs no change. YAML still loses comments and layout on a real merge (spec §8.5).
+    and what was kept. There are no markers, so `check` does not flag a key conflict later; the
+    lock records the kept keys (item 30, contract §9.29). The contract (§5) says only that such a
+    key "is a conflict". YAML still loses comments and layout on a real merge (spec §8.5).
     TOML and text keep diff3 markers. The last conflict message also says the lock is already at
     the target and how to abort (`git checkout -- . && git checkout HEAD -- <lock path>`; when the
     lock is new, as after `adopt` or `channel add`, it is untracked, so the hint is
@@ -702,6 +706,29 @@ Items 11–14 and 18 stay splice's own decisions.
     The check runs first, and the message shows the URL masked (`***@`, `token=***`), never the
     raw text, so neither the lock nor an error holds the secret. `ssh://git@host/…` and scp-like
     `git@host:o/r` stay allowed. Use a credential helper.
+30. Kept keys in the lock (contract §9.29). Item 23 left the messages as the only record of a
+    JSON/YAML key conflict, so `check` could not report it and the next update forgot it. Rule: a
+    `shared` lock entry gets `kept = ["a.b", …]` (dotted key paths as in the messages, sorted,
+    no duplicates; `(root)` for the whole document) for each key where the key-level merge kept
+    ours. Every plan (`update`, `add`, `adopt`, `channel add`, `update --channel`, `--force`
+    restores) recomputes it per shared json/yaml file: the keys of this merge's conflicts plus
+    the previously recorded keys, kept only where the file as written (or as on disk when not
+    written) still differs from the new render at that key (a key missing on one side differs).
+    A recorded key the template did not change again is not a new conflict (no change, exit
+    unaffected). It is dropped once the values agree, when the file no longer parses, is not
+    `shared` or leaves the lock. TOML and text conflicts keep markers and record nothing.
+    Additive, `format` stays 1: the key is written only when non-empty, so a lock without kept
+    keys is byte for byte as before; a lock without it reads as none; a `kept` that is not an
+    array of strings is exit 3. Every released splice reads lock file entries without denying
+    unknown keys, so an older splice ignores `kept` and drops it the next time it writes the
+    lock (the record is then lost, never misread). `check` reports each recorded key as a
+    message only (a kept value is the user's allowed edit of a shared file, contract §5);
+    `explain` lists them (§8.9); `update` and `diff` messages are otherwise unchanged. A plain
+    `update` on a current lock does not plan, so a key the user has fixed stays recorded until the
+    next update to a new version or `update --force`; a `--force` run on a current lock that only
+    changes the record rewrites the lock and says so (`` `PATH`: kept keys updated in the lock ``,
+    `channel NAME: ` prefix for a channel) instead of "up to date". The `--json` shape is
+    unchanged.
 
 ## 11. Testing
 

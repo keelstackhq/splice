@@ -10,8 +10,9 @@ use indexmap::IndexMap;
 use crate::error::SpliceError;
 use crate::fsio::{self, sha256_hex};
 use crate::lock::{LOCK_PATH, Lock};
+use crate::manifest::MergeStrategy;
 use crate::manifest::Template;
-use crate::merge::{merge3, wrap_whole};
+use crate::merge::{differing_keys, merge3, wrap_whole};
 use crate::migrate::Remove;
 use crate::output::{Action, Class};
 use crate::paths::render_segments;
@@ -65,6 +66,8 @@ pub struct Planned {
     pub class: Class,
     pub bytes: Option<Vec<u8>>,
     pub note: Option<String>,
+    /// json/yaml key paths this merge kept ours on (key-level conflict, spec §10.30).
+    pub kept: Vec<String>,
 }
 
 /// The plan: changes sorted by path; `drift` lists owned files edited (or deleted) locally,
@@ -74,6 +77,8 @@ pub struct Plan {
     pub changes: Vec<Planned>,
     pub drift: Vec<String>,
     pub conflicts: Vec<String>,
+    /// Per shared json/yaml path: the keys where the file keeps the user's value (spec §10.30).
+    pub kept: BTreeMap<String, Vec<String>>,
 }
 
 /// What one path needs.
@@ -90,6 +95,7 @@ fn change(path: &str, action: Action, class: Class, bytes: Option<&[u8]>) -> Ste
         class,
         bytes: bytes.map(<[u8]>::to_vec),
         note: None,
+        kept: Vec::new(),
     })
 }
 
@@ -100,6 +106,7 @@ fn noted(path: &str, action: Action, class: Class, bytes: Option<&[u8]>, note: S
         class,
         bytes: bytes.map(<[u8]>::to_vec),
         note: Some(note),
+        kept: Vec::new(),
     })
 }
 
@@ -150,6 +157,19 @@ pub fn plan(input: &PlanInput) -> Plan {
                 Step::Drift => Step::Drift,
             };
         }
+        if let Some(theirs) = input.theirs.get(path) {
+            let new = match &step {
+                Step::Change(c) => c.kept.as_slice(),
+                _ => &[],
+            };
+            let bytes = match &step {
+                Step::Change(Planned { bytes: Some(b), .. }) => Some(b.as_slice()),
+                _ => ours,
+            };
+            if let Some(keys) = kept_keys(input, path, theirs, new, bytes) {
+                out.kept.insert(path.to_string(), keys);
+            }
+        }
         match step {
             Step::Nothing => {}
             Step::Drift => out.drift.push(path.to_string()),
@@ -162,6 +182,46 @@ pub fn plan(input: &PlanInput) -> Plan {
         }
     }
     out
+}
+
+/// The kept keys of one shared json/yaml file after this plan (spec §10.30): this merge's
+/// conflicts plus the recorded ones, where the final file still differs from the new render.
+fn kept_keys(
+    input: &PlanInput,
+    path: &str,
+    theirs: &RenderedFile,
+    new: &[String],
+    written: Option<&[u8]>,
+) -> Option<Vec<String>> {
+    if theirs.class != Class::Shared
+        || !matches!(theirs.strategy, MergeStrategy::Json | MergeStrategy::Yaml)
+    {
+        return None;
+    }
+    let prev = input
+        .lock
+        .files
+        .get(path)
+        .map_or(&[][..], |l| l.kept.as_slice());
+    if new.is_empty() && prev.is_empty() {
+        return None;
+    }
+    let mut keys: BTreeSet<String> = new.iter().chain(prev).cloned().collect();
+    let still = std::str::from_utf8(written?).ok().and_then(|f| {
+        let t = std::str::from_utf8(&theirs.bytes).ok()?;
+        differing_keys(theirs.strategy, f, t)
+    });
+    match still {
+        // `differing` stops at the first map/non-map or one-sided ancestor, so a recorded key
+        // also stays while an ancestor (or the root) is what differs.
+        Some(still) => keys.retain(|k| {
+            still.contains(k)
+                || still.contains("(root)")
+                || k.match_indices('.').any(|(i, _)| still.contains(&k[..i]))
+        }),
+        None => keys = new.iter().cloned().collect(),
+    }
+    (!keys.is_empty()).then(|| keys.into_iter().collect())
 }
 
 fn unedited(input: &PlanInput, path: &str, ours: &[u8]) -> bool {
@@ -288,7 +348,11 @@ fn shared(
             ));
             lines.join("\n")
         };
-        noted(path, Action::Conflict, class, Some(m.text.as_bytes()), note)
+        let mut step = noted(path, Action::Conflict, class, Some(m.text.as_bytes()), note);
+        if let (Step::Change(c), false) = (&mut step, m.details.is_empty()) {
+            c.kept = m.conflicts;
+        }
+        step
     }
 }
 
@@ -448,7 +512,6 @@ mod tests {
     use super::*;
     use crate::fsio::sha256_hex;
     use crate::lock::{LockFile, LockTemplate};
-    use crate::manifest::MergeStrategy;
     use crate::render::RenderedFile;
 
     const P: &str = "f.txt";
@@ -488,6 +551,7 @@ mod tests {
                         LockFile {
                             class: *class,
                             sha256: sha256_hex(b),
+                            kept: Vec::new(),
                         },
                     )
                 })
@@ -1031,5 +1095,85 @@ mod tests {
                 .unwrap_err();
             assert_eq!(e.exit_code(), 3, "{}", r.path);
         }
+    }
+
+    fn json_file(text: &str, class: Class) -> RenderedFile {
+        let mut f = file("p.json", text.as_bytes(), class);
+        f.strategy = MergeStrategy::Json;
+        f
+    }
+
+    /// base/theirs/disk json text; `kept` is the lock's recorded keys.
+    fn json_plan(base: &str, theirs: &str, disk: &str, kept: &[&str], theirs_class: Class) -> Plan {
+        let (b, t) = (
+            tree(&[json_file(base, Class::Shared)]),
+            tree(&[json_file(theirs, theirs_class)]),
+        );
+        let mut l = lock(&[("p.json", Class::Shared, base.as_bytes())]);
+        l.files.get_mut("p.json").unwrap().kept = kept.iter().map(|k| k.to_string()).collect();
+        let d = Disk {
+            files: [("p.json".to_string(), Some(disk.as_bytes().to_vec()))].into(),
+        };
+        plan(&PlanInput {
+            base: &b,
+            theirs: &t,
+            disk: &d,
+            lock: &l,
+            removes: Vec::new(),
+            force: false,
+        })
+    }
+
+    #[test]
+    fn json_key_conflict_records_the_key() {
+        let p = json_plan(r#"{"a":1}"#, r#"{"a":2}"#, r#"{"a":3}"#, &[], Class::Shared);
+        assert_eq!(p.changes[0].action, Action::Conflict);
+        assert_eq!(p.kept["p.json"], vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn recorded_key_is_carried_while_the_value_still_differs() {
+        // Template unchanged since the lock; the user's value is still not the template's.
+        let p = json_plan(
+            r#"{"a":2}"#,
+            r#"{"a":2}"#,
+            r#"{"a":3}"#,
+            &["a"],
+            Class::Shared,
+        );
+        assert!(p.changes.is_empty() && p.conflicts.is_empty());
+        assert_eq!(p.kept["p.json"], vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn recorded_key_stays_while_its_parent_is_gone() {
+        let p = json_plan(
+            r#"{"a":{"b":2}}"#,
+            r#"{"a":{"b":2}}"#,
+            r#"{"x":1}"#,
+            &["a.b"],
+            Class::Shared,
+        );
+        assert_eq!(p.kept["p.json"], vec!["a.b".to_string()]);
+    }
+
+    #[test]
+    fn recorded_key_is_dropped_when_the_user_agrees_or_file_is_not_shared() {
+        let p = json_plan(
+            r#"{"a":2}"#,
+            r#"{"a":2}"#,
+            r#"{"a":2}"#,
+            &["a"],
+            Class::Shared,
+        );
+        assert!(p.kept.is_empty());
+        let p = json_plan(
+            r#"{"a":2}"#,
+            r#"{"a":2}"#,
+            r#"{"a":3}"#,
+            &["a"],
+            Class::Owned,
+        );
+        assert!(p.kept.is_empty());
     }
 }

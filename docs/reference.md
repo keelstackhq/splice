@@ -58,7 +58,7 @@ repo moves only to a stable tag that descends from its commit, and `check` repor
 | Class | On `update` |
 |---|---|
 | `owned` | Replaced. Local edits block the update (`--force` overrides; `update --force` on a current lock, main or channel, restores drifted owned files only). |
-| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). JSON and YAML key conflicts keep your value and are named in the messages; text and TOML conflicts get diff3 markers. |
+| `shared` | 3-way merged (JSON, YAML, TOML by key; text by line). JSON and YAML key conflicts keep your value, are named in the messages and are recorded in the lock (`kept = [...]` on the file's entry; `check` and `explain` list them, the next update to a new version, or `update --force`, drops a key once your value matches the template's); text and TOML conflicts get diff3 markers. |
 | `seed` | Written once, then yours. |
 
 ## Writing templates
