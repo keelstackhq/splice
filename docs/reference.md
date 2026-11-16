@@ -230,7 +230,9 @@ Merge a pull request that bumps the version (`Cargo.toml`, `Cargo.lock` and
 `npm/splice/package.json` with every platform pin, and the default of the Action's `version` input
 in `action/action.yml`; `node scripts/check-version.mjs` checks them).
 The push to `main` makes `release.yml` tag `v<version>` and build it; after the owner approves the
-`release` environment, it publishes the GitHub release and the npm packages. A push whose version
+`release` environment, it publishes the GitHub release and the npm packages, then moves the
+Action's major tag `v1` to the release commit (tag-only push; a stable release that is the newest
+of its major only; the job fails if `v1` is not there afterwards). A push whose version
 is already tagged releases nothing; "Re-run all jobs" on a failed release run retries it. The
 `release` environment must allow branch `main` (Settings → Environments → release → deployment
 branches and tags) next to `v*`.
