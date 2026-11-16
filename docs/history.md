@@ -87,3 +87,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - Round 4: new keeps changes in --json on post/lock/commit failure, refuses a destination ignored by the parent .gitignore; dropped unused Git field.
 - Round 5: post and step commands run with stdin closed (was inherited without --json); release profile panic=abort + opt-level s (binary 5.2→4.0 MB, no slowdown; 5000-file new/diff/update all <1 s); dropped unused `json` ApplyCtx field.
 - 2026-11-16 · ci/release-major · release.yml `major` job moves the Action tag `v1` to the newest stable release commit after npm (tag-only, lease, environment `release`) and fails if `v1` is missing; `scripts/release-major.mjs` + tests
+- 2026-11-16 · ci/release-major-lease · lease on the major tag's own object (an annotated `v1` no longer wedges the push); e2e tests for an annotated `v1` and a lease refused on a race; spec counts any newer stable remote tag
