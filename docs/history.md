@@ -86,4 +86,5 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - 2026-11-14 · round3/agent-first · `new --commit` and a `next:` message (new never committed); getting-started 380→170 lines; SKILL.md says local sources need a tag, `-C`, commit before add/update; secret-var heuristic adds PASSWD/APIKEY/CREDENTIALS with tests
 - Round 4: new keeps changes in --json on post/lock/commit failure, refuses a destination ignored by the parent .gitignore; dropped unused Git field.
 - Round 5: post and step commands run with stdin closed (was inherited without --json); release profile panic=abort + opt-level s (binary 5.2→4.0 MB, no slowdown; 5000-file new/diff/update all <1 s); dropped unused `json` ApplyCtx field.
+- 2026-11-16 · test: cover the channel add undo hint (failed post json/human, allow-dirty note, conflict) in tests/cli_channel.rs
 - 2026-11-16 · ci/release-major · release.yml `major` job moves the Action tag `v1` to the newest stable release commit after npm (tag-only, lease, environment `release`) and fails if `v1` is missing; `scripts/release-major.mjs` + tests
