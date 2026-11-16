@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { actionMajor, majorTagPlan, majorTagVerify } from "./release-major.mjs";
+import { actionMajor, leaseValue, majorTagPlan, majorTagVerify, moveMajorTag } from "./release-major.mjs";
 
 const NEW = "0123456789abcdef0123456789abcdef01234567";
 const OLD = "fedcba9876543210fedcba9876543210fedcba98";
@@ -138,4 +138,68 @@ test("the script moves v1 tag-only on a real remote, and fails when v1 is missin
   const missing = run("v0.6.0-rc.1");
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /release incomplete: v1 is missing on the remote/);
+});
+
+test("the lease uses the tag's own object, not its peeled commit", () => {
+  assert.equal(leaseValue({ major: "v1", remoteTags: ls([OLD, "v1"]) }), OLD);
+  assert.equal(leaseValue({ major: "v1", remoteTags: ls([OBJ, "v1"], [OLD, "v1^{}"]) }), OBJ);
+  assert.equal(leaseValue({ major: "v1", remoteTags: "" }), "");
+});
+
+// A bare origin and a clone with v1 on commit one and annotated v0.5.1 on commit two.
+function remote({ annotatedMajor = false } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "release-major-"));
+  const env = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: join(dir, "gitconfig"),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@example.com",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@example.com",
+  };
+  writeFileSync(env.GIT_CONFIG_GLOBAL, "");
+  const g = (cwd, ...args) => execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+  const origin = join(dir, "origin.git");
+  const work = join(dir, "work");
+  g(dir, "init", "-q", "--bare", origin);
+  g(dir, "init", "-q", "-b", "main", work);
+  g(work, "remote", "add", "origin", origin);
+  g(work, "commit", "-q", "--allow-empty", "-m", "one");
+  const one = g(work, "rev-parse", "HEAD");
+  if (annotatedMajor) g(work, "tag", "-a", "v1", "-m", "v1");
+  else g(work, "tag", "v1");
+  g(work, "commit", "-q", "--allow-empty", "-m", "two");
+  const two = g(work, "rev-parse", "HEAD");
+  g(work, "tag", "-a", "v0.5.1", "-m", "splice 0.5.1");
+  g(work, "push", "-q", "origin", "main", "refs/tags/v1", "refs/tags/v0.5.1");
+  const git = (...args) => execFileSync("git", args, { cwd: work, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return { dir, env, g, origin, work, one, two, git };
+}
+
+test("an annotated v1 is replaced by the lightweight tag on the release commit", () => {
+  const r = remote({ annotatedMajor: true });
+  const lines = [];
+  moveMajorTag({ tag: "v0.5.1", git: r.git, log: (l) => lines.push(l) });
+  assert.match(lines[0], /move it to v0\.5\.1/);
+  assert.equal(r.g(r.origin, "rev-parse", "refs/tags/v1"), r.two);
+  assert.equal(r.g(r.origin, "cat-file", "-t", "refs/tags/v1"), "commit");
+});
+
+test("the lease refuses when v1 moves between ls-remote and push", () => {
+  const r = remote();
+  // Someone else moves v1 to a third commit right after the script read the remote.
+  r.g(r.work, "commit", "-q", "--allow-empty", "-m", "three");
+  const three = r.g(r.work, "rev-parse", "HEAD");
+  let raced = false;
+  const git = (...args) => {
+    const out = r.git(...args);
+    if (args[0] === "ls-remote" && !raced) {
+      raced = true;
+      r.g(r.work, "push", "-q", "--force", "origin", `${three}:refs/tags/v1`);
+    }
+    return out;
+  };
+  assert.throws(() => moveMajorTag({ tag: "v0.5.1", git, log: () => {} }), /stale info|rejected/);
+  assert.equal(r.g(r.origin, "rev-parse", "refs/tags/v1"), three);
 });

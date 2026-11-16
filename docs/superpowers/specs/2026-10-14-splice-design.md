@@ -748,7 +748,11 @@ Items 11–14 and 18 stay splice's own decisions.
   `scripts/release-major.mjs --tag <tag>`. Splice 0.x and 1.x share the major `v1`; from 2.0.0 the
   major is `v<major>`. A stable release with no newer stable release of the same major on the
   remote moves the lightweight tag to its commit with a tag-only push
-  (`--force-with-lease` on the old value); a prerelease or an older re-release leaves it. Then the
+  (`--force-with-lease` on the old value as the remote lists it: the tag object of an annotated
+  major tag, never its peeled commit; if the tag moved since it was read, the push is refused and
+  the job fails); a prerelease or an older re-release leaves it. "Newer" counts every stable
+  `v<semver>` tag of the same major on the remote, released or not, so a stray newer tag keeps the
+  major tag where it is (conservative: it never moves past a newer tag). Then the
   completeness check reads the remote: the major tag must exist, on the release commit when it
   was moved or already there, or the job (and the run) fails. A re-run is a no-op.
 - Builds run in unprivileged jobs; only the tag job (`contents: write`, main pushes, runs only
