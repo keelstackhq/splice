@@ -73,27 +73,47 @@ export function majorTagVerify({ major, commit, remoteTags }) {
   return "";
 }
 
+/**
+ * The lease value for the major tag: its own object sha as the remote has it (a tag object for an
+ * annotated tag, never the peeled commit, which `--force-with-lease` would never match), or ""
+ * when it is missing.
+ */
+export function leaseValue({ major, remoteTags }) {
+  for (const line of remoteTags.split("\n")) {
+    const [sha, ref] = line.split("\t");
+    if (sha && ref === `refs/tags/${major}`) return sha;
+  }
+  return "";
+}
+
+/**
+ * Plan, move and check the major tag for release `tag` with `git(...args)` (returns stdout,
+ * throws on failure). Throws when the push is refused or the completeness check fails.
+ */
+export function moveMajorTag({ tag, git, log }) {
+  const before = git("ls-remote", "--tags", "origin", "refs/tags/v*");
+  const plan = majorTagPlan({ tag, remoteTags: before });
+  log(plan.reason);
+  if (plan.move) {
+    const ref = `refs/tags/${plan.major}`;
+    const old = leaseValue({ major: plan.major, remoteTags: before });
+    // Tag-only push of a lightweight tag; the lease refuses if someone moved it meanwhile.
+    git("fetch", "--no-tags", "--depth=1", "origin", plan.commit);
+    git("push", `--force-with-lease=${ref}:${old}`, "origin", `${plan.commit}:${ref}`);
+  }
+  const after = git("ls-remote", "--tags", "origin", `refs/tags/${plan.major}`);
+  // Not moved (prerelease, older release): the major tag must still exist.
+  const want = plan.move || commits(before).get(plan.major) === plan.commit ? plan.commit : "";
+  const problem = majorTagVerify({ major: plan.major, commit: want, remoteTags: after });
+  if (problem) throw new Error(`release incomplete: ${problem}`);
+  log(`${plan.major} → ${short(commits(after).get(plan.major))}`);
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
   try {
     const i = process.argv.indexOf("--tag");
-    const tag = i > 0 ? (process.argv[i + 1] ?? "") : "";
-    const before = git("ls-remote", "--tags", "origin", "refs/tags/v*");
-    const plan = majorTagPlan({ tag, remoteTags: before });
-    console.log(plan.reason);
-    if (plan.move) {
-      const ref = `refs/tags/${plan.major}`;
-      const old = commits(before).get(plan.major) ?? "";
-      // Tag-only push of a lightweight tag; the lease refuses if someone moved it meanwhile.
-      git("fetch", "--no-tags", "--depth=1", "origin", plan.commit);
-      git("push", `--force-with-lease=${ref}:${old}`, "origin", `${plan.commit}:${ref}`);
-    }
-    const after = git("ls-remote", "--tags", "origin", `refs/tags/${plan.major}`);
-    // Not moved (prerelease, older release): the major tag must still exist.
-    const want = plan.move || commits(before).get(plan.major) === plan.commit ? plan.commit : "";
-    const problem = majorTagVerify({ major: plan.major, commit: want, remoteTags: after });
-    if (problem) throw new Error(`release incomplete: ${problem}`);
-    console.log(`${plan.major} → ${short(commits(after).get(plan.major))}`);
+    moveMajorTag({ tag: i > 0 ? (process.argv[i + 1] ?? "") : "", git, log: console.log });
   } catch (e) {
     console.error(`release-major: ${e.message}`);
     process.exit(1);

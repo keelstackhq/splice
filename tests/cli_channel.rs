@@ -449,6 +449,87 @@ fn failed_post_writes_no_channel_lock() {
     assert!(!repo.path().join(".splice/channels/t.toml").exists());
 }
 
+const UNDO: &str = "`git checkout -- . && git clean -fd` restores the previous state";
+const DIRTY_NOTE: &str = "the working tree had uncommitted changes, so review `git status`";
+
+fn failing_post_channel() -> TempDir {
+    inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nowned = [\"a.txt\"]\n[[post]]\nrun = \"exit 7\"\nwhen = [\"add\"]\n",
+        &[("a.txt", "a\n")],
+    )
+}
+
+#[test]
+fn add_failed_post_says_how_to_undo_json() {
+    let t = failing_post_channel();
+    let repo = bare_repo();
+    let v = stdout_json(chan(repo.path(), &["channel", "add", t.path().to_str().unwrap()]).code(3));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains(UNDO), "{msg}");
+    assert!(!msg.contains(DIRTY_NOTE), "{msg}");
+    // The hint is true: running it removes the new file and the untracked lock.
+    let out = sh_with_git_env(repo.path(), "git checkout -- . && git clean -fdq");
+    assert!(out.status.success());
+    assert_eq!(status(repo.path()), "");
+    assert!(!repo.path().join("a.txt").exists());
+}
+
+#[test]
+fn add_failed_post_says_how_to_undo_human() {
+    let t = failing_post_channel();
+    let repo = bare_repo();
+    let out = splice_cmd()
+        .arg("-C")
+        .arg(repo.path())
+        .args(["--yes", "channel", "add", t.path().to_str().unwrap()])
+        .assert()
+        .code(3);
+    let o = out.get_output();
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(all.contains(UNDO), "{all}");
+}
+
+#[test]
+fn add_failed_post_allow_dirty_swaps_the_hint_for_a_status_note() {
+    let t = failing_post_channel();
+    let repo = bare_repo();
+    std::fs::write(repo.path().join("scratch.txt"), "mine\n").unwrap();
+    let v = stdout_json(
+        chan(
+            repo.path(),
+            &[
+                "channel",
+                "add",
+                t.path().to_str().unwrap(),
+                "--allow-dirty",
+            ],
+        )
+        .code(3),
+    );
+    let msg = v["messages"].to_string();
+    assert!(msg.contains(DIRTY_NOTE), "{msg}");
+    assert!(!msg.contains("git clean"), "{msg}");
+}
+
+#[test]
+fn add_conflict_says_how_to_undo() {
+    let t = inline_channel(
+        "id = \"core\"\ndescription = \"d\"\nmultiple = false\n[files]\nshared = [\"notes.txt\"]\n[merge]\n\"notes.txt\" = \"text\"\n",
+        &[("notes.txt", "theirs\n")],
+    );
+    let repo = bare_repo();
+    std::fs::write(repo.path().join("notes.txt"), "mine\n").unwrap();
+    commit_all(repo.path());
+    let v = stdout_json(chan(repo.path(), &["channel", "add", t.path().to_str().unwrap()]).code(1));
+    let msg = v["messages"].to_string();
+    assert!(msg.contains("git checkout -- . && git clean -fd"), "{msg}");
+    assert!(!msg.contains("git checkout HEAD --"), "{msg}");
+}
+
 fn changes(v: &serde_json::Value) -> Vec<(String, String)> {
     v["changes"]
         .as_array()
