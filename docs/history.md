@@ -87,3 +87,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - Round 4: new keeps changes in --json on post/lock/commit failure, refuses a destination ignored by the parent .gitignore; dropped unused Git field.
 - Round 5: post and step commands run with stdin closed (was inherited without --json); release profile panic=abort + opt-level s (binary 5.2→4.0 MB, no slowdown; 5000-file new/diff/update all <1 s); dropped unused `json` ApplyCtx field.
 - 2026-11-16 · kept keys in the lock · json/yaml key conflicts recorded as `kept = [...]` on shared lock entries (spec §10.30, contract §9.29); check/explain report them; additive, format 1
+- 2026-11-16 · ci/release-major · release.yml `major` job moves the Action tag `v1` to the newest stable release commit after npm (tag-only, lease, environment `release`) and fails if `v1` is missing; `scripts/release-major.mjs` + tests

@@ -770,9 +770,19 @@ Items 11–14 and 18 stay splice's own decisions.
   `release` and `npm` jobs keep `environment: release`, so the owner's approval is the gate. The
   tag is computed once in `check` and used by every later job; one release per tag, never
   cancelled.
+- The Action's major tag moves with each release: after `npm` succeeds, the `major` job
+  (`environment: release`, `contents: write`, serialised in one concurrency group) runs
+  `scripts/release-major.mjs --tag <tag>`. Splice 0.x and 1.x share the major `v1`; from 2.0.0 the
+  major is `v<major>`. A stable release with no newer stable release of the same major on the
+  remote moves the lightweight tag to its commit with a tag-only push
+  (`--force-with-lease` on the old value); a prerelease or an older re-release leaves it. Then the
+  completeness check reads the remote: the major tag must exist, on the release commit when it
+  was moved or already there, or the job (and the run) fails. A re-run is a no-op.
 - Builds run in unprivileged jobs; only the tag job (`contents: write`, main pushes, runs only
-  `scripts/release-tag.mjs` and `git tag`/`push`), the release job (`contents: write`) and the
-  npm job (`id-token: write`, environment `release`) hold privileges, and none of them builds.
+  `scripts/release-tag.mjs` and `git tag`/`push`), the release job (`contents: write`), the
+  npm job (`id-token: write`, environment `release`) and the major job (`contents: write`,
+  environment `release`, runs only `scripts/release-major.mjs`) hold privileges, and none of them
+  builds.
 - npm: `@keelstackhq/splice` = a tiny JS launcher (`bin/splice.js`) with the five platform
   packages as exact-version `optionalDependencies`; each platform package declares `os`/`cpu`
   and ships the binary in `bin/`. No install scripts (pnpm blocks them by default). Not
