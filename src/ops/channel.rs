@@ -155,7 +155,7 @@ pub fn add(g: &GlobalArgs, a: &ChannelAddArgs) -> Result<Report> {
             only: a.only.clone(),
             exclude: a.exclude.clone(),
         },
-        lock: Lock::from_tree(&resolved, &vars, &instances, &theirs),
+        lock: Lock::from_tree(&resolved, &vars, &instances, &theirs).with_kept(&fplan.kept),
         sections: splan.locked.clone(),
     };
     let lock_path = lock_new.path();

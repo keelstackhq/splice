@@ -105,7 +105,9 @@ pub fn run(g: &GlobalArgs, a: &AdoptArgs) -> Result<Report> {
             post.extend(template.pieces[&inst.id].post.iter().cloned());
         }
     }
-    let lock_out = LockOut::Main(Lock::from_tree(&resolved, &vars, &instances, &theirs));
+    let lock_out = LockOut::Main(
+        Lock::from_tree(&resolved, &vars, &instances, &theirs).with_kept(&fplan.kept),
+    );
     let still = lock_out.still_records(&resolved.version);
     let none_yet = format!("no {LOCK_PATH} was written");
     // The restore hint would wipe the user's own uncommitted work under --allow-dirty.

@@ -30,6 +30,8 @@ fn usage<T>(msg: String) -> Result<T> {
 /// that does not merge, or a user file where a seed became tracked) is kept as it is, never
 /// overwritten and never given markers.
 fn keep_conflicts(plan: &mut Plan) {
+    // `plan.kept` stays: where the merge differs from the template it kept ours, so every
+    // recorded key is still a key where the file differs from the render.
     for c in plan
         .changes
         .iter_mut()
@@ -206,6 +208,7 @@ pub fn run(g: &GlobalArgs, a: &AddArgs) -> Result<Report> {
         to: resolved.version.clone(),
         lock: LockOut::Main(
             Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)
+                .with_kept(&plan.kept)
                 .keep_relative_source(&lock.template.source),
         ),
         post,
@@ -333,6 +336,7 @@ fn run_channel(g: &GlobalArgs, a: &AddArgs, name: &str) -> Result<Report> {
     let lock_new = ChannelLock {
         meta: cl.meta.clone(),
         lock: Lock::from_tree(&resolved, &lock.vars, &instances, &theirs)
+            .with_kept(&plan.kept)
             .keep_relative_source(&lock.template.source),
         sections: splan.locked.clone(),
     };

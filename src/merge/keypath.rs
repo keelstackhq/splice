@@ -2,6 +2,7 @@
 
 use indexmap::IndexMap;
 use serde_json::Value;
+use std::collections::BTreeSet;
 
 /// A value that is merged as a whole: scalars, arrays (no element merge) and anything else that
 /// is not a map. Compared by value.
@@ -141,6 +142,28 @@ fn merge_maps(
         }
     }
     out
+}
+
+/// Dotted paths where `a` and `b` differ; a key present on one side only differs at that key.
+pub fn differing(a: &Tree, b: &Tree, path: &mut Vec<String>, out: &mut BTreeSet<String>) {
+    match (a, b) {
+        (Tree::Map(x), Tree::Map(y)) => {
+            for key in x.keys().chain(y.keys().filter(|k| !x.contains_key(*k))) {
+                path.push(key.clone());
+                match (x.get(key), y.get(key)) {
+                    (Some(l), Some(r)) => differing(l, r, path, out),
+                    _ => {
+                        out.insert(join(path));
+                    }
+                }
+                path.pop();
+            }
+        }
+        _ if a != b => {
+            out.insert(join(path));
+        }
+        _ => {}
+    }
 }
 
 fn join(path: &[String]) -> String {

@@ -48,7 +48,7 @@ pub fn merge_yaml(base: &str, ours: &str, theirs: &str) -> Result<Merged, ParseE
 
 /// Parse one document into a tree. Every mapping key must be a string: yaml_serde would
 /// otherwise coerce `1: a` to `"1"` and the merge would rewrite the user's key.
-fn parse(s: &str) -> Result<Tree, ParseError> {
+pub(super) fn parse(s: &str) -> Result<Tree, ParseError> {
     let err = |e: yaml_serde::Error| ParseError(e.to_string());
     let strict = yaml_serde::from_str::<yaml_serde::Value>(s).map_err(err)?;
     if !string_keys(&strict) {
