@@ -137,6 +137,11 @@ splice channel remove rig              # delete unedited files, strip its blocks
   paths as `conflict`/`owned` changes and writes nothing. The `update` family (`update`,
   `update --channel`, `update --all`) lists drift in `messages` only. `check` reports
   `update`/`owned`. `diff` prints messages and exits 0.
+- **New questions.** `update` without a prompt (`--yes`, `--json` or no TTY; main template) takes the default of a var the
+  repo has no answer for and reports it: a message, and `new_questions: [{name, prompt,
+  status: "defaulted", value}]` in `--json` (omitted when empty; also on drift, conflict and apply failures, and from `update --all` for the main template; `diff` and channels do not report it). A new var with no default and
+  no `--data` is pending: exit 2, nothing written. The update bot lists them under "New
+  questions" in the PR body; fix a default under `[vars]` in `.splice/lock.toml`.
 - **Remove.** `channel remove` keeps edited files and blocks (`--force` keeps them and removes
   the rest instead of refusing), never deletes seeds, and deletes the channel lock last.
   `--allow-dirty` works as for `update`.

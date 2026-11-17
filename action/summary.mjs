@@ -44,6 +44,14 @@ export function summarize(report, exitCode, { version, dirty, owners = new Map()
     }
   }
   if (rest.length > 0) parts.push(rest.join("\n"));
+  const questions = report.new_questions ?? [];
+  if (questions.length > 0) {
+    const one = (t) => String(t).replace(/\s+/g, " ").replace(/`/g, "'");
+    const items = questions.map((q) => `- \`${one(q.name)}\` (${one(q.prompt)}): ${q.status} to \`${one(q.value)}\``);
+    parts.push(
+      `### New questions\n\nThe new template version asks for answers this repo did not have yet:\n\n${items.join("\n")}\n\nAnswer in this PR: if a default is wrong, change the value under \`[vars]\` in \`.splice/lock.toml\` and push.`,
+    );
+  }
   if (result === "conflicts") {
     parts.push("Resolve the conflict markers, or the kept keys named in the messages (JSON and YAML key conflicts keep your value, no markers), then run `splice check --json`.");
   }

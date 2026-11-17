@@ -945,3 +945,47 @@ fn yaml_key_conflict_is_recorded_and_explain_shows_kept() {
         "{text}"
     );
 }
+
+#[test]
+fn new_var_default_is_reported_as_new_question() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let out = update(&repo, &[]).success().get_output().stdout.clone();
+    let v = json(&out);
+    let q = v["new_questions"].as_array().expect("new_questions");
+    assert_eq!(q.len(), 1, "{v}");
+    assert_eq!(q[0]["name"], "license");
+    assert_eq!(q[0]["status"], "defaulted");
+    assert_eq!(q[0]["value"], "MIT");
+    assert!(q[0]["prompt"].is_string());
+    assert!(messages(&v).contains("new question `license`"), "{v}");
+}
+
+#[test]
+fn new_var_answered_by_data_is_not_a_new_question() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let out = update(&repo, &["--data", "license=ISC"])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert!(json(&out).get("new_questions").is_none());
+}
+
+#[test]
+fn diff_does_not_report_new_questions() {
+    let tpl = template_repo(&["v1", "v2"]);
+    let repo = new_repo(&tpl, &["--ref", "v1.0.0"]);
+    let out = splice_cmd()
+        .current_dir(repo.path())
+        .args(["diff", "--yes", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = json(&out);
+    assert!(v.get("new_questions").is_none());
+    assert!(!messages(&v).contains("new question"), "{v}");
+}

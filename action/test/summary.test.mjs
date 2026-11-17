@@ -188,3 +188,23 @@ test("CLI: channel-only repo, changed tree without source= messages, has an unve
   assert.match(r.output, /^result=updated$/m);
   assert.match(r.output, /^title=chore: splice update$/m);
 });
+
+test("new questions get their own section in the PR body", () => {
+  const report = {
+    ...load("updated.json"),
+    new_questions: [
+      { name: "license", prompt: "License?", status: "defaulted", value: "MIT" },
+    ],
+  };
+  const s = summarize(report, 0, { version: "2.0.0", dirty: true });
+  assert.match(s.body, /### New questions/);
+  assert.match(s.body, /- `license` \(License\?\): defaulted to `MIT`/);
+  assert.match(s.body, /Answer in this PR/);
+});
+
+test("no new questions, no section", () => {
+  assert.doesNotMatch(
+    summarize(load("updated.json"), 0, { version: "2.0.0", dirty: true }).body,
+    /New questions/,
+  );
+});

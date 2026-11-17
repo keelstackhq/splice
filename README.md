@@ -14,6 +14,8 @@ pnpm dlx @keelstackhq/splice check    # exit 1 on drift, conflicts or an availab
 ## Why
 
 - **Pieces:** a template is a set of pieces you pick (`new`, `add`), not one monolith.
+- **New questions surface:** a var a template update adds is listed in `update` output and the
+  bot PR body, not discovered later.
 - **Updates, not copies:** `update` merges the new template into your edits. Owned files refuse
   drift (exit 1, `--force` replaces), shared files merge by key or line, seeds are never touched.
 - **One static binary:** git is the only dependency; npm ships the same binary.
