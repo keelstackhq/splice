@@ -15,7 +15,7 @@ use crate::git::Git;
 use crate::lock::{ChannelLock, LOCK_PATH, Lock};
 use crate::manifest::{PostCmd, Template, When};
 use crate::migrate::{Migration, Step, select};
-use crate::output::{Action, Class, Report};
+use crate::output::{Action, Class, NewQuestion, Report};
 use crate::planner::{Disk, Plan, PlanInput, plan, render_removes};
 use crate::post::run_post;
 use crate::render::{
@@ -75,6 +75,8 @@ pub struct Prepared {
     pub migrations: Vec<Version>,
     /// Report messages (template warnings, moved tag).
     pub messages: Vec<String>,
+    /// Template vars new in the target that took their default (main update only).
+    pub new_questions: Vec<NewQuestion>,
     /// A channel update's lock, section plan and planned claim; `None` for the main template.
     pub channel: Option<ChannelPrepared>,
     /// `update --force` on a current lock: only drifted owned files are rewritten; no post
@@ -232,6 +234,7 @@ struct Resolved {
     /// The target is the locked commit (rendered anyway when `--force` asks for a restore).
     current: bool,
     messages: Vec<String>,
+    new_questions: Vec<NewQuestion>,
     /// `None` when up to date and `render_current` is false.
     rendered: Option<Rendered>,
 }
@@ -432,6 +435,25 @@ fn prepare_lock(
         data: &no_data,
         interactive: interactive(g),
     };
+    // New vars with no answer (not locked, no --data, no prompt): a default is used and reported;
+    // without one it is pending and `resolve_vars` refuses (exit 2; spec §10 item 31).
+    let mut new_questions = Vec::new();
+    if matches!(kind, Kind::Main) && !source.interactive {
+        for (name, spec) in &template.manifest.vars {
+            if lock.vars.contains_key(name) || data.contains_key(name) {
+                continue;
+            }
+            // No default: `resolve_vars` below refuses with exit 2, naming the var.
+            if let Some(d) = &spec.default {
+                new_questions.push(NewQuestion {
+                    name: name.clone(),
+                    prompt: spec.prompt.clone(),
+                    status: "defaulted".into(),
+                    value: d.clone(),
+                });
+            }
+        }
+    }
     // Lock values are kept; vars new in the target are resolved; dropped vars disappear.
     let vars = if data_ok {
         resolve_vars(&template.manifest.vars, &lock.vars, &source)?
@@ -537,6 +559,7 @@ fn prepare_lock(
         tracked,
         current: up_to_date,
         messages,
+        new_questions,
         rendered,
     })
 }
@@ -660,6 +683,7 @@ pub fn prepare(
         tracked: r.tracked,
         migrations,
         messages: r.messages,
+        new_questions: r.new_questions,
         channel: None,
         restore_only,
     })
@@ -679,6 +703,7 @@ fn up_to_date_prepared(mut r: Resolved, lock: Lock) -> Prepared {
         tracked: r.tracked,
         migrations: Vec::new(),
         messages: r.messages,
+        new_questions: r.new_questions,
         channel: None,
         restore_only: false,
     }
@@ -849,6 +874,7 @@ pub fn prepare_channel(
         tracked: r.tracked,
         migrations,
         messages: r.messages,
+        new_questions: Vec::new(),
         restore_only,
         channel: Some(ChannelPrepared {
             lock_new,
@@ -872,6 +898,7 @@ fn channel_up_to_date(mut r: Resolved, cl: &ChannelLock, me: SourceId) -> Prepar
         tracked: r.tracked,
         migrations: Vec::new(),
         messages: r.messages,
+        new_questions: Vec::new(),
         restore_only: false,
         channel: Some(ChannelPrepared {
             lock_new: cl.clone(),
@@ -922,6 +949,19 @@ pub fn target_of<'a>(to: Option<&'a Version>, git_ref: Option<&'a str>) -> Targe
         (None, Some(r)) => Target::Ref(r),
         (None, None) => Target::Latest,
     }
+}
+
+/// Adds the new questions of a main update to its report: one message each, and the field.
+fn with_questions(mut r: Report, qs: &[NewQuestion], tag: &str) -> Report {
+    for q in qs {
+        r.messages.push(format!(
+            "{tag}new question `{}` ({}) took its default `{}`; the owner can override it \
+             under [vars] in {LOCK_PATH}",
+            q.name, q.prompt, q.value
+        ));
+    }
+    r.new_questions = qs.to_vec();
+    r
 }
 
 pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
@@ -979,6 +1019,7 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         let mut report = Report::new("update");
         report.ok = false;
         report.messages = prep.messages;
+        report = with_questions(report, &prep.new_questions, "");
         for path in &prep.plan.drift {
             report.msg(format!(
                 "`{path}` is owned by the template but was edited locally"
@@ -989,7 +1030,13 @@ pub fn run(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
     }
 
     let lock = LockOut::Main(prep.lock_new.clone());
-    apply_prepared(g, a, &prep, lock, &[])
+    let attach = |r: Report| with_questions(r, &prep.new_questions, "");
+    match apply_prepared(g, a, &prep, lock, &[]) {
+        Ok(r) => Ok(attach(r)),
+        Err(SpliceError::Conflict(r)) => Err(SpliceError::Conflict(attach(r))),
+        Err(SpliceError::Applied(r)) => Err(SpliceError::Applied(attach(r))),
+        Err(e) => Err(e),
+    }
 }
 
 /// `update --channel NAME`: spec §8.3 steps 2–8 on the channel lock, plus the claim check and
@@ -1323,6 +1370,9 @@ fn run_all(g: &GlobalArgs, a: &UpdateArgs) -> Result<Report> {
         let ctx = ctx_of(s);
         report.msg(s.id.tag());
         report.messages.extend(prefixed(&s.id, &s.prep.messages));
+        if matches!(s.id, SourceId::Main) {
+            report = with_questions(report, &s.prep.new_questions, "main: ");
+        }
         match apply_files(&ctx) {
             Ok(r) => {
                 report.changes.extend(r.changes);

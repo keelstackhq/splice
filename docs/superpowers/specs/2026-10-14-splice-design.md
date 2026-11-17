@@ -310,6 +310,8 @@ the same `add` is safe because a file that already equals the new render is skip
    (exit 0) unless the lock's commit differs (moved tag: message, then proceed).
 3. Fetch both trees. Load the target manifest; check `format` and `min_splice` (exit 3).
 4. Vars: keep lock values; prompt for vars new in the target; drop vars it no longer declares.
+   Non-interactively, a new var with a default takes it and is reported as a new question
+   (§10 item 31); one without a default is pending: exit 2, naming the var, nothing written.
    `--data K=V` may set only template vars new in the target; `K` already in the lock → exit 2
    ("`K` is locked at `V`; update keeps lock values"), a piece var → exit 2 (piece vars come
    from `add` / `new --piece`), both before any write.
@@ -732,6 +734,19 @@ Items 11–14 and 18 stay splice's own decisions.
     changes the record rewrites the lock and says so (`` `PATH`: kept keys updated in the lock ``,
     `channel NAME: ` prefix for a channel) instead of "up to date". The `--json` shape is
     unchanged.
+31. New questions on `update` (hull H3). A template update may add vars the repo has no answer
+    for; the update PR must ask the owner instead of a later command failing. Rule, main
+    `update` only, no prompt (`--yes`, `--json` or no TTY): a new var answered by `--data` is
+    answered; one with a `default` takes it and is reported as a **new question**; one with no
+    default is **pending**, which stays exit 2 (`missing value for var …`, nothing written; the
+    owner passes `--data NAME=…`). Prompting (a TTY) answers every new var, so none is
+    reported. Report: each defaulted var is one message (`new question `X` (PROMPT) took its
+    default `V`; …`) and one element of the additive `--json` field `new_questions`
+    (`[{"name","prompt","status":"defaulted","value"}]`, omitted when empty, only on `update`).
+    The Action adds a "New questions" section to the PR body from that field, so the owner can
+    correct a default in the PR. Channel updates are unchanged (their new vars take defaults
+    silently). `new_questions` is outside the contract's §8 object but additive: consumers that
+    ignore unknown keys are unaffected.
 
 ## 11. Testing
 

@@ -51,12 +51,25 @@ pub struct Change {
     pub class: Class,
 }
 
+/// A template variable new in the update target that the repo had no answer for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NewQuestion {
+    pub name: String,
+    pub prompt: String,
+    /// `defaulted`: the template's default was used; the owner may override it.
+    pub status: String,
+    pub value: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub ok: bool,
     pub command: String,
     pub changes: Vec<Change>,
     pub messages: Vec<String>,
+    /// `update` only: vars new in the target that took their default (omitted when none).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub new_questions: Vec<NewQuestion>,
     /// Human-mode stdout lines that replace the default change lines (not in `--json`).
     #[serde(skip)]
     pub lines: Vec<String>,
@@ -69,6 +82,7 @@ impl Report {
             command: command.to_string(),
             changes: Vec::new(),
             messages: Vec::new(),
+            new_questions: Vec::new(),
             lines: Vec::new(),
         }
     }

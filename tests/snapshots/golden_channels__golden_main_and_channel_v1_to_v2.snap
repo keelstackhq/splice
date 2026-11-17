@@ -85,9 +85,18 @@ expression: v
   ],
   "messages": [
     "source=main",
+    "main: new question `license` (license) took its default `MIT`; the owner can override it under [vars] in .splice/lock.toml",
     "main: `.github/workflows/ci.yml` key `jobs.test.runs-on`: yours \"macos-latest\", template \"ubuntu-24.04\"; kept yours",
     "main: `.github/workflows/ci.yml` has conflicts (jobs.test.runs-on); the file keeps your values there, edit those keys to take the template's",
     "source=channel:rig",
     "main: conflicts in .github/workflows/ci.yml: review the kept keys (your values stay; edit them to take the template's); lock already at 2.0.0; to abort: git checkout -- . && git checkout HEAD -- .splice/lock.toml"
+  ],
+  "new_questions": [
+    {
+      "name": "license",
+      "prompt": "license",
+      "status": "defaulted",
+      "value": "MIT"
+    }
   ]
 }

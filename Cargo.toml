@@ -47,3 +47,7 @@ codegen-units = 1
 strip = true
 panic = "abort"
 opt-level = "s"
+
+# SpliceError carries a Report; boxing it would touch every error site for no gain.
+[lints.clippy]
+result_large_err = "allow"
