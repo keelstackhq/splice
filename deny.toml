@@ -1,0 +1,17 @@
+# cargo-deny policy (`bosun gate deps` runs `cargo deny check`).
+# Allow only the licenses splice's dependency tree uses. For an `A OR B`
+# expression one allowed license is enough.
+
+[licenses]
+allow = [
+    "MIT",         # splice, zmij, winnow, console, dialoguer, libyaml-rs, strsim, ...
+    "Apache-2.0",  # minijinja, memo-map, similar, insta (dev)
+    "Unicode-3.0", # unicode-ident (via proc-macro2)
+    "Zlib",        # foldhash (via hashbrown, serde_json)
+]
+# option-ext is MPL-2.0 only and comes in as dirs -> dirs-sys -> option-ext,
+# unmodified. MPL-2.0 is file-level copyleft: it binds only option-ext's own
+# files, not splice. Allowed for this one crate, never globally.
+exceptions = [
+    { name = "option-ext", allow = ["MPL-2.0"] },
+]
