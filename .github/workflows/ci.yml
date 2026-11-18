@@ -1,6 +1,8 @@
+# ci-minutes: allow paths Windows path handling must be checked on every pull request before merge
 name: ci
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   push:
     branches: [main]
@@ -22,6 +24,13 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
     steps:
+      # A draft fails here, before any setup, not via a job-level `if` (a skip must never reach
+      # ci-ok as anything but a failure). ready_for_review runs ci again.
+      - name: Refuse a draft pull request
+        if: github.event.pull_request.draft == true
+        run: |
+          echo "::error::Draft pull request: mark it ready for review to run ci."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
