@@ -93,3 +93,4 @@ Finished tasks, one line each: `YYYY-MM-DD · plan/task · commit · test summar
 - 2026-11-16 · kept keys follow-ups · `add --force` checks kept keys against ours (planner `keep_as_is`), spec §10.30 notes unescaped dotted paths, comment on the not-written case
 - 2026-11-16 · release 0.6.0 · version bump (Cargo, npm launcher + platform pins, Action default); minor for the additive `kept` lock field (contract 9.29, format 1), plus the `major` release job and channel-add tests
 - 2026-11-16 · post-release 0.6.0 · docs pin the Action at v0.6.0 (feea849); `v1` moved by the `major` job, its ruleset blocker dropped
+- 2026-11-18 chore: adopt bosun 0.20.0 (autonomous, rust profile); bosun actions pinned to repo SHAs
