@@ -1,3 +1,4 @@
+# ci-minutes: allow paths Windows path handling must be checked on every pull request before merge
 name: ci
 on:
   pull_request:
