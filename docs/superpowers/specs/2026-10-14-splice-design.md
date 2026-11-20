@@ -53,6 +53,7 @@ Global flags on every command: `--json` (contract §8), `--yes` (no prompts, use
 | `splice check [--offline] [--channel NAME]` | Exit 1 on owned drift, leftover conflict markers, or an available update. |
 | `splice diff [--to VERSION \| --ref R] [--channel NAME]` | Show what `update` would change, without writing. |
 | `splice explain <path>` | Print class, owning piece instance and matching glob of a path. |
+| `splice pieces <source> [--ref R] [--pre]` | List the pieces and variables of a template, read-only (§8.10). |
 | `splice channel add <source> [--as NAME] [--ref R \| --track BRANCH] [--pre] [--piece ID[:NAME]]… [--data K=V]… [--only GLOB]… [--exclude GLOB]… [--allow-dirty] [--force] [--no-post]` | Render a template source into the repo as a named channel (channels spec §3). |
 | `splice channel remove <name> [--allow-dirty] [--force]` | Delete the channel's unedited files, strip its sections, then delete its lock last (channels spec §8). |
 
@@ -64,8 +65,15 @@ working without `--channel` (main template). All channel commands are implemente
 `--data K=V` sets a template var (`K`) or, for `new --piece`/`add`, a piece var. A key that
 names no variable of the template or the selected pieces is a usage error (exit 2). On `update`,
 `--data` sets only template vars new in the target: a var already in the lock or a piece var is
-exit 2 (§8.3 step 4). `--piece ID:NAME`
-names a `multiple` instance.
+exit 2 (§8.3 step 4).
+
+`--piece ID:NAME` names an instance of a `multiple` piece: the name is the instance's identity
+in the lock and feeds `target` (for example `apps/{{ name }}`), so `--piece app:web --piece
+app:admin` makes two apps. Without `:NAME` the instance is named by the piece's `name` var
+default, else by the piece id (§8.1; `instance_name` in `src/vars.rs`). `add` takes the name as
+`--name` (`splice add app --name admin`), not as `ID:NAME`. An unknown id is exit 2 with up to
+three close ids ("did you mean"), the template's ids, and, when a piece is `multiple`, an
+example of this syntax; `splice pieces <source>` lists what a template offers.
 
 Human output is terse: one line per change (`create  apps/web/package.json  shared`), then one
 summary line. Everything else goes to stderr. With `--json`, stdout holds exactly the one JSON
@@ -494,6 +502,22 @@ with `--json`, like `piece=`). A path that is a section host in a channel's `[se
 gets `section=NAME` per channel (a human line `PATH  section=NAME`); if no source owns the file
 it is `unmanaged` plus those lines. A channel-only repo works (no main lock needed).
 
+### 8.10 `pieces`
+
+`splice pieces <source> [--ref R] [--pre]` resolves the source like `new` (latest stable tag, or
+`--ref`), loads and validates the template, prints it and exits. It needs no repo, lock or clean
+tree, writes nothing and runs no commands. Exit 0 ok, 2 usage (bad source), 3 template or
+environment error (including `min_splice`).
+
+Human stdout: a line `template NAME VERSION` and the template's vars, then one block per piece
+in id order: `ID  [base]  multiple (default name: N)  requires: A, B  - DESCRIPTION`, followed by
+`  var NAME  "PROMPT" [default: V]` per piece var. With `--json` the object is a Report with
+`command: "pieces"`, `changes: []`, `messages` (template warnings) and two additive keys
+(§10 item 32): `pieces`, an array of `{id, description, base, multiple, default_name, requires,
+vars: [{name, prompt, default}]}` in id order (`default_name` is null unless `multiple`: the
+`name` var's default if the piece declares one, else the id; `default` is null when a var has
+none), and `template: {name, version, vars: [{name, prompt, default}]}`.
+
 ## 9. JSON output (contract §8)
 
 `Report { ok, command, changes: [Change { path, action, class }], messages }`, serialised with
@@ -747,6 +771,13 @@ Items 11–14 and 18 stay splice's own decisions.
     correct a default in the PR. Channel updates are unchanged (their new vars take defaults
     silently). `new_questions` is outside the contract's §8 object but additive: consumers that
     ignore unknown keys are unaffected.
+32. `pieces` and `template` in `--json` (`splice pieces`). Like `new_questions`, they are
+    additive keys outside the contract's §8 object: written only by `pieces` (skipped when empty
+    or absent), so no other command's JSON changes, and the §8 keys `ok`, `command`, `changes`
+    and `messages` keep their meaning. Instance-name aliases (for example letting `--piece cli`
+    stand for `rust-cli:cli`) are not added: they would need a new manifest key, which is a
+    contract change and goes through both repos (D-003); a better "unknown piece" message and
+    `splice pieces` cover the discovery problem without one.
 
 ## 11. Testing
 
@@ -869,7 +900,8 @@ which breaks the lock, so the Action is the default.
 
 ## 14. Agent use
 
-`--json` everywhere, terse human output, `splice explain <path>` as cheap context. The repo ships
+`--json` everywhere, terse human output, `splice explain <path>` as cheap context and
+`splice pieces <source> --json` to learn a template's pieces, instance names and vars. The repo ships
 `skills/splice/SKILL.md` (Claude Code skill), triggered by `.splice/lock.toml` or files in
 `.splice/channels/` (channel-only repos have no main lock): always pass `--json`, read
 `changes`, resolve conflicts by editing marker blocks then `splice check --json`, never hand-edit
