@@ -42,14 +42,16 @@ pub enum Command {
     Diff(DiffArgs),
     /// Print class, owning piece instance and matching glob of a path.
     Explain(ExplainArgs),
+    /// List the pieces (and variables) of a template.
+    Pieces(PiecesArgs),
     /// Add or remove a channel: an extra template source kept current beside the main one.
     Channel(ChannelArgs),
 }
 
 impl Command {
     /// Subcommand names, as typed on the command line.
-    pub const NAMES: [&'static str; 8] = [
-        "new", "adopt", "add", "update", "check", "diff", "explain", "channel",
+    pub const NAMES: [&'static str; 9] = [
+        "new", "adopt", "add", "update", "check", "diff", "explain", "pieces", "channel",
     ];
 
     pub fn name(&self) -> &'static str {
@@ -61,6 +63,7 @@ impl Command {
             Command::Check(_) => "check",
             Command::Diff(_) => "diff",
             Command::Explain(_) => "explain",
+            Command::Pieces(_) => "pieces",
             Command::Channel(a) => match a.command {
                 ChannelCommand::Add(_) => "channel add",
                 ChannelCommand::Remove(_) => "channel remove",
@@ -215,6 +218,18 @@ pub struct DiffArgs {
     /// Show the update of this channel.
     #[arg(long, value_name = "NAME")]
     pub channel: Option<String>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct PiecesArgs {
+    /// Template source (`gh:owner/repo//subdir`, a git URL or a local path).
+    pub source: String,
+    /// A tag, branch or sha.
+    #[arg(long = "ref", value_name = "R")]
+    pub git_ref: Option<String>,
+    /// Allow pre-release versions.
+    #[arg(long)]
+    pub pre: bool,
 }
 
 #[derive(Debug, Clone, Args)]

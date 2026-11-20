@@ -7,6 +7,7 @@ pub mod check;
 pub mod diff;
 pub mod explain;
 pub mod new;
+pub mod pieces;
 pub mod update;
 
 /// Exit 2: the command needs a lock and the directory has none.

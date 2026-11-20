@@ -1,0 +1,65 @@
+---
+source: tests/cli_pieces.rs
+expression: v
+---
+{
+  "ok": true,
+  "command": "pieces",
+  "changes": [],
+  "messages": [],
+  "pieces": [
+    {
+      "id": "app",
+      "description": "App piece",
+      "base": false,
+      "multiple": true,
+      "default_name": "web",
+      "requires": [
+        "base"
+      ],
+      "vars": [
+        {
+          "name": "name",
+          "prompt": "app name",
+          "default": "web"
+        }
+      ]
+    },
+    {
+      "id": "base",
+      "description": "Base piece",
+      "base": true,
+      "multiple": false,
+      "default_name": null,
+      "requires": [],
+      "vars": []
+    },
+    {
+      "id": "lib",
+      "description": "Lib piece",
+      "base": false,
+      "multiple": false,
+      "default_name": null,
+      "requires": [
+        "app"
+      ],
+      "vars": []
+    }
+  ],
+  "template": {
+    "name": "fixture",
+    "version": "1.0.0",
+    "vars": [
+      {
+        "name": "project",
+        "prompt": "project name",
+        "default": null
+      },
+      {
+        "name": "scope",
+        "prompt": "npm scope without @",
+        "default": "acme"
+      }
+    ]
+  }
+}

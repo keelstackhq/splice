@@ -1,0 +1,11 @@
+---
+source: tests/cli_pieces.rs
+expression: "String::from_utf8(out).unwrap()"
+---
+template fixture 1.0.0
+  var project  "project name"
+  var scope  "npm scope without @" [default: acme]
+app  multiple (default name: web)  requires: base  - App piece
+  var name  "app name" [default: web]
+base  [base]  - Base piece
+lib  requires: app  - Lib piece
