@@ -36,6 +36,7 @@ pub fn run(cli: Cli) -> Result<Report, SpliceError> {
         Command::Adopt(args) => ops::adopt::run(&cli.global, args),
         Command::Add(args) => ops::add::run(&cli.global, args),
         Command::Explain(args) => ops::explain::run(&cli.global, args),
+        Command::Pieces(args) => ops::pieces::run(&cli.global, args),
         Command::Update(args) => ops::update::run(&cli.global, args),
         Command::Check(args) => ops::check::run(&cli.global, args),
         Command::Diff(args) => ops::diff::run(&cli.global, args),

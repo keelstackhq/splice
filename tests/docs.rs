@@ -23,6 +23,7 @@ fn docs_mention_only_real_flags() {
         vec!["check", "--help"],
         vec!["diff", "--help"],
         vec!["explain", "--help"],
+        vec!["pieces", "--help"],
         vec!["channel", "add", "--help"],
         vec!["channel", "remove", "--help"],
     ] {

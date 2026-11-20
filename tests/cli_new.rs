@@ -781,3 +781,50 @@ fn new_into_unignored_sibling_still_works() {
         .assert()
         .success();
 }
+
+#[test]
+fn unknown_piece_suggests_and_shows_instance_syntax() {
+    let tpl = template_repo(&["v1"]);
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args(["new", s(&tpl), s(&dest), "--data", "project=demo", "--yes"])
+        .args(["--piece", "ap"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let err = String::from_utf8_lossy(&out);
+    assert!(
+        err.contains("unknown piece `ap`; did you mean `app`?"),
+        "{err}"
+    );
+    assert!(err.contains("The template has: app, base, lib."), "{err}");
+    assert!(err.contains("`--piece app:my-tool`"), "{err}");
+    assert!(err.contains("`splice pieces <source>`"), "{err}");
+}
+
+#[test]
+fn unknown_piece_without_multiple_still_points_at_pieces() {
+    let tpl = common::inline_template(&[("base", "id = \"base\"\ndescription = \"b\"\n", &[])]);
+    common::git(
+        tpl.path(),
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    common::commit_tag(tpl.path(), "v1", "v1.0.0");
+    let dest = tempfile::tempdir().unwrap();
+    let out = splice_cmd()
+        .args(["new", s(&tpl), s(&dest), "--yes", "--piece", "zzz"])
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let err = String::from_utf8_lossy(&out);
+    assert!(
+        err.contains("`splice pieces <source>` lists the pieces."),
+        "{err}"
+    );
+    assert!(!err.contains("Name an instance"), "{err}");
+}

@@ -5,6 +5,7 @@ alternative in one static binary: no Python, no Rust toolchain. Part of
 [keelstackhq](https://github.com/keelstackhq).
 
 ```bash
+pnpm dlx @keelstackhq/splice pieces gh:keelstackhq/hull//template   # what can I pick?
 pnpm dlx @keelstackhq/splice new gh:keelstackhq/hull//template my-app --piece app:web
 cd my-app
 pnpm dlx @keelstackhq/splice update   # 3-way merge to the latest template version
@@ -14,6 +15,8 @@ pnpm dlx @keelstackhq/splice check    # exit 1 on drift, conflicts or an availab
 ## Why
 
 - **Pieces:** a template is a set of pieces you pick (`new`, `add`), not one monolith.
+  `splice pieces <source>` lists them; `--piece app:web` names an instance of a `multiple` piece
+  (`add` uses `--name web`).
 - **New questions surface:** a var a template update adds is listed in `update` output and the
   bot PR body, not discovered later.
 - **Updates, not copies:** `update` merges the new template into your edits. Owned files refuse

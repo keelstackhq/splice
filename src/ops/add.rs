@@ -57,10 +57,18 @@ fn new_instance(
 ) -> Result<PieceInstance> {
     let id = a.piece_id.as_str();
     let Some(piece) = template.pieces.get(id) else {
-        let known: Vec<&str> = template.pieces.keys().map(String::as_str).collect();
-        return usage(format!(
-            "unknown piece `{id}`; the template has: {}",
-            known.join(", ")
+        if let Some((head, _)) = id.split_once(':')
+            && template.pieces.get(head).is_some_and(|p| p.multiple)
+        {
+            return usage(format!(
+                "unknown piece `{id}`; `add` takes the instance name as `--name`: \
+                 `splice add {head} --name <name>`"
+            ));
+        }
+        return usage(crate::manifest::unknown_piece_message(
+            template,
+            id,
+            crate::manifest::PieceSyntax::Add,
         ));
     };
     if a.name.is_some() && !piece.multiple {

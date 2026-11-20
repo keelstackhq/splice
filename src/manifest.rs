@@ -113,6 +113,83 @@ pub struct Template {
     pub portable_paths: bool,
 }
 
+/// Where an unknown piece id was typed; decides how the instance-name hint is written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PieceSyntax {
+    /// `--piece ID[:NAME]` (`new`, `adopt`, `channel add`).
+    Flag,
+    /// `splice add ID --name NAME`.
+    Add,
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let sub = prev[j] + usize::from(ca != *cb);
+            cur.push(sub.min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// Up to three known ids close to `input`: case-insensitive substring either way, or a small
+/// edit distance; nearest first, then by id.
+pub fn suggest_pieces<'a>(known: &[&'a str], input: &str) -> Vec<&'a str> {
+    let needle = input.to_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let max = (needle.chars().count() / 3).max(1);
+    let mut hits: Vec<(usize, &str)> = known
+        .iter()
+        .filter_map(|id| {
+            let hay = id.to_lowercase();
+            let d = edit_distance(&needle, &hay);
+            (hay.contains(&needle) || needle.contains(&hay) || d <= max).then_some((d, *id))
+        })
+        .collect();
+    hits.sort();
+    hits.into_iter().take(3).map(|(_, id)| id).collect()
+}
+
+/// The usage message for a piece id the template does not have.
+pub fn unknown_piece_message(t: &Template, input: &str, syntax: PieceSyntax) -> String {
+    let known: Vec<&str> = t.pieces.keys().map(String::as_str).collect();
+    let suggestions = suggest_pieces(&known, input);
+    let mut msg = format!("unknown piece `{input}`;");
+    if !suggestions.is_empty() {
+        let list: Vec<String> = suggestions.iter().map(|s| format!("`{s}`")).collect();
+        msg.push_str(&format!(" did you mean {}?", list.join(" or ")));
+    }
+    msg.push_str(&format!(" The template has: {}.", known.join(", ")));
+    let lists = "`splice pieces <source>` lists the pieces.";
+    let multiple = |id: &&str| t.pieces.get(*id).is_some_and(|p| p.multiple);
+    let example = suggestions
+        .iter()
+        .find(|id| multiple(id))
+        .copied()
+        .or_else(|| known.iter().find(|id| multiple(id)).copied());
+    if let Some(id) = example {
+        match syntax {
+            PieceSyntax::Flag => msg.push_str(&format!(
+                " Name an instance of a `multiple` piece with `--piece <id>:<name>`, e.g. \
+                 `--piece {id}:my-tool`; {lists}"
+            )),
+            PieceSyntax::Add => msg.push_str(&format!(
+                " Name an instance of a `multiple` piece with `splice add <id> --name <name>`, \
+                 e.g. `splice add {id} --name my-tool`; {lists}"
+            )),
+        }
+    } else {
+        msg.push_str(&format!(" {lists}"));
+    }
+    msg
+}
+
 #[derive(Deserialize)]
 struct RawVar {
     // Contract §9.15: defaults to the var name (filled in by `convert_vars`).
@@ -606,6 +683,34 @@ impl Template {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn suggest_pieces_ranks_and_limits() {
+        let known = [
+            "base",
+            "circleci",
+            "circleci-only",
+            "rust-cli",
+            "rust-lib",
+            "rust-x",
+        ];
+        assert_eq!(super::suggest_pieces(&known, "cli"), ["rust-cli"]);
+        assert_eq!(
+            super::suggest_pieces(&known, "RUST-CLI"),
+            ["rust-cli", "rust-lib"]
+        );
+        assert_eq!(
+            super::suggest_pieces(&known, "circle"),
+            ["circleci", "circleci-only"]
+        );
+        assert_eq!(
+            super::suggest_pieces(&known, "rust-cl"),
+            ["rust-cli", "rust-x"]
+        );
+        assert_eq!(super::suggest_pieces(&known, "bas"), ["base"]);
+        assert!(super::suggest_pieces(&known, "zzzzzz").is_empty());
+        assert!(super::suggest_pieces(&known, "").is_empty());
+    }
+
     use super::*;
 
     const BASE_PIECE: &str = "id = \"base\"\ndescription = \"b\"\n";

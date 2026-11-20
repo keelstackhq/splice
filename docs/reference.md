@@ -35,6 +35,7 @@ pnpm dlx @keelstackhq/splice check         # exit 1 on drift, conflicts or an av
 | `splice check` | Fail on edited owned files, leftover conflict markers, or a newer version |
 | `splice diff [--to V \| --ref R]` | Show what `update` would change, as a unified diff; writes nothing |
 | `splice explain <path>` | Which piece owns a file and how splice treats it |
+| `splice pieces <source>` | List a template's pieces, which are `multiple`, their default instance names and their variables; read-only, needs no repo (`--json` adds `pieces` and `template` keys) |
 | `splice channel add <source>` | Apply a second template next to the main one, with its own lock (see Channels) |
 | `splice channel remove <name>` | Remove a channel: delete its unedited files and blocks, then its lock |
 
@@ -52,6 +53,27 @@ records the source, so a lock that already has one fails every command: remove i
 `splice update --ref <branch|sha>` moves it to a later commit; the target must be a git
 descendant of the locked commit (exit 2 otherwise, `--force` overrides). Without `--ref`, such a
 repo moves only to a stable tag that descends from its commit, and `check` reports only those.
+
+## Piece instances
+
+A piece with `multiple = true` can be rendered more than once; each copy is an *instance* with
+its own name, vars and files (`apps/{{ name }}/…`). Run `splice pieces <source>` first: it shows
+which pieces are `multiple`, the name each gets by default, and the variables to pass with
+`--data`.
+
+```bash
+splice pieces gh:keelstackhq/hull//template          # list pieces; add --json for agents
+splice new gh:keelstackhq/hull//template my-app --piece app:web --piece app:admin
+splice add app --name docs                           # in an existing repo: --name, not ID:NAME
+```
+
+- `new`, `adopt` and `channel add` name an instance with `--piece ID:NAME`; `add` uses `--name`.
+- The name is the first that applies: `:NAME` / `--name`; `--data name=…` or the prompt answer
+  for the piece's `name` var; that var's default; the piece id. `splice pieces` shows the result
+  without a name as `default_name` (null when the `name` var has no default: a name is then required).
+  Two instances of one piece cannot share a name (exit 2), so name the second one.
+- A non-`multiple` piece takes no name (`--piece lib:x` is exit 2).
+- An unknown piece id exits 2 and suggests close ids and the syntax above.
 
 ## How files are treated
 

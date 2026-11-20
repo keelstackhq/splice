@@ -61,6 +61,35 @@ pub struct NewQuestion {
     pub value: String,
 }
 
+/// A variable a template or piece declares (`pieces --json`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VarInfo {
+    pub name: String,
+    pub prompt: String,
+    pub default: Option<String>,
+}
+
+/// One piece of a template (`pieces --json`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PieceInfo {
+    pub id: String,
+    pub description: String,
+    pub base: bool,
+    pub multiple: bool,
+    /// `multiple` pieces only: the instance name `--piece ID` gets without `:NAME`.
+    pub default_name: Option<String>,
+    pub requires: Vec<String>,
+    pub vars: Vec<VarInfo>,
+}
+
+/// The template-level part of `pieces --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TemplateInfo {
+    pub name: String,
+    pub version: Option<String>,
+    pub vars: Vec<VarInfo>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub ok: bool,
@@ -70,6 +99,12 @@ pub struct Report {
     /// `update` only: vars new in the target that took their default (omitted when none).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub new_questions: Vec<NewQuestion>,
+    /// `pieces` only: the template's pieces (omitted when empty).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pieces: Vec<PieceInfo>,
+    /// `pieces` only: the template's own name, version and variables.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template: Option<TemplateInfo>,
     /// Human-mode stdout lines that replace the default change lines (not in `--json`).
     #[serde(skip)]
     pub lines: Vec<String>,
@@ -83,6 +118,8 @@ impl Report {
             changes: Vec::new(),
             messages: Vec::new(),
             new_questions: Vec::new(),
+            pieces: Vec::new(),
+            template: None,
             lines: Vec::new(),
         }
     }

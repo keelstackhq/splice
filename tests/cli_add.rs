@@ -591,3 +591,16 @@ fn non_portable_instance_name_is_usage() {
     assert!(out.contains("instance name"), "{out}");
     assert_eq!(lock_bytes(&repo), before);
 }
+
+#[test]
+fn unknown_piece_suggests_and_shows_name_syntax() {
+    let (_tpl, repo) = new_repo(&[]);
+    let out = add(&repo, &["ap"]).code(2).get_output().stdout.clone();
+    let msg = json(out)["messages"][0].as_str().unwrap().to_string();
+    assert!(msg.contains("did you mean `app`?"), "{msg}");
+    assert!(msg.contains("`splice add app --name my-tool`"), "{msg}");
+
+    let out = add(&repo, &["app:foo"]).code(2).get_output().stdout.clone();
+    let msg = json(out)["messages"][0].as_str().unwrap().to_string();
+    assert!(msg.contains("`splice add app --name <name>`"), "{msg}");
+}
