@@ -112,10 +112,10 @@ pub(crate) fn select_pieces(
             None => (spec.as_str(), None),
         };
         let Some(piece) = t.pieces.get(id) else {
-            let known: Vec<&str> = t.pieces.keys().map(String::as_str).collect();
-            return usage(format!(
-                "unknown piece `{id}`; the template has: {}",
-                known.join(", ")
+            return usage(crate::manifest::unknown_piece_message(
+                t,
+                id,
+                crate::manifest::PieceSyntax::Flag,
             ));
         };
         if name.is_some() && !piece.multiple {
