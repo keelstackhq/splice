@@ -166,6 +166,7 @@ pub fn unknown_piece_message(t: &Template, input: &str, syntax: PieceSyntax) -> 
         msg.push_str(&format!(" did you mean {}?", list.join(" or ")));
     }
     msg.push_str(&format!(" The template has: {}.", known.join(", ")));
+    let lists = "`splice pieces <source>` lists the pieces.";
     let multiple = |id: &&str| t.pieces.get(*id).is_some_and(|p| p.multiple);
     let example = suggestions
         .iter()
@@ -176,14 +177,15 @@ pub fn unknown_piece_message(t: &Template, input: &str, syntax: PieceSyntax) -> 
         match syntax {
             PieceSyntax::Flag => msg.push_str(&format!(
                 " Name an instance of a `multiple` piece with `--piece <id>:<name>`, e.g. \
-                 `--piece {id}:my-tool`; `splice pieces <source>` lists the pieces."
+                 `--piece {id}:my-tool`; {lists}"
             )),
             PieceSyntax::Add => msg.push_str(&format!(
                 " Name an instance of a `multiple` piece with `splice add <id> --name <name>`, \
-                 e.g. `splice add {id} --name my-tool`; `splice pieces <source>` lists the \
-                 pieces."
+                 e.g. `splice add {id} --name my-tool`; {lists}"
             )),
         }
+    } else {
+        msg.push_str(&format!(" {lists}"));
     }
     msg
 }

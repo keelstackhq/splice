@@ -31,17 +31,21 @@ pub fn run(_g: &GlobalArgs, a: &PiecesArgs) -> Result<Report, SpliceError> {
     let src = TemplateSource::parse(&a.source)?;
     let resolved = Fetcher::from_env().resolve(&src, a.git_ref.as_deref(), a.pre)?;
     let template = Template::load(&resolved.root)?;
+    let running = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("crate version");
+    template.check_min_splice(&running)?;
     let mut report = Report::new("pieces");
     report.messages.extend(template.warnings.iter().cloned());
 
     for piece in template.pieces.values() {
-        let default_name = piece.multiple.then(|| {
-            piece
-                .vars
-                .get("name")
-                .and_then(|v| v.default.clone())
-                .unwrap_or_else(|| piece.id.clone())
-        });
+        // What `new --yes --piece ID` names the instance: a `name` var without a default has no
+        // name (the run is exit 2), so null.
+        let default_name = if !piece.multiple {
+            None
+        } else if let Some(v) = piece.vars.get("name") {
+            v.default.clone()
+        } else {
+            Some(piece.id.clone())
+        };
         report.pieces.push(PieceInfo {
             id: piece.id.clone(),
             description: piece.description.clone(),

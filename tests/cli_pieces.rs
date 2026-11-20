@@ -91,3 +91,85 @@ fn works_without_a_repo_and_needs_no_clean_tree() {
         .assert()
         .success();
 }
+
+fn tagged(dir: &std::path::Path) {
+    common::git(
+        dir,
+        "2026-01-01T00:00:00+00:00",
+        &["init", "-q", "-b", "main"],
+    );
+    common::commit_tag(dir, "v1", "v1.0.0");
+}
+
+#[test]
+fn min_splice_refused() {
+    let tpl = template_repo(&["v1"]);
+    let path = tpl.path().join("splice.toml");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        text.replace("min_splice = \"0.1.0\"", "min_splice = \"99.0.0\""),
+    )
+    .unwrap();
+    common::commit_tag(tpl.path(), "v3", "v3.0.0");
+    splice_cmd().args(["pieces", s(&tpl)]).assert().code(3);
+}
+
+#[test]
+fn default_name_matches_new_yes() {
+    let tpl = common::inline_template(&[
+        ("base", "id = \"base\"\ndescription = \"b\"\n", &[]),
+        (
+            "plain",
+            "id = \"plain\"\ndescription = \"p\"\nmultiple = true\n",
+            &[],
+        ),
+        (
+            "dflt",
+            "id = \"dflt\"\ndescription = \"d\"\nmultiple = true\n[vars]\nname = { prompt = \"n\", default = \"web\" }\n",
+            &[],
+        ),
+        (
+            "nodflt",
+            "id = \"nodflt\"\ndescription = \"n\"\nmultiple = true\n[vars]\nname = { prompt = \"n\" }\n",
+            &[],
+        ),
+        ("single", "id = \"single\"\ndescription = \"s\"\n", &[]),
+    ]);
+    tagged(tpl.path());
+    let out = splice_cmd()
+        .args(["pieces", s(&tpl), "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let names: Vec<(String, serde_json::Value)> = v["pieces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["id"].as_str().unwrap().to_string(),
+                p["default_name"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("base".to_string(), serde_json::Value::Null),
+            ("dflt".into(), "web".into()),
+            ("nodflt".into(), serde_json::Value::Null),
+            ("plain".into(), "plain".into()),
+            ("single".into(), serde_json::Value::Null),
+        ]
+    );
+    // null for `nodflt` is real: `new --yes` cannot name it.
+    let dest = tempfile::tempdir().unwrap();
+    splice_cmd()
+        .args(["new", s(&tpl), s(&dest), "--yes", "--piece", "nodflt"])
+        .assert()
+        .code(2);
+}

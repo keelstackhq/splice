@@ -69,8 +69,9 @@ exit 2 (§8.3 step 4).
 
 `--piece ID:NAME` names an instance of a `multiple` piece: the name is the instance's identity
 in the lock and feeds `target` (for example `apps/{{ name }}`), so `--piece app:web --piece
-app:admin` makes two apps. Without `:NAME` the instance is named by the piece's `name` var
-default, else by the piece id (§8.1; `instance_name` in `src/vars.rs`). `add` takes the name as
+app:admin` makes two apps. The name is the first that applies: `:NAME` / `--name`; a `--data name=…`
+value or the prompt answer for the piece's `name` var; that var's `default`; the piece id
+(contract §9.28; `instance_name` in `src/vars.rs`). `add` takes the name as
 `--name` (`splice add app --name admin`), not as `ID:NAME`. An unknown id is exit 2 with up to
 three close ids ("did you mean"), the template's ids, and, when a piece is `multiple`, an
 example of this syntax; `splice pieces <source>` lists what a template offers.
@@ -514,9 +515,10 @@ in id order: `ID  [base]  multiple (default name: N)  requires: A, B  - DESCRIPT
 `  var NAME  "PROMPT" [default: V]` per piece var. With `--json` the object is a Report with
 `command: "pieces"`, `changes: []`, `messages` (template warnings) and two additive keys
 (§10 item 32): `pieces`, an array of `{id, description, base, multiple, default_name, requires,
-vars: [{name, prompt, default}]}` in id order (`default_name` is null unless `multiple`: the
-`name` var's default if the piece declares one, else the id; `default` is null when a var has
-none), and `template: {name, version, vars: [{name, prompt, default}]}`.
+vars: [{name, prompt, default}]}` in id order (`default_name` is what `new --yes --piece ID` names the instance: null when
+not `multiple`; the id when the piece has no `name` var; the `name` var's default otherwise,
+null if that var has none, because `new --yes` then exits 2 and a name must be given; a var's
+`default` is null when it has none), and `template: {name, version, vars: [{name, prompt, default}]}`.
 
 ## 9. JSON output (contract §8)
 

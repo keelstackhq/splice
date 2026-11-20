@@ -68,7 +68,9 @@ splice add app --name docs                           # in an existing repo: --na
 ```
 
 - `new`, `adopt` and `channel add` name an instance with `--piece ID:NAME`; `add` uses `--name`.
-- Without a name the instance is called by the piece's `name` var default, else by the piece id.
+- The name is the first that applies: `:NAME` / `--name`; `--data name=…` or the prompt answer
+  for the piece's `name` var; that var's default; the piece id. `splice pieces` shows the result
+  without a name as `default_name` (null when the `name` var has no default: a name is then required).
   Two instances of one piece cannot share a name (exit 2), so name the second one.
 - A non-`multiple` piece takes no name (`--piece lib:x` is exit 2).
 - An unknown piece id exits 2 and suggests close ids and the syntax above.

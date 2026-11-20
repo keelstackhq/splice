@@ -27,18 +27,18 @@ Run `splice explain <path> --json`; read `class` and `source`.
 - `splice new <source> [dest] --piece ID[:NAME] --data K=V --yes --commit --json`: no commit
   without `--commit`, and `add`/`update` refuse a dirty tree. A var with no default needs
   `--data` (else exit 2). A local source needs a `vX.Y.Z` tag or `--ref`.
-- `splice pieces <source> --json`: read-only `pieces[]` and `template.vars`; run it before
-  guessing `--piece` ids or `--data` keys.
+- `splice pieces <source> --json`: read-only; run it before guessing `--piece` ids or `--data` keys.
 - `splice add <piece> --name NAME --json`: `--name`, not `ID:NAME`. Leaves changes to commit.
-- `splice diff --json`: what `update` would do; writes nothing. Run it first.
-- `splice update --json` (`--to V` or `--ref R`); `splice check --json --offline`: no network.
+- `splice diff --json`: what `update` would do; writes nothing. Run it first. Then
+  `splice update --json` (`--to V` or `--ref R`); `splice check --json --offline`: no network.
 
 ## Rules
 
 - Never edit `.splice/lock.toml` or `.splice/channels/*.toml`. No `--no-post` to hide a failing
   post. A dirty tree is refused (exit 2): commit or stash; no `--allow-dirty` unless asked.
 - After a failed `add` or `update` (exit 3), run the restore command in the last message first.
-  No `--force` unless the user accepts losing edits to owned files.
+  No `--force` unless the user accepts losing edits to owned files (`update --force` on a
+  current repo restores drifted owned files only).
 
 ## Resolving conflicts
 
